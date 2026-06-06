@@ -496,8 +496,7 @@
     align-items: stretch;
     gap: 12px;
     padding: 8px 14px;
-    min-height: 104px;
-    max-height: 140px;
+    height: 150px;
     overflow: hidden;
   }
   #event-strip .log-title {
@@ -509,20 +508,26 @@
     align-self: flex-start;
     padding-top: 2px;
   }
-  /* the log scrolls as a vertical column; newest line is at the bottom and auto-scrolled into view */
+  /* the log scrolls as a vertical column; newest line is at the bottom and auto-scrolled into view.
+     content sits at the bottom so the newest is always whole; a soft top fade hides the scrolled edge. */
   #event-log {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    scroll-behavior: smooth;
     scrollbar-width: thin;
+    padding-bottom: 2px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
   }
   .log-chip {
     color: var(--log-text);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
+    line-height: 1.7;
+    flex: 0 0 auto;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -920,7 +925,7 @@
       max-height: none;            /* let the page scroll on small screens */
     }
     #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 220px; }
-    #event-strip { min-height: 80px; max-height: 110px; }
+    #event-strip { height: 116px; }
     .hex { width: 64px; height: 55px; }
     .hex-col:not(:first-child) { margin-left: -16px; }
     .hex-col.down { margin-top: 28px; }
