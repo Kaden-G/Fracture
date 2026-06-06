@@ -1,0 +1,2260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRACTURE</title>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0a;
+    --paper: #f5e6c8;
+    --card-bg: #1a1a2e;       /* dark navy for cards instead of white */
+    --card-text: #f0e6d3;     /* warm off-white on dark */
+    --card-border: #f1c40f;
+    --halftone: #e8d4a0;
+    --grid-col: #1a1a2e;
+    --syndicate: #e74c3c;
+    --commune: #2ecc71;
+    --ghost: #9b59b6;
+    --player: #f39c12;
+    --node-glow: #f1c40f;
+    --log-bg: #0d1117;
+    --log-text: #e8d4a0;
+    --sidebar-bg: #111827;
+    --sidebar-text: #f0e6d3;
+    --action-bg: #0d1117;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--paper);
+    font-family: 'Oswald', sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1px),
+      radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px);
+    background-size: 20px 20px, 10px 10px;
+    background-position: 0 0, 10px 10px;
+    background-color: var(--paper);
+  }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+  #game-screen.active { display: grid; }
+
+  /* ===== TITLE ===== */
+  #title-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .title-panel {
+    background: var(--ink);
+    border: 5px solid var(--ink);
+    padding: 30px 50px;
+    margin-bottom: 20px;
+    transform: rotate(-1deg);
+    box-shadow: 8px 8px 0 #c0392b;
+  }
+
+  .title-panel h1 {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(60px, 12vw, 120px);
+    color: var(--node-glow);
+    letter-spacing: 8px;
+    text-shadow: 4px 4px 0 #c0392b, -2px -2px 0 #8e44ad;
+    line-height: 1;
+  }
+
+  .subtitle {
+    font-family: 'Permanent Marker', cursive;
+    font-size: clamp(12px, 3vw, 18px);
+    color: #f0e6d3;
+    text-align: center;
+    margin-top: 8px;
+    letter-spacing: 2px;
+  }
+
+  .faction-preview {
+    display: flex;
+    gap: 12px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .faction-badge {
+    background: var(--ink);
+    border: 3px solid var(--ink);
+    padding: 8px 16px;
+    font-family: 'Bangers', cursive;
+    font-size: 18px;
+    letter-spacing: 2px;
+    cursor: default;
+    transition: transform 0.2s;
+  }
+  .faction-badge:nth-child(1) { color: var(--player); transform: rotate(-3deg); }
+  .faction-badge:nth-child(2) { color: var(--syndicate); transform: rotate(2deg); }
+  .faction-badge:nth-child(3) { color: var(--commune); transform: rotate(-1deg); }
+  .faction-badge:nth-child(4) { color: var(--ghost); transform: rotate(3deg); }
+  .faction-badge:hover { transform: rotate(0deg) scale(1.1); }
+
+  .title-blurb {
+    font-size: 13px;
+    font-weight: 700;
+    max-width: 400px;
+    text-align: center;
+    margin: 8px 0 20px;
+    background: var(--card-bg);
+    color: var(--card-text);
+    padding: 12px 16px;
+    border: 3px solid var(--ink);
+    line-height: 1.6;
+  }
+
+  .btn {
+    font-family: 'Bangers', cursive;
+    font-size: 28px;
+    letter-spacing: 3px;
+    padding: 14px 40px;
+    border: 4px solid var(--ink);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .btn:hover { transform: translate(-3px,-3px); }
+  .btn:active { transform: translate(2px,2px); }
+  .btn-primary { background: var(--node-glow); color: var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+  .btn-primary:hover { box-shadow: 9px 9px 0 var(--ink); }
+  .btn-secondary { background: var(--card-bg); color: var(--card-text); box-shadow: 4px 4px 0 var(--node-glow); font-size: 20px; border-color: var(--node-glow); }
+  .btn-danger { background: var(--syndicate); color: white; box-shadow: 4px 4px 0 var(--ink); font-size: 18px; }
+
+  /* ===== SETUP ===== */
+  #setup-screen {
+    min-height: 100vh;
+    padding: 30px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .panel-header {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(30px, 6vw, 50px);
+    letter-spacing: 4px;
+    background: var(--ink);
+    color: var(--node-glow);
+    padding: 10px 30px;
+    border: 4px solid var(--ink);
+    box-shadow: 6px 6px 0 #c0392b;
+    margin-bottom: 24px;
+    transform: rotate(-1deg);
+  }
+
+  .setup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    width: 100%;
+    max-width: 900px;
+  }
+
+  .setup-card {
+    background: var(--card-bg);
+    border: 3px solid var(--node-glow);
+    padding: 20px;
+    box-shadow: 5px 5px 0 var(--ink);
+    color: var(--card-text);
+  }
+
+  .setup-card h3 {
+    font-family: 'Bangers', cursive;
+    font-size: 22px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 3px solid var(--node-glow);
+    color: var(--node-glow);
+  }
+
+  .setup-card label {
+    font-size: 12px;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 4px;
+    color: #aaa;
+    letter-spacing: 1px;
+  }
+
+  .input-field {
+    width: 100%;
+    font-family: 'Oswald', sans-serif;
+    font-size: 16px;
+    padding: 8px 12px;
+    border: 3px solid var(--node-glow);
+    background: #0d1117;
+    color: var(--card-text);
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .input-field::placeholder { color: #666; }
+
+  .faction-select {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .faction-option {
+    padding: 10px;
+    border: 3px solid #444;
+    cursor: pointer;
+    font-family: 'Bangers', cursive;
+    font-size: 16px;
+    letter-spacing: 1px;
+    text-align: center;
+    transition: all 0.15s;
+    background: #0d1117;
+    color: var(--card-text);
+  }
+  .faction-option:hover { border-color: var(--node-glow); transform: scale(1.05); }
+  .faction-option.selected { color: white; border-width: 4px; border-color: var(--node-glow); }
+  .faction-option[data-f="grid"].selected { background: var(--player); }
+  .faction-option[data-f="syndicate"].selected { background: var(--syndicate); }
+  .faction-option[data-f="commune"].selected { background: var(--commune); }
+  .faction-option[data-f="ghost"].selected { background: var(--ghost); }
+
+  .trait-select { display: flex; flex-direction: column; gap: 6px; }
+  .trait-option {
+    padding: 8px 12px;
+    border: 2px solid #444;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+    background: #0d1117;
+    color: var(--card-text);
+  }
+  .trait-option:hover { border-color: var(--node-glow); background: #1a1a2e; }
+  .trait-option.selected { background: var(--node-glow); color: var(--ink); border-color: var(--node-glow); }
+  .trait-option.selected strong { color: var(--ink); }
+  .trait-option strong { font-family: 'Bangers', cursive; font-size: 15px; letter-spacing: 1px; color: var(--node-glow); }
+
+  /* ===== GAME SCREEN ===== */
+  #game-screen {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100vh;
+    gap: 0;
+  }
+  #game-screen.active { display: grid; }
+
+  .game-header {
+    grid-column: 1 / -1;
+    background: var(--ink);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 4px solid var(--node-glow);
+  }
+
+  .game-title-small {
+    font-family: 'Bangers', cursive;
+    font-size: 32px;
+    color: var(--node-glow);
+    letter-spacing: 4px;
+  }
+
+  .turn-indicator {
+    font-family: 'Bangers', cursive;
+    font-size: 21px;
+    color: white;
+    letter-spacing: 2px;
+    background: var(--syndicate);
+    padding: 4px 12px;
+    border: 2px solid var(--node-glow);
+  }
+  .turn-indicator.your-turn { background: #27ae60; }
+
+  /* ===== MAP ===== */
+  #map-area {
+    padding: 16px;
+    overflow: auto;
+    background: #1a1a2e;
+    background-image: radial-gradient(circle, rgba(241,196,15,0.05) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  #hex-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    user-select: none;
+  }
+
+  .hex-row { display: flex; margin-top: -18px; }
+  .hex-row:first-child { margin-top: 0; }
+  .hex-row.offset { margin-left: 50px; }
+
+  .hex {
+    width: 94px;
+    height: 104px;
+    position: relative;
+    cursor: pointer;
+    margin: 0 3px;
+    transition: filter 0.15s, transform 0.15s;
+  }
+  .hex svg { width: 100%; height: 100%; }
+  .hex:hover { filter: brightness(1.25); transform: scale(1.05); }
+  .hex.selected { filter: brightness(1.5) drop-shadow(0 0 8px var(--node-glow)); transform: scale(1.08); }
+  .hex.valid-move { filter: drop-shadow(0 0 5px #2ecc71); cursor: crosshair; }
+  .hex.valid-attack { filter: drop-shadow(0 0 5px #e74c3c); cursor: crosshair; }
+
+  .hex-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    font-family: 'Bangers', cursive;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    text-align: center;
+    pointer-events: none;
+    line-height: 1.25;
+    white-space: pre-line;
+    z-index: 2;
+    color: white;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.9), -1px -1px 2px rgba(0,0,0,0.9);
+  }
+
+  .hex-troops {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: var(--ink);
+    color: var(--node-glow);
+    font-family: 'Bangers', cursive;
+    font-size: 17px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--node-glow);
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .hex-entrench {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    letter-spacing: -2px;
+    pointer-events: none;
+    z-index: 3;
+    white-space: nowrap;
+    filter: drop-shadow(0 0 1px rgba(0,0,0,0.8));
+  }
+
+  /* ===== SIDEBAR ===== */
+  #sidebar {
+    background: var(--sidebar-bg);
+    border-left: 4px solid var(--node-glow);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    color: var(--sidebar-text);
+  }
+
+  .sidebar-section {
+    border-bottom: 2px solid #2a2a3e;
+    padding: 12px;
+  }
+
+  .sidebar-section h4 {
+    font-family: 'Bangers', cursive;
+    font-size: 19px;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    color: var(--node-glow);
+  }
+
+  .faction-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #2a2a3e;
+    background: #0d1117;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 5px;
+    color: var(--card-text);
+  }
+
+  .faction-dot {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+  }
+
+  .faction-row-sub {
+    font-size: 12px;
+    color: #999;
+    font-weight: 600;
+  }
+
+  .node-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    border: 1px solid #2a2a3e;
+    font-size: 14px;
+    font-weight: 700;
+    background: #0d1117;
+    margin-bottom: 4px;
+    color: var(--card-text);
+  }
+
+  .res-chip {
+    background: #0d1117;
+    border: 2px solid #2a2a3e;
+    padding: 5px 11px;
+    font-family: 'Bangers', cursive;
+    font-size: 17px;
+    letter-spacing: 1px;
+    color: var(--card-text);
+    margin: 3px;
+  }
+
+  #event-log {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.7;
+    color: #ddd;
+  }
+
+  /* ===== ACTION PANEL ===== */
+  #action-panel {
+    grid-column: 1 / -1;
+    background: var(--action-bg);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 4px solid var(--node-glow);
+    flex-wrap: wrap;
+  }
+
+  .action-btn {
+    font-family: 'Bangers', cursive;
+    font-size: 18px;
+    letter-spacing: 1.5px;
+    padding: 11px 18px;
+    border: 3px solid #444;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: #1a1a2e;
+    color: #eee;
+  }
+  .action-btn:hover:not(:disabled) { background: #2a2a4e; border-color: var(--node-glow); color: var(--node-glow); transform: translateY(-2px); }
+  .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .action-btn.active-action { background: var(--node-glow); color: var(--ink); border-color: var(--node-glow); font-size: 18px; }
+
+  .action-log {
+    flex: 1;
+    font-size: 15px;
+    color: var(--log-text);
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    min-width: 220px;
+    padding: 8px 14px;
+    background: #0d1117;
+    border: 2px solid #2a2a3e;
+    max-height: 64px;
+    overflow-y: auto;
+    line-height: 1.45;
+  }
+
+  .end-turn-btn {
+    font-family: 'Bangers', cursive;
+    font-size: 19px;
+    letter-spacing: 2px;
+    padding: 12px 24px;
+    background: var(--syndicate);
+    color: white;
+    border: 3px solid var(--node-glow);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: auto;
+  }
+  .end-turn-btn:hover { background: #c0392b; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(231,76,60,0.5); }
+
+  /* ===== EVENT OVERLAY ===== */
+  #event-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #event-overlay.show { display: flex; }
+
+  .event-card {
+    background: var(--card-bg);
+    border: 5px solid var(--node-glow);
+    padding: 30px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 10px 10px 0 rgba(241,196,15,0.3);
+    transform: rotate(-2deg);
+    animation: cardSlide 0.3s ease;
+    color: var(--card-text);
+  }
+
+  @keyframes cardSlide {
+    from { transform: rotate(-2deg) translateY(-50px); opacity: 0; }
+    to { transform: rotate(-2deg) translateY(0); opacity: 1; }
+  }
+
+  .event-card-type {
+    font-family: 'Bangers', cursive;
+    font-size: 13px;
+    letter-spacing: 3px;
+    background: var(--node-glow);
+    color: var(--ink);
+    padding: 2px 10px;
+    display: inline-block;
+    margin-bottom: 10px;
+  }
+
+  .event-card-title {
+    font-family: 'Bangers', cursive;
+    font-size: 40px;
+    letter-spacing: 2px;
+    color: var(--node-glow);
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+
+  .event-card-body {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+    border-top: 2px solid #2a2a3e;
+    padding-top: 12px;
+    color: #ddd;
+  }
+
+  /* ===== WIN SCREEN ===== */
+  #win-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .win-panel {
+    background: var(--card-bg);
+    border: 6px solid var(--node-glow);
+    padding: 40px;
+    text-align: center;
+    box-shadow: 12px 12px 0 var(--syndicate);
+    max-width: 500px;
+    animation: winBurst 0.5s ease;
+    color: var(--card-text);
+  }
+
+  @keyframes winBurst {
+    0% { transform: scale(0.5) rotate(-5deg); opacity: 0; }
+    70% { transform: scale(1.1) rotate(2deg); }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  .win-title {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(40px, 10vw, 80px);
+    color: var(--node-glow);
+    letter-spacing: 6px;
+    text-shadow: 4px 4px 0 var(--syndicate);
+    line-height: 1;
+  }
+
+  .win-subtitle {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 20px;
+    color: #ddd;
+    margin: 10px 0 20px;
+  }
+
+  .win-detail {
+    color: #aaa;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 24px;
+  }
+
+  /* ===== DICE ANIMATION ===== */
+  #dice-display {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    z-index: 200;
+    font-size: 80px;
+    animation: diceRoll 0.65s ease forwards;
+    pointer-events: none;
+  }
+
+  @keyframes diceRoll {
+    0%   { transform: translate(-50%,-50%) rotate(0deg) scale(0.4); opacity: 1; }
+    50%  { transform: translate(-50%,-50%) rotate(360deg) scale(1.6); opacity: 1; }
+    100% { transform: translate(-50%,-50%) rotate(720deg) scale(0.8); opacity: 0; }
+  }
+
+  .phase-tag {
+    font-family: 'Bangers', cursive;
+    font-size: 20px;
+    letter-spacing: 2px;
+    color: var(--node-glow);
+    padding: 2px 10px;
+    border: 2px solid rgba(241,196,15,0.4);
+    background: rgba(241,196,15,0.08);
+  }
+
+  /* ===== RULES ===== */
+  .rules-btn {
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    z-index: 50;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--node-glow);
+    border: 3px solid var(--ink);
+    font-family: 'Bangers', cursive;
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 3px 3px 0 var(--ink);
+    color: var(--ink);
+  }
+
+  #rules-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 150;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #rules-overlay.show { display: flex; }
+
+  .rules-panel {
+    background: var(--card-bg);
+    border: 5px solid var(--node-glow);
+    padding: 24px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 10px 10px 0 rgba(241,196,15,0.2);
+    color: var(--card-text);
+  }
+
+  .rules-panel h2 {
+    font-family: 'Bangers', cursive;
+    font-size: 36px;
+    letter-spacing: 3px;
+    margin-bottom: 12px;
+    color: var(--node-glow);
+  }
+
+  .rules-panel h3 {
+    font-family: 'Bangers', cursive;
+    font-size: 20px;
+    letter-spacing: 2px;
+    margin: 14px 0 4px;
+    color: var(--syndicate);
+  }
+
+  .rules-panel p, .rules-panel li {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.6;
+    margin-bottom: 4px;
+    color: #ccc;
+  }
+
+  .rules-panel ul { padding-left: 16px; }
+
+  /* ===== COMBAT RESULT FLASH ===== */
+  .combat-flash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--card-bg);
+    border: 4px solid var(--node-glow);
+    padding: 22px 36px;
+    z-index: 300;
+    text-align: center;
+    animation: flashIn 0.2s ease, flashOut 0.3s ease 2.0s forwards;
+    pointer-events: none;
+    box-shadow: 0 0 40px rgba(241,196,15,0.3);
+    min-width: 320px;
+  }
+
+  .combat-flash .combat-side {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 4px 0;
+  }
+
+  .combat-flash .combat-label {
+    font-family: 'Bangers', cursive;
+    font-size: 16px;
+    letter-spacing: 2px;
+    color: #888;
+    min-width: 56px;
+    text-align: left;
+  }
+
+  .combat-flash .roll-line {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    font-size: 19px;
+    letter-spacing: 0.5px;
+    color: var(--card-text);
+    text-align: right;
+    flex: 1;
+  }
+  .combat-flash .roll-line b {
+    font-family: 'Bangers', cursive;
+    font-size: 24px;
+    color: var(--node-glow);
+    margin-left: 4px;
+  }
+
+  .combat-flash .result-line {
+    font-family: 'Bangers', cursive;
+    font-size: 26px;
+    letter-spacing: 2px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 2px solid #2a2a3e;
+  }
+
+  .combat-flash .win-line { color: var(--commune); }
+  .combat-flash .lose-line { color: var(--syndicate); }
+
+  @keyframes flashIn {
+    from { opacity: 0; transform: translate(-50%,-50%) scale(0.7); }
+    to   { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  }
+  @keyframes flashOut {
+    to { opacity: 0; transform: translate(-50%,-60%) scale(0.9); }
+  }
+
+  /* ===== SEAT CONFIG (setup) ===== */
+  .seat-toggle { display:flex; gap:8px; margin-bottom:10px; }
+  .seat-opt {
+    flex:1; text-align:center; padding:8px;
+    border:3px solid #444; cursor:pointer;
+    font-family:'Bangers',cursive; letter-spacing:1px;
+    background:#0d1117; color:var(--card-text); transition:all .15s;
+  }
+  .seat-opt:hover { border-color:var(--node-glow); }
+  .seat-opt.selected { background:var(--node-glow); color:var(--ink); border-color:var(--node-glow); }
+
+  /* ===== HAND-OFF (hot-seat) ===== */
+  #handoff-overlay {
+    display:none; position:fixed; inset:0;
+    background:#0a0a0a; z-index:250;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  #handoff-overlay.show { display:flex; }
+  .handoff-panel { text-align:center; padding:30px; }
+  .handoff-pass {
+    font-family:'Permanent Marker',cursive; font-size:18px;
+    color:#888; letter-spacing:2px; margin-bottom:8px;
+  }
+  .handoff-name {
+    font-family:'Bangers',cursive; font-size:clamp(44px,10vw,88px);
+    color:var(--node-glow); letter-spacing:4px; line-height:1;
+    text-shadow:3px 3px 0 var(--syndicate);
+  }
+  .handoff-faction {
+    font-family:'Bangers',cursive; font-size:26px;
+    letter-spacing:3px; margin:8px 0 26px; color:#f0e6d3;
+  }
+  .handoff-hint { font-size:13px; color:#777; margin-top:14px; }
+
+  @media (max-width: 640px) {
+    #game-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto auto; }
+    #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 180px; }
+    .hex { width: 72px; height: 80px; }
+    .hex-row.offset { margin-left: 39px; }
+    .hex-row { margin-top: -10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TITLE -->
+<div id="title-screen" class="screen active">
+  <div class="title-panel">
+    <h1>FRACTURE</h1>
+    <p class="subtitle">"The grid is broken. Everyone wants to fix it."</p>
+  </div>
+  <div class="faction-preview">
+    <div class="faction-badge">⚙️ THE GRID</div>
+    <div class="faction-badge">💰 SYNDICATE</div>
+    <div class="faction-badge">🌿 COMMUNE</div>
+    <div class="faction-badge">👁️ THE GHOST</div>
+  </div>
+  <p class="title-blurb">
+    1–4 Players · Ages 13+ · Control 3 of 5 Core Nodes to win.<br>
+    Dominate. Negotiate. Betray. Survive.
+  </p>
+  <button class="btn btn-primary" onclick="showSetup()">⚡ NEW GAME</button>
+</div>
+
+<!-- SETUP -->
+<div id="setup-screen" class="screen">
+  <div class="panel-header">CONFIGURE PLAYERS</div>
+  <p style="max-width:620px; text-align:center; font-size:13px; font-weight:700; color:var(--ink); background:var(--card-bg); color:var(--card-text); padding:10px 14px; border:3px solid var(--ink); margin-bottom:18px; line-height:1.5;">
+    All 4 factions are always in play. Set each to a <strong>HUMAN</strong> (pass-and-play on this device) or <strong>AI</strong>. 1–4 humans; AI fills the rest.
+  </p>
+  <div class="setup-grid" id="setup-grid"></div>
+  <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+    <button class="btn btn-secondary" onclick="showTitle()">← BACK</button>
+    <button class="btn btn-primary" id="start-btn" onclick="startGame()" disabled>DEPLOY! →</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="game-screen" class="screen">
+  <div class="game-header">
+    <span class="game-title-small">FRACTURE</span>
+    <span class="phase-tag" id="phase-label">ROUND 1</span>
+    <span class="turn-indicator" id="turn-label">YOUR TURN</span>
+  </div>
+  <div id="map-area">
+    <div id="hex-grid"></div>
+  </div>
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <h4>⚔️ FACTIONS</h4>
+      <div id="faction-status"></div>
+    </div>
+    <div class="sidebar-section">
+      <h4>🔌 CORE NODES</h4>
+      <div id="node-list"></div>
+    </div>
+    <div class="sidebar-section">
+      <h4>🤝 DIPLOMACY</h4>
+      <div id="diplomacy-list"></div>
+    </div>
+    <div class="sidebar-section">
+      <h4>🎒 RESOURCES</h4>
+      <div id="resources-display" style="display:flex; flex-wrap:wrap;"></div>
+    </div>
+    <div class="sidebar-section" style="flex:1;">
+      <h4>📋 EVENT LOG</h4>
+      <div id="event-log"></div>
+    </div>
+  </div>
+  <div id="action-panel">
+    <button class="action-btn" id="btn-move"      onclick="setAction('move')">🚶 MOVE</button>
+    <button class="action-btn" id="btn-attack"    onclick="setAction('attack')">⚔️ ATTACK</button>
+    <button class="action-btn" id="btn-reinforce" onclick="setAction('reinforce')">🛡️ REINFORCE</button>
+    <button class="action-btn" id="btn-pact"      onclick="setAction('pact')">🤝 PACT</button>
+    <button class="action-btn" id="btn-sabotage"  onclick="setAction('sabotage')" style="display:none">👁️ SABOTAGE</button>
+    <button class="action-btn" id="btn-bribe"     onclick="setAction('bribe')"    style="display:none">💰 BRIBE</button>
+    <button class="action-btn" id="btn-rally"     onclick="setAction('rally')"    style="display:none">🌿 RALLY</button>
+    <div class="action-log" id="action-log">Select an action, then click a tile.</div>
+    <button class="end-turn-btn" onclick="endTurn()">END TURN →</button>
+  </div>
+</div>
+
+<!-- WIN -->
+<div id="win-screen" class="screen">
+  <div class="win-panel">
+    <div class="win-title" id="win-title">VICTORY!</div>
+    <div class="win-subtitle" id="win-subtitle">THE GRID RISES</div>
+    <p class="win-detail" id="win-detail"></p>
+    <button class="btn btn-primary" onclick="showTitle()">🔁 PLAY AGAIN</button>
+  </div>
+</div>
+
+<!-- EVENT OVERLAY -->
+<div id="event-overlay">
+  <div class="event-card">
+    <div class="event-card-type" id="event-type">CHAOS EVENT</div>
+    <div class="event-card-title" id="event-title">BLACKOUT</div>
+    <div class="event-card-body" id="event-body">All Power Node tiles lose 1 troop.</div>
+    <div id="event-choices" style="display:none; flex-direction:column; gap:8px; margin-top:16px;"></div>
+    <div id="event-ok" style="margin-top:16px; text-align:right;">
+      <button class="btn btn-secondary" style="font-size:16px; padding:8px 20px;" onclick="dismissEvent()">GOT IT →</button>
+    </div>
+  </div>
+</div>
+
+<!-- RULES -->
+<div id="rules-overlay">
+  <div class="rules-panel">
+    <h2>📖 HOW TO PLAY</h2>
+    <h3>🎯 OBJECTIVE</h3>
+    <p>Control 3 of 5 Core Nodes (★ tiles) to win — or eliminate all rival factions.</p>
+    <h3>🗺️ THE MAP</h3>
+    <p>Nexus is a 25-tile hex grid. Node tiles are marked ★. Controlling a Node earns +1 resource per round.</p>
+    <h3>🔄 TURN STRUCTURE</h3>
+    <ul>
+      <li><strong>EVENT:</strong> A chaos card fires — affects ALL factions equally (AI and human)</li>
+      <li><strong>INCOME:</strong> Earn 2 base + 1 per Node you control</li>
+      <li><strong>2 ACTIONS:</strong> Move, Attack, Reinforce, or Special Ability</li>
+    </ul>
+    <h3>⚔️ COMBAT</h3>
+    <p>Click ATTACK → your tile → adjacent enemy tile. Both roll a d6, then add modifiers. Attacker wins ties. Loser drops 1 troop; defender at 0 → captured.</p>
+    <p style="margin-top:6px"><strong>Modifiers stack on the roll:</strong></p>
+    <ul>
+      <li><strong>🪖 Force:</strong> +1 per 3 troops on the stack (both sides). Big armies hit harder.</li>
+      <li><strong>🛡️ Dug in:</strong> +1 per round a defender holds a tile with 2+ troops, max +3. Taking any casualty resets it. A veteran garrison can repel a larger green force.</li>
+      <li><strong>⚡ Blitz:</strong> +1 per successful attack you've already made this turn (max +2). Commit both actions to a push for momentum.</li>
+    </ul>
+    <p style="margin-top:6px;font-size:12px;color:#999;">The shields on a hex show how dug-in it is. Fresh captures start at 0.</p>
+    <h3>🛡️ REINFORCE</h3>
+    <p>Costs 2 resources → +2 troops on your tile. Grid faction costs only 1.</p>
+    <h3>🚶 MOVE</h3>
+    <p>Select your tile (2+ troops) → click adjacent empty or friendly tile. Moves 1 troop.</p>
+    <h3>🎭 FACTIONS — ABILITY + PERK</h3>
+    <ul>
+      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less AND adds +3 troops (not +2)</li>
+      <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (3 res) steals 1 troop from an adjacent enemy</li>
+      <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (2 res) buffs a tile + adjacent friendlies</li>
+      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (2 res) removes 1 troop from any enemy tile</li>
+    </ul>
+    <h3>🔌 NODE BONUSES</h3>
+    <p>Each Core Node grants its controller a passive — so <em>which</em> Nodes you hold matters, not just how many:</p>
+    <ul>
+      <li><strong>⚡ POWER:</strong> Reinforce costs 1 less</li>
+      <li><strong>💧 WATER:</strong> +1 resource income per round</li>
+      <li><strong>🚇 TRANSIT:</strong> MOVE relocates 2 troops at once</li>
+      <li><strong>📡 COMMS:</strong> +1 to all your attack rolls</li>
+      <li><strong>🖧 DATA:</strong> +1 to all your defense rolls</li>
+    </ul>
+    <h3>🤝 DIPLOMACY</h3>
+    <ul>
+      <li><strong>PACT:</strong> Propose a non-aggression pact to a rival — free, costs no action. Neither side may attack the other while it holds. Pacts lapse after 4 rounds.</li>
+      <li><strong>BETRAYAL:</strong> Break a pact to strike and the victim gets <strong>+2</strong> in every fight against you for 2 rounds (a grudge). The AI honors pacts too — but may betray <em>you</em> to seize a Node.</li>
+      <li><strong>COALITION:</strong> Whoever holds 2+ Nodes is the threat — everyone else gets <strong>+1</strong> attacking them. No runaway snowball to victory.</li>
+    </ul>
+    <h3>🃏 CHOICE EVENTS</h3>
+    <p>Some events hand every faction a decision (coin vs. steel, overload vs. conserve). You pick from buttons; the AI picks for itself.</p>
+    <h3>🧬 PASSIVE TRAITS</h3>
+    <ul>
+      <li><strong>IRON WILL:</strong> +1 when defending</li>
+      <li><strong>SWIFT STRIKE:</strong> Can move through to non-adjacent tiles</li>
+      <li><strong>HOARDER:</strong> +1 bonus resource per Node</li>
+      <li><strong>GHOST STEP:</strong> Move through occupied tiles</li>
+      <li><strong>TACTICIAN:</strong> Roll 2 dice attack, keep highest</li>
+      <li><strong>FORTIFY:</strong> Enemies need +2 to beat your defense roll</li>
+    </ul>
+    <div style="text-align:right; margin-top:16px;">
+      <button class="btn btn-secondary" style="font-size:16px; padding:8px 20px;" onclick="closeRules()">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- HAND-OFF (hot-seat: pass the device between human players) -->
+<div id="handoff-overlay">
+  <div class="handoff-panel">
+    <div class="handoff-pass">PASS THE DEVICE TO</div>
+    <div class="handoff-name" id="handoff-name">PLAYER</div>
+    <div class="handoff-faction" id="handoff-faction">⚙️ FACTION</div>
+    <button class="btn btn-primary" id="handoff-btn">I'M READY →</button>
+    <div class="handoff-hint">Don't peek — only the named player should tap continue.</div>
+  </div>
+</div>
+
+<button class="rules-btn" id="rules-btn" onclick="openRules()" style="display:none">?</button>
+
+<script>
+// Global error catcher - surfaces silent JS errors in action log
+window.onerror = function(msg, src, line) {
+  const log = document.getElementById('action-log');
+  if (log) log.textContent = '⚠️ JS ERROR: ' + msg + ' (line ' + line + ')';
+  console.error(msg, src, line);
+  return false;
+};
+
+// ============================================================
+// GAME DATA
+// ============================================================
+const RES_CAP = 14;  // resource stockpile ceiling
+
+const FACTIONS = {
+  grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'reinforce', perk:'Industrial: reinforce −1 cost & +3 troops' },
+  syndicate: { name:'SYNDICATE',  icon:'💰',  color:'#e74c3c', ability:'bribe',     perk:'Cartel: +1 resource income each round'   },
+  commune:   { name:'COMMUNE',    icon:'🌿',  color:'#2ecc71', ability:'rally',     perk:'Grassroots: +1 troop grows each round'   },
+  ghost:     { name:'THE GHOST',  icon:'👁️', color:'#9b59b6', ability:'sabotage',  perk:'Phantom: attacks ignore entrenchment'    },
+};
+
+const TRAITS = [
+  { id:'iron',       name:'IRON WILL',    desc:'+1 troop when defending'             },
+  { id:'swift',      name:'SWIFT STRIKE', desc:'Move up to 2 tiles per turn'         },
+  { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
+  { id:'ghost_step', name:'GHOST STEP',   desc:'Move through occupied tiles'         },
+  { id:'tactician',  name:'TACTICIAN',    desc:'Roll 2 dice attack, keep highest'    },
+  { id:'fortify',    name:'FORTIFY',      desc:'Enemies need +2 to beat your defense'},
+];
+
+const EVENTS = [
+  { type:'CHAOS', title:'BLACKOUT',             body:'All Power Node tiles lose 1 troop (min 1).',            apply: applyBlackout    },
+  { type:'LUCK',  title:'SUPPLY DROP',          body:'All factions gain +2 resources. Manna from Nexus.',     apply: applySupplyDrop  },
+  { type:'CHAOS', title:'RIOT!',                body:'A random district falls to the weakest faction.',       apply: applyRiot        },
+  { type:'CHAOS', title:'SIGNAL JAM',           body:'Communications jammed. No attacks this round.',        apply: applySignalJam   },
+  { type:'LUCK',  title:'INSURGENCY',           body:'The weakest faction gains +2 troops on their largest tile.',  apply: applyInsurgency },
+  { type:'CHAOS', title:'INFRASTRUCTURE DECAY', body:'A random Node loses 1 troop. The grid crumbles.',      apply: applyDecay       },
+  { type:'LUCK',  title:'NEXUS CACHE',          body:'An unclaimed tile gains 2 ruins troops. Take it if you dare.', apply: applyCache },
+  // ---- CHOICE EVENTS: every faction (you + AI) decides for itself ----
+  { type:'CHOICE', title:"SMUGGLER'S MARKET",
+    body:'A black-market caravan rolls through Nexus. Coin or steel?',
+    choices:[
+      { label:'💰 TAKE COIN  (+4 resources)',  resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.min(f.resources+4,RES_CAP); } },
+      { label:'🪖 TAKE STEEL (+3 troops on your largest tile)', resolve:(fk)=>{ const t=tilesOf(fk).sort((a,b)=>b.troops-a.troops)[0]; if(t) t.troops+=3; } },
+    ],
+    aiChoose:(fk)=> aiTroopHunger(fk) ? 1 : 0 },
+  { type:'CHOICE', title:'POWER SURGE',
+    body:'Raw current floods the grid — harness it or cash out.',
+    choices:[
+      { label:'⚡ OVERLOAD (+1 troop per Node you hold, −2 res)', resolve:(fk)=>{ const f=G.factions[fk]; nodesOf(fk).forEach(t=>t.troops++); f.resources=Math.max(0,f.resources-2); } },
+      { label:'🔋 CONSERVE (+3 resources)', resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.min(f.resources+3,RES_CAP); } },
+    ],
+    aiChoose:(fk)=> countNodes(fk)>=1 ? 0 : 1 },
+];
+
+const NODE_TILES = [
+  { id:'node_power',   name:'⚡ POWER',   short:'⚡PWR', isNode:true },
+  { id:'node_water',   name:'💧 WATER',   short:'💧H2O', isNode:true },
+  { id:'node_transit', name:'🚇 TRANSIT', short:'🚇TRN', isNode:true },
+  { id:'node_comms',   name:'📡 COMMS',   short:'📡COM', isNode:true },
+  { id:'node_data',    name:'🖧 DATA',    short:'🖧DAT', isNode:true },
+];
+
+// Each Core Node grants its controller a passive bonus — so WHICH nodes you hold matters.
+const NODE_BONUSES = {
+  node_power:   'Reinforce −1 cost',
+  node_water:   '+1 income / round',
+  node_transit: 'Move 2 troops',
+  node_comms:   '+1 attack rolls',
+  node_data:    '+1 defense rolls',
+};
+
+const DISTRICT_NAMES = ['ASHFIELD','LOWGATE','COPPERWAY','IRONSIDE','DUSKHOLM',
+  'REDMERE','VAULTYARD','CINDERBLOCK','FENWICK','QUARRY ROW',
+  'STEELGATE','DOCKSIDE','BURNHILL','NORTHPASS','SOUTHWICK',
+  'EMBER LANE','COLDWATER','GRAVEMOOR','EASTGATE','WESTEND'];
+
+// ============================================================
+// STATE
+// ============================================================
+let G = {};
+let selectedTile   = null;
+let currentAction  = null;
+let signalJamActive = false;
+let pendingEvent   = null;
+let gameOver       = false;
+let blitzCount     = 0;  // successful attacks by current actor this turn
+let mySeats        = [];  // faction keys THIS device controls (hot-seat: all humans; online: your claimed seat)
+
+// ---- Networking state (all inert while offline; online layer flips these) ----
+let online        = false;   // true once in an online room
+let isDriver       = true;    // may THIS client advance the engine (run AI/events)? always true offline
+let myTurnActive   = false;   // is it currently a local human's turn we've begun?
+let applyingRemote = false;   // suppress pushes while loading a remote snapshot
+let roomCode       = null;
+let db             = null;    // Firebase Realtime Database ref (set by online layer)
+
+// Push the full game state to the room (no-op offline). Defined fully by the online layer;
+// stubbed here so the engine can call it unconditionally.
+function syncPush() { if (!online || applyingRemote || !db || !roomCode) return; netPushState(); }
+function netPushState() {}   // overridden when the online layer loads
+
+// Whose turn is it, and may the local player act right now?
+function activeFk()  { return G.turnOrder[G.currentTurnIdx]; }
+function canActNow() { const a=activeFk(); return !gameOver && a===G.playerFaction && mySeats.includes(a) && !G.factions[a].isAI; }
+
+// ============================================================
+// HELPERS — tiles, nodes, economy, diplomacy
+// ============================================================
+function tilesOf(fk)  { return Object.values(G.tiles).filter(t=>t.owner===fk); }
+function nodesOf(fk)  { return tilesOf(fk).filter(t=>t.isNode); }
+function countNodes(fk){ return nodesOf(fk).length; }
+function controlsNode(fk, nodeId){ return !!fk && Object.values(G.tiles).some(t=>t.nodeId===nodeId && t.owner===fk); }
+
+// Economy (faction perks + node bonuses fold in here)
+function reinforceCost(fk){
+  let c = 2;
+  if (G.factions[fk].ability==='reinforce') c -= 1;  // ⚙️ GRID industrial
+  if (controlsNode(fk,'node_power'))         c -= 1;  // ⚡ POWER node
+  return Math.max(1, c);
+}
+function reinforceAmount(fk){ return G.factions[fk].ability==='reinforce' ? 3 : 2; }  // ⚙️ GRID
+function moveTroopCount(fk){ return controlsNode(fk,'node_transit') ? 2 : 1; }          // 🚇 TRANSIT
+
+// AI helper for choice events: 1 => short on bodies, prefers troops over cash
+function aiTroopHunger(fk){
+  const mine = tilesOf(fk);
+  if (!mine.length) return 0;
+  const troops = mine.reduce((s,t)=>s+t.troops,0);
+  return (troops / mine.length) < 2.5 ? 1 : 0;
+}
+
+// Diplomacy — pacts (mutual) and grudges (one-way, post-betrayal)
+function pairKey(a,b){ return [a,b].sort().join('|'); }
+function hasPact(a,b){ return !!(a && b && a!==b && G.pacts && G.pacts[pairKey(a,b)]); }
+function formPact(a,b){ G.pacts[pairKey(a,b)] = G.round; }
+function breakPactBetrayal(betrayer, victim){
+  delete G.pacts[pairKey(betrayer,victim)];
+  G.grudges[victim+'>'+betrayer] = G.round + 2;  // victim seethes for 2 rounds
+  addLog(`🗡️ ${G.factions[betrayer].name} BETRAYED ${G.factions[victim].name}!`);
+}
+function grudgeAtkBonus(atk, def){ return (G.grudges[atk+'>'+def] >= G.round) ? 2 : 0; }
+function grudgeDefBonus(atk, def){ return (G.grudges[def+'>'+atk] >= G.round) ? 2 : 0; }
+// Coalition: everyone piles on whoever already holds 2+ Nodes (anti-snowball)
+function coalitionAtkBonus(defFk, atkFk){ return (defFk!==atkFk && countNodes(defFk)>=2) ? 1 : 0; }
+
+// Does an AI accept a non-aggression pact proposal?
+function aiConsiderPact(aiFk, propFk){
+  const alive = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
+  const leadNodes = Math.max(...alive.map(countNodes));
+  const aiNodes = countNodes(aiFk), propNodes = countNodes(propFk);
+  // The frontrunner presses its advantage and refuses to be tied down.
+  if (aiNodes===leadNodes && aiNodes>=2) return false;
+  if (propNodes > aiNodes) return true;                       // buy time vs a stronger rival
+  if (tilesOf(propFk).length >= tilesOf(aiFk).length) return true;
+  return Math.random() < 0.5;                                  // weaker suitor: a coin flip
+}
+
+// ============================================================
+// NAV
+// ============================================================
+function showTitle() {
+  switchScreen('title-screen');
+  document.getElementById('rules-btn').style.display = 'none';
+}
+
+function showSetup() {
+  switchScreen('setup-screen');
+  G = {};
+  renderSetup();
+}
+
+function switchScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('active');
+    s.style.display = '';
+  });
+  document.getElementById(id).classList.add('active');
+}
+
+// ============================================================
+// SETUP — one card per faction; each is HUMAN (pass-and-play) or AI
+// ============================================================
+function defaultSetup() {
+  const seats = {};
+  Object.keys(FACTIONS).forEach((k, i) => {
+    seats[k] = (i === 0)
+      ? { type:'human', name:'', trait:'' }   // first faction starts as the lone human
+      : { type:'ai',    name:'', trait:'' };
+  });
+  return { seats };
+}
+
+function renderSetup() {
+  if (!G.setup) G.setup = defaultSetup();
+  const grid = document.getElementById('setup-grid');
+  grid.innerHTML = Object.entries(FACTIONS).map(([k, f]) => {
+    const s = G.setup.seats[k];
+    const human = s.type === 'human';
+    return `
+      <div class="setup-card" style="border-color:${f.color}">
+        <h3 style="color:${f.color}; border-color:${f.color}">${f.icon} ${f.name}</h3>
+        <div class="seat-toggle">
+          <div class="seat-opt ${human?'selected':''}"  onclick="setSeatType('${k}','human')">🎮 HUMAN</div>
+          <div class="seat-opt ${!human?'selected':''}" onclick="setSeatType('${k}','ai')">🤖 AI</div>
+        </div>
+        <div style="display:${human?'block':'none'}">
+          <label>CALLSIGN</label>
+          <input class="input-field" maxlength="16" placeholder="Player name..."
+                 value="${(s.name||'').replace(/"/g,'&quot;')}"
+                 oninput="setSeatName('${k}', this.value)">
+          <label>PASSIVE TRAIT</label>
+          <div class="trait-select">
+            ${TRAITS.map(t=>`
+              <div class="trait-option ${s.trait===t.id?'selected':''}" onclick="setSeatTrait('${k}','${t.id}')">
+                <strong>${t.name}:</strong> ${t.desc}
+              </div>`).join('')}
+          </div>
+        </div>
+        <div style="display:${human?'none':'block'}; font-size:12px; color:#888; margin-top:8px; line-height:1.5;">
+          🤖 Computer-controlled · random trait · same event deck & dice as everyone. No handicaps.
+        </div>
+      </div>`;
+  }).join('');
+  checkReady();
+}
+
+function setSeatType(fk, type) {
+  G.setup.seats[fk].type = type;
+  renderSetup();           // re-render to reveal/hide the human fields
+}
+function setSeatName(fk, val) {
+  G.setup.seats[fk].name = val;
+  checkReady();            // no re-render — keep input focus while typing
+}
+function setSeatTrait(fk, id) {
+  G.setup.seats[fk].trait = id;
+  renderSetup();
+}
+
+function checkReady() {
+  const humans = Object.values(G.setup.seats).filter(s => s.type === 'human');
+  const ok = humans.length >= 1 && humans.every(s => s.name.trim() && s.trait);
+  document.getElementById('start-btn').disabled = !ok;
+}
+
+// ============================================================
+// GAME INIT
+// ============================================================
+function startGame() {
+  const seats = G.setup.seats;
+  const order = Object.keys(FACTIONS);  // fixed turn order; START_CORNERS are randomized for fairness
+
+  const factions = {};
+  order.forEach(k => {
+    const s = seats[k];
+    factions[k] = (s.type === 'human')
+      ? mkFaction(s.name.trim() || FACTIONS[k].name, k, false, s.trait || randTrait())
+      : mkFaction('NEXUS-'+k.slice(0,3).toUpperCase(), k, true, randTrait());
+  });
+
+  G = {
+    round: 1,
+    signalJam: false,
+    currentTurnIdx: 0,
+    actionsUsed: 0,
+    factions,
+    turnOrder: order.slice(),
+    humans: order.filter(k => seats[k].type === 'human'),
+    tiles: {},
+    log: [],
+    pacts: {},     // pairKey -> round formed
+    grudges: {},   // "victim>betrayer" -> round it expires after
+    playerFaction: order[0],  // local "acting/viewing" faction; repointed each human turn
+  };
+  gameOver = false;
+  G.tiles = buildMap();
+
+  // Hot-seat: this one device controls every human seat. (Online will narrow this.)
+  mySeats = G.humans.slice();
+  G.playerFaction = G.humans[0] || order[0];
+
+  switchScreen('game-screen');
+  document.getElementById('rules-btn').style.display = 'flex';
+  renderMap();
+  renderSidebar();
+  startRound();
+}
+
+function mkFaction(name, key, isAI, trait) {
+  return { name, icon: FACTIONS[key].icon, color: FACTIONS[key].color,
+           ability: FACTIONS[key].ability, isAI, trait, resources: 4, eliminated: false };
+}
+
+function randTrait() { return TRAITS[Math.floor(Math.random()*TRAITS.length)].id; }
+
+// ============================================================
+// MAP BUILD
+// ============================================================
+// Fixed, symmetric node positions on the 5x5 grid: 4 quadrants + dead center.
+// This guarantees every faction's corner is equidistant from the central node
+// and has one quadrant node nearby — no random spawn advantage.
+const NODE_POSITIONS = {
+  node_power:   { row: 1, col: 1 },  // NW quadrant
+  node_water:   { row: 1, col: 3 },  // NE quadrant
+  node_transit: { row: 2, col: 2 },  // dead center (contested by all)
+  node_comms:   { row: 3, col: 1 },  // SW quadrant
+  node_data:    { row: 3, col: 3 },  // SE quadrant
+};
+
+// Each faction starts in a corner with 2 adjacent tiles, mirrored across the board.
+// Corners are symmetric: equal distance to center, each near one quadrant node.
+const START_CORNERS = [
+  { tiles: [{row:0,col:0},{row:0,col:1}], label:'NW' },  // top-left
+  { tiles: [{row:0,col:4},{row:1,col:4}], label:'NE' },  // top-right
+  { tiles: [{row:4,col:0},{row:3,col:0}], label:'SW' },  // bottom-left
+  { tiles: [{row:4,col:4},{row:4,col:3}], label:'SE' },  // bottom-right
+];
+
+function buildMap() {
+  const tiles = {};
+
+  // 1. Lay down all 25 cells as neutral districts first.
+  //    Shuffle district NAMES only (cosmetic), positions stay fixed.
+  const districtNames = shuffle([...DISTRICT_NAMES]);
+  let dn = 0;
+  for (let r=0; r<5; r++) for (let c=0; c<5; c++) {
+    const id = `tile_${r}_${c}`;
+    const name = districtNames[dn++ % districtNames.length];
+    tiles[id] = { id, name, short:name.slice(0,6), isNode:false,
+                  row:r, col:c, owner:null, troops:0, heldRounds:0 };
+  }
+
+  // 2. Stamp the 5 nodes onto their fixed symmetric positions.
+  for (const [nodeId, pos] of Object.entries(NODE_POSITIONS)) {
+    const def = NODE_TILES.find(n => n.id === nodeId);
+    const id = `tile_${pos.row}_${pos.col}`;
+    tiles[id] = { ...def, id, nodeId, row:pos.row, col:pos.col, owner:null, troops:0, heldRounds:0 };
+  }
+
+  // 3. Assign each faction a symmetric corner. Player order is fixed in turnOrder,
+  //    so randomize WHICH corner each faction gets (fair: all corners equivalent).
+  const corners = shuffle([...START_CORNERS]);
+  const factionKeys = Object.keys(G.factions);
+  factionKeys.forEach((fk, i) => {
+    const corner = corners[i];
+    corner.tiles.forEach(pos => {
+      const id = `tile_${pos.row}_${pos.col}`;
+      // A start tile should never overwrite a node; corners are chosen to avoid them.
+      if (tiles[id] && !tiles[id].isNode) {
+        tiles[id].owner = fk;
+        tiles[id].troops = 2;
+      }
+    });
+  });
+
+  return tiles;
+}
+
+function shuffle(a) {
+  for (let i=a.length-1; i>0; i--) {
+    const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function renderMap() {
+  const grid = document.getElementById('hex-grid');
+  grid.innerHTML = '';
+  const rows = [[],[],[],[],[]];
+  Object.values(G.tiles).forEach(t => rows[t.row].push(t));
+  rows.forEach(r => r.sort((a,b)=>a.col-b.col));
+
+  rows.forEach((row, ri) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'hex-row' + (ri%2===1?' offset':'');
+    row.forEach(tile => rowEl.appendChild(makeHex(tile)));
+    grid.appendChild(rowEl);
+  });
+}
+
+function makeHex(tile) {
+  const div = document.createElement('div');
+  div.className = 'hex';
+  div.id = 'hex-'+tile.id;
+  div.onclick = () => handleTileClick(tile.id);
+
+  const fillColor = tile.owner ? G.factions[tile.owner].color : '#2a2a4e';
+  const strokeW   = tile.isNode ? 3.5 : 2;
+  const strokeC   = tile.isNode ? '#f1c40f' : 'rgba(0,0,0,0.6)';
+
+  const entrench = Math.min(tile.heldRounds||0, 3);
+  const entrenchPips = entrench>0 && tile.owner
+    ? `<div class="hex-entrench" title="Dug in +${entrench}">${'🛡️'.repeat(entrench)}</div>` : '';
+
+  div.innerHTML = `
+    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
+        fill="${fillColor}" stroke="${strokeC}" stroke-width="${strokeW}"/>
+      ${entrench>0 && tile.owner ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
+        fill="none" stroke="#ffffff" stroke-width="${entrench}" opacity="0.35"/>` : ''}
+      ${tile.isNode ? `<polygon points="40,10 70,27 70,63 40,80 10,63 10,27"
+        fill="none" stroke="#f1c40f" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>` : ''}
+    </svg>
+    <div class="hex-label">${tile.isNode?'★\n':''}${tile.short}</div>
+    ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
+    ${entrenchPips}
+  `;
+
+  if (selectedTile === tile.id) div.classList.add('selected');
+  return div;
+}
+
+function refreshHex(id) {
+  const old = document.getElementById('hex-'+id);
+  if (!old) return;
+  const n = makeHex(G.tiles[id]);
+  if (selectedTile===id) n.classList.add('selected');
+  old.replaceWith(n);
+}
+
+function renderSidebar() {
+  // Factions
+  document.getElementById('faction-status').innerHTML =
+    Object.entries(G.factions).map(([k,f]) => {
+      const tiles = Object.values(G.tiles).filter(t=>t.owner===k).length;
+      const nodes = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
+      return `
+        <div class="faction-row" style="${f.eliminated?'opacity:0.35;':''}">
+          <div class="faction-dot" style="background:${f.color}"></div>
+          <div style="flex:1">
+            <div style="font-family:'Bangers'; font-size:13px; letter-spacing:1px; color:${f.color}">
+              ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${k===activeFk()?' ◄ TURN':''}
+            </div>
+            <div class="faction-row-sub">${tiles} tiles · ${nodes}★ nodes · ${f.resources} res ${f.eliminated?'· DEAD':''}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+  // Nodes
+  document.getElementById('node-list').innerHTML = NODE_TILES.map(n => {
+    const t = Object.values(G.tiles).find(t=>t.nodeId===n.id);
+    if (!t) return '';
+    const owner = t.owner ? G.factions[t.owner] : null;
+    return `
+      <div class="node-item" style="border-left:4px solid ${owner?owner.color:'#333'}; flex-direction:column; align-items:stretch; gap:2px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>${n.name}</span>
+          <span style="color:${owner?owner.color:'#555'}; font-weight:900; font-size:10px;">
+            ${owner?owner.name:'—'}
+          </span>
+        </div>
+        <span style="font-size:9px; color:#888; letter-spacing:0.5px;">${NODE_BONUSES[n.id]}</span>
+      </div>`;
+  }).join('');
+
+  // Resources
+  const f = G.factions[G.playerFaction];
+  document.getElementById('resources-display').innerHTML = `
+    <div class="res-chip">🔋 ${f.resources} RES</div>
+    <div class="res-chip">🏠 ${tilesOf(G.playerFaction).length} TILES</div>
+    <div class="res-chip">⭐ ${countNodes(G.playerFaction)}/3 TO WIN</div>
+    <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}</div>
+  `;
+
+  // Diplomacy — active pacts and lingering grudges
+  const dipEl = document.getElementById('diplomacy-list');
+  if (dipEl) {
+    const rows = [];
+    for (const k of Object.keys(G.pacts||{})) {
+      const [a,b] = k.split('|');
+      if (G.factions[a] && G.factions[b]) rows.push(`🤝 ${G.factions[a].icon} ${G.factions[a].name} ↔ ${G.factions[b].icon} ${G.factions[b].name}`);
+    }
+    for (const k of Object.keys(G.grudges||{})) {
+      if (G.grudges[k] < G.round) continue;
+      const [v,br] = k.split('>');
+      if (G.factions[v] && G.factions[br]) rows.push(`🗡️ ${G.factions[v].icon} ${G.factions[v].name} grudge → ${G.factions[br].icon} ${G.factions[br].name}`);
+    }
+    dipEl.innerHTML = rows.length
+      ? rows.map(r=>`<div class="faction-row-sub" style="padding:2px 0">${r}</div>`).join('')
+      : `<div class="faction-row-sub" style="opacity:0.6">No active pacts or grudges.</div>`;
+  }
+}
+
+function addLog(msg) {
+  G.log.unshift(msg);
+  if (G.log.length > 10) G.log.pop();
+  document.getElementById('event-log').innerHTML =
+    G.log.map((m,i) => `<div style="opacity:${Math.max(0.4,1-i*0.1)};margin-bottom:2px;">${m}</div>`).join('');
+}
+
+function setActionLog(msg) {
+  document.getElementById('action-log').textContent = msg;
+}
+
+// ============================================================
+// TURN ENGINE
+// ============================================================
+function startRound() {
+  G.currentTurnIdx = 0;
+  signalJamActive = false;
+  // Entrenchment: tiles held with 2+ troops dig in deeper each round
+  Object.values(G.tiles).forEach(t => {
+    if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, 3);
+    else t.heldRounds = 0;
+  });
+  // Diplomacy upkeep: pacts lapse after 4 rounds, grudges cool off when their timer passes
+  for (const k of Object.keys(G.pacts))   { if (G.round - G.pacts[k] >= 4) { delete G.pacts[k]; addLog('📜 A non-aggression pact has lapsed'); } }
+  for (const k of Object.keys(G.grudges)) { if (G.grudges[k] < G.round) delete G.grudges[k]; }
+  document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
+
+  const ev = EVENTS[Math.floor(Math.random()*EVENTS.length)];
+  if (ev.choices) {
+    showChoiceEvent(ev, () => { renderMap(); renderSidebar(); doNextTurn(); });
+  } else {
+    ev.apply();
+    renderMap();
+    renderSidebar();
+    showEventCard(ev, () => doNextTurn());
+  }
+}
+
+function applyIncome(fk) {
+  const f = G.factions[fk];
+  const nodes = countNodes(fk);
+  let income = 2 + nodes * (f.trait==='hoard' ? 2 : 1);
+  if (controlsNode(fk,'node_water')) income += 1;   // 💧 WATER node
+  if (f.ability==='bribe')           income += 1;   // 💰 SYNDICATE cartel perk
+  f.resources = Math.min(f.resources + income, RES_CAP);
+  addLog(`${f.icon} ${f.name} earned +${income} res (${nodes} nodes)`);
+
+  // 🌿 COMMUNE grassroots perk: a troop organically grows on a frontline tile
+  if (f.ability==='rally') {
+    const mine = tilesOf(fk);
+    if (mine.length) {
+      const front = mine.filter(t => Object.values(G.tiles).some(e=>e.owner&&e.owner!==fk&&adjacent(t,e)));
+      const grow  = (front.length ? front : mine).sort((a,b)=>a.troops-b.troops)[0];
+      grow.troops++; refreshHex(grow.id);
+    }
+  }
+}
+
+function doNextTurn() {
+  if (gameOver) return;
+  if (!isDriver) return;   // online: only the engine-driver advances turns
+  while (G.currentTurnIdx < G.turnOrder.length && G.factions[G.turnOrder[G.currentTurnIdx]].eliminated)
+    G.currentTurnIdx++;
+
+  if (G.currentTurnIdx >= G.turnOrder.length) { endRound(); return; }
+
+  const fk = G.turnOrder[G.currentTurnIdx];
+  applyIncome(fk);
+  syncPush();              // broadcast income + whose turn (no-op offline)
+  beginTurnFor(fk);
+}
+
+// Route a turn to the AI, a local human, or (online) a remote human we just watch.
+function beginTurnFor(fk) {
+  const f = G.factions[fk];
+
+  if (f.isAI) {
+    if (!isDriver) { disablePlayerActions(); return; }   // only the driver runs the AI
+    const lbl = document.getElementById('turn-label');
+    lbl.textContent = `${f.icon} AI TURN`;
+    lbl.className = 'turn-indicator';
+    document.getElementById('phase-label').textContent = `ROUND ${G.round} · ${f.name}`;
+    setActionLog(`${f.name} is planning...`);
+    disablePlayerActions();
+    setTimeout(() => runAITurn(fk), online ? 700 : 900);
+    return;
+  }
+
+  // Online: a remote human's turn — show a read-only "waiting" board.
+  if (online && !mySeats.includes(fk)) {
+    myTurnActive = false; isDriver = false;
+    disablePlayerActions();
+    const lbl = document.getElementById('turn-label');
+    lbl.textContent = `⌛ ${f.name}`;
+    lbl.className = 'turn-indicator';
+    document.getElementById('phase-label').textContent = `ROUND ${G.round} · ${f.name}`;
+    setActionLog(`Waiting for ${f.name} to move…`);
+    renderMap(); renderSidebar();
+    return;
+  }
+
+  // A local human's turn (any human in hot-seat, or my own seat online).
+  G.playerFaction = fk;
+  G.actionsUsed = 0;
+  blitzCount = 0;
+  selectedTile = null; currentAction = null;
+  myTurnActive = true; isDriver = true;
+
+  const begin = () => {
+    const lbl = document.getElementById('turn-label');
+    lbl.textContent = `⚡ ${f.name}`;
+    lbl.className = 'turn-indicator your-turn';
+    document.getElementById('phase-label').textContent = `ROUND ${G.round} · ${f.name}`;
+    enablePlayerActions(fk);
+    renderMap(); renderSidebar();
+    setActionLog(`${f.name}: pick an action, then click a tile. 2 actions. Res: ${f.resources}`);
+  };
+
+  // Hot-seat with several humans on one device: gate behind a pass-the-device screen.
+  if (!online && G.humans.length > 1) { disablePlayerActions(); renderSidebar(); showHandoff(fk, begin); }
+  else begin();
+}
+
+// Pass-the-device screen between human turns (hot-seat)
+function showHandoff(fk, cb) {
+  const f = G.factions[fk];
+  document.getElementById('handoff-name').textContent = f.name;
+  document.getElementById('handoff-faction').innerHTML = `${f.icon} ${FACTIONS[fk].name}`;
+  const ov  = document.getElementById('handoff-overlay');
+  const btn = document.getElementById('handoff-btn');
+  btn.style.background = f.color;
+  btn.style.color = '#0a0a0a';
+  btn.onclick = () => { ov.classList.remove('show'); cb(); };
+  ov.classList.add('show');
+}
+
+function endTurn() {
+  if (online && !canActNow()) return;   // only the active local player may end the turn
+  selectedTile = null; currentAction = null;
+  clearHighlights();
+  myTurnActive = false;
+  G.currentTurnIdx++;
+  renderMap(); renderSidebar();
+  syncPush();                            // broadcast the finished board (no-op offline)
+  if (!checkWin()) setTimeout(doNextTurn, 200);
+}
+
+function endRound() {
+  G.round++;
+  if (G.round > 15) {
+    // Tiebreak: most nodes
+    let best=null, bestN=-1;
+    for (const [k,f] of Object.entries(G.factions)) {
+      if (f.eliminated) continue;
+      const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
+      if (n>bestN) { bestN=n; best=k; }
+    }
+    showWin(best,'TIMED OUT',`After 15 rounds, ${G.factions[best].name} held the most Nodes.`);
+    return;
+  }
+  startRound();
+}
+
+// ============================================================
+// PLAYER ACTIONS
+// ============================================================
+function enablePlayerActions(fk) {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact'].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled = false; el.classList.remove('active-action');
+  });
+  ['btn-sabotage','btn-bribe','btn-rally'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+    document.getElementById(id).disabled = false;
+  });
+  const ab = G.factions[fk].ability;
+  const abEl = document.getElementById('btn-'+ab);
+  if (abEl) abEl.style.display = '';
+  const etb = document.querySelector('.end-turn-btn');
+  if (etb) etb.disabled = false;
+}
+
+function disablePlayerActions() {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-sabotage','btn-bribe','btn-rally'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.classList.remove('active-action'); }
+  });
+  const etb = document.querySelector('.end-turn-btn');
+  if (etb) etb.disabled = true;
+}
+
+function setAction(action) {
+  currentAction = action;
+  selectedTile  = null;
+  clearHighlights();
+  renderMap();
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-sabotage','btn-bribe','btn-rally'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active-action');
+  });
+  document.getElementById('btn-'+action)?.classList.add('active-action');
+
+  const hints = {
+    move:      'MOVE: Click one of YOUR tiles (2+ troops), then an adjacent tile.',
+    attack:    'ATTACK: Click YOUR tile (2+ troops), then an adjacent ENEMY tile.',
+    reinforce: 'REINFORCE: Click YOUR tile to add troops (cost varies by faction/nodes).',
+    pact:      "PACT: Click a rival's tile to propose a non-aggression pact (free, no action).",
+    sabotage:  'SABOTAGE (2 res): Click any ENEMY tile to remove 1 troop.',
+    bribe:     'BRIBE (3 res): Click an enemy tile ADJACENT to your territory.',
+    rally:     'RALLY (2 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
+  };
+  setActionLog(hints[action] || 'Pick a tile.');
+}
+
+function handleTileClick(id) {
+  if (!canActNow()) return;   // only the faction whose turn it is, controlled locally, may act
+  const f    = G.factions[G.playerFaction];
+  const tile = G.tiles[id];
+
+  if (!currentAction) {
+    selectedTile = id;
+    renderMap();
+    const owner = tile.owner ? G.factions[tile.owner].name : 'Unclaimed';
+    setActionLog(`${tile.name} · Owner: ${owner} · Troops: ${tile.troops} · ${tile.isNode?'★ NODE':'District'}`);
+    return;
+  }
+
+  // ---- PACT (free diplomacy — costs no action) ----
+  if (currentAction === 'pact') {
+    currentAction = null;
+    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+    if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Click an ENEMY faction tile to propose a pact.'); return; }
+    const other = tile.owner;
+    if (hasPact(G.playerFaction, other)) { setActionLog(`You already have a pact with ${G.factions[other].name}.`); return; }
+    if (aiConsiderPact(other, G.playerFaction)) {
+      formPact(G.playerFaction, other);
+      addLog(`🤝 PACT: YOU ↔ ${G.factions[other].name}`);
+      setActionLog(`${G.factions[other].name} ACCEPTED your non-aggression pact!`);
+    } else {
+      addLog(`✋ ${G.factions[other].name} refused a pact`);
+      setActionLog(`${G.factions[other].name} REFUSED — they don't need you yet.`);
+    }
+    renderSidebar(); return;
+  }
+
+  if (G.actionsUsed >= 2) { setActionLog('No actions left — hit END TURN.'); return; }
+
+  // ---- REINFORCE ----
+  if (currentAction === 'reinforce') {
+    if (tile.owner !== G.playerFaction) { setActionLog('Can only reinforce YOUR tiles.'); return; }
+    const cost = reinforceCost(G.playerFaction);
+    const amt  = reinforceAmount(G.playerFaction);
+    if (f.resources < cost) { setActionLog(`Need ${cost} resources.`); return; }
+    f.resources -= cost; tile.troops += amt; G.actionsUsed++;
+    addLog(`You reinforced ${tile.name} (+${amt} troops)`);
+    setActionLog(`Reinforced! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    refreshHex(id); renderSidebar(); return;
+  }
+
+  // ---- MOVE ----
+  if (currentAction === 'move') {
+    if (!selectedTile || selectedTile===id) {
+      if (tile.owner===G.playerFaction && tile.troops>1) {
+        selectedTile = id;
+        renderMap();
+        document.getElementById('hex-'+id)?.classList.add('selected');
+        setActionLog(`Moving FROM ${tile.name}. Click an adjacent tile.`);
+      } else { setActionLog('Select YOUR tile with 2+ troops.'); }
+      return;
+    }
+    const src = G.tiles[selectedTile];
+    if (!adjacent(src,tile))           { setActionLog('Not adjacent! Try again.'); selectedTile=null; renderMap(); return; }
+    if (tile.owner && tile.owner!==G.playerFaction) { setActionLog('Occupied by enemy — use ATTACK instead.'); return; }
+    const moveN = Math.min(moveTroopCount(G.playerFaction), src.troops - 1);  // 🚇 TRANSIT moves 2
+    src.troops -= moveN;
+    if (src.troops <= 0) { src.owner = null; src.troops = 0; }
+    tile.owner = G.playerFaction; tile.troops += moveN;
+    G.actionsUsed++;
+    currentAction = null;
+    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+    addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${src.name} → ${tile.name}`);
+    setActionLog(`Moved! ${2-G.actionsUsed} action(s) left.`);
+    refreshHex(selectedTile); refreshHex(id);
+    selectedTile=null; renderSidebar(); return;
+  }
+
+  // ---- ATTACK ----
+  if (currentAction === 'attack') {
+    if (signalJamActive) { setActionLog('⚠️ SIGNAL JAM — attacks blocked this round!'); return; }
+    if (!selectedTile || selectedTile===id) {
+      if (tile.owner===G.playerFaction && tile.troops>1) {
+        selectedTile = id;
+        renderMap();
+        document.getElementById('hex-'+id)?.classList.add('selected');
+        setActionLog(`Attacking FROM ${tile.name}. Click an adjacent ENEMY tile.`);
+      } else { setActionLog('Select YOUR tile with 2+ troops to attack from.'); }
+      return;
+    }
+    const src = G.tiles[selectedTile];
+    if (!adjacent(src,tile))          { setActionLog('Not adjacent!'); selectedTile=null; renderMap(); return; }
+    if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
+    if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
+    if (hasPact(G.playerFaction, tile.owner)) {
+      if (!confirm(`You have a pact with ${G.factions[tile.owner].name}. Break it and attack? They'll hold a grudge (+2 vs you for 2 rounds).`)) {
+        setActionLog('Attack cancelled — pact held.'); return;
+      }
+      breakPactBetrayal(G.playerFaction, tile.owner);
+    }
+    resolveAttack(G.playerFaction, selectedTile, id, true);
+    G.actionsUsed++;
+    selectedTile=null; currentAction=null;
+    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+    renderMap(); renderSidebar(); checkWin(); return;
+  }
+
+  // ---- SABOTAGE ----
+  if (currentAction === 'sabotage') {
+    if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
+    if (f.resources < 2) { setActionLog('Sabotage costs 2 resources.'); return; }
+    if (hasPact(G.playerFaction, tile.owner)) {
+      if (!confirm(`Sabotaging ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Sabotage cancelled — pact held.'); return; }
+      breakPactBetrayal(G.playerFaction, tile.owner);
+    }
+    f.resources -= 2;
+    const sabPrev = tile.owner;
+    if (tile.troops>1) tile.troops--; else { tile.owner=null; tile.troops=0; }
+    if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
+      G.factions[sabPrev].eliminated = true;
+      addLog(`💀 ${G.factions[sabPrev].name} ELIMINATED!`);
+    }
+    G.actionsUsed++;
+    addLog(`👁️ You sabotaged ${tile.name}!`);
+    setActionLog(`Sabotage hit! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    refreshHex(id); renderSidebar(); checkWin(); return;
+  }
+
+  // ---- BRIBE ----
+  if (currentAction === 'bribe') {
+    if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile adjacent to your territory.'); return; }
+    if (f.resources < 3) { setActionLog('Bribe costs 3 resources.'); return; }
+    const myT = Object.values(G.tiles).filter(t=>t.owner===G.playerFaction);
+    if (!myT.some(mt=>adjacent(mt,tile))) { setActionLog('Must be adjacent to YOUR territory.'); return; }
+    if (hasPact(G.playerFaction, tile.owner)) {
+      if (!confirm(`Bribing ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Bribe cancelled — pact held.'); return; }
+      breakPactBetrayal(G.playerFaction, tile.owner);
+    }
+    f.resources -= 3;
+    const bribedPrev = tile.owner;
+    tile.troops--;
+    if (tile.troops<=0) {
+      tile.owner=G.playerFaction; tile.troops=1;
+      if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) {
+        G.factions[bribedPrev].eliminated = true;
+        addLog(`💀 ${G.factions[bribedPrev].name} ELIMINATED!`);
+      }
+    }
+    G.actionsUsed++;
+    addLog(`💰 You bribed ${tile.name}!`);
+    setActionLog(`Bribed! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    refreshHex(id); renderSidebar(); checkWin(); return;
+  }
+
+  // ---- RALLY ----
+  if (currentAction === 'rally') {
+    if (tile.owner !== G.playerFaction) { setActionLog('Rally on YOUR tiles only.'); return; }
+    if (f.resources < 2) { setActionLog('Rally costs 2 resources.'); return; }
+    f.resources -= 2;
+    tile.troops++;
+    const adj = Object.values(G.tiles).filter(t=>t.owner===G.playerFaction && adjacent(t,tile));
+    adj.forEach(t=>{ t.troops++; refreshHex(t.id); });
+    G.actionsUsed++;
+    addLog(`🌿 Rally! +1 to ${tile.name} + ${adj.length} adjacent tiles`);
+    setActionLog(`Rallied ${adj.length+1} tiles! ${2-G.actionsUsed} action(s) left.`);
+    refreshHex(id); renderSidebar(); return;
+  }
+}
+
+function clearHighlights() {
+  document.querySelectorAll('.hex.selected,.hex.valid-move,.hex.valid-attack')
+    .forEach(h=>h.classList.remove('selected','valid-move','valid-attack'));
+}
+
+// ============================================================
+// COMBAT
+// ============================================================
+function rollD6(advantaged) {
+  const r = () => Math.ceil(Math.random()*6);
+  return advantaged ? Math.max(r(),r()) : r();
+}
+
+function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
+  const src = G.tiles[srcId];
+  const tgt = G.tiles[tgtId];
+  const af  = G.factions[attackerFk];
+  const df  = G.factions[tgt.owner];
+
+  // --- Base dice ---
+  const attDie = rollD6(af.trait==='tactician');
+  const defDie = rollD6(false);
+
+  // --- Modifiers ---
+  // 1. Force ratio: every 3 troops on a stack = +1 (raw numbers matter)
+  const attForce = Math.floor(src.troops / 3);
+  const defForce = Math.floor(tgt.troops / 3);
+  // 2. Blitz: momentum from prior successful attacks this turn (attacker only)
+  const blitz = Math.min(blitzCount, 2);
+  // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
+  let entrench = Math.min(tgt.heldRounds || 0, 3);
+  if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
+  // 4. Trait modifiers
+  const ironWill = df?.trait==='iron' ? 1 : 0;
+  const fortify  = df?.trait==='fortify' ? 2 : 0;
+  // 5. Node bonuses — 📡 COMMS (+1 atk), 🖧 DATA (+1 def)
+  const comms = controlsNode(attackerFk,'node_comms') ? 1 : 0;
+  const data  = controlsNode(tgt.owner,'node_data')   ? 1 : 0;
+  // 6. Coalition: gang up on whoever holds 2+ Nodes (anti-snowball)
+  const coalition = coalitionAtkBonus(tgt.owner, attackerFk);
+  // 7. Grudge: a betrayed faction fights harder against its betrayer
+  const grudgeA = grudgeAtkBonus(attackerFk, tgt.owner);
+  const grudgeD = grudgeDefBonus(attackerFk, tgt.owner);
+
+  const attTotal = attDie + attForce + blitz + comms + coalition + grudgeA;
+  const defTotal = defDie + defForce + entrench + ironWill + data + grudgeD;
+
+  // Attacker wins ties; fortify makes them need to clear by a margin
+  const attWins = attTotal >= defTotal + fortify;
+
+  // Flash the result whenever the human is involved — attacking OR defending
+  if (isPlayer || tgt.owner===G.playerFaction) {
+    showCombatResult(
+      { die: attDie, force: attForce, blitz, comms, coalition, grudge: grudgeA, total: attTotal },
+      { die: defDie, force: defForce, entrench, iron: ironWill, fortify, data, grudge: grudgeD, total: defTotal },
+      attWins, isPlayer, af, df
+    );
+  }
+
+  if (attWins) {
+    blitzCount++;  // momentum builds for the next attack this turn
+    tgt.troops--;
+    if (tgt.troops <= 0) {
+      const prev = tgt.owner;
+      tgt.owner    = attackerFk;
+      tgt.troops   = 1;
+      tgt.heldRounds = 0;   // freshly taken — not dug in yet
+      src.troops   = Math.max(1, src.troops-1);
+      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]`);
+      const defLeft = Object.values(G.tiles).filter(t=>t.owner===prev).length;
+      if (defLeft===0) {
+        G.factions[prev].eliminated = true;
+        addLog(`💀 ${G.factions[prev].name} ELIMINATED!`);
+      }
+    } else {
+      tgt.heldRounds = 0;   // taking casualties breaks entrenchment
+      addLog(`⚔️ ${af.icon} hit ${tgt.name} [${attTotal} vs ${defTotal}] — ${tgt.troops} left`);
+    }
+  } else {
+    src.troops = Math.max(1, src.troops-1);
+    addLog(`🛡️ ${af.icon} → ${tgt.name} [${attTotal} vs ${defTotal}] — REPELLED`);
+  }
+
+  refreshHex(srcId); refreshHex(tgtId);
+}
+
+function modParts(arr) {
+  // Build a "+2 force +1 blitz" style string from non-zero modifiers
+  return arr.filter(p => p.v > 0).map(p => `+${p.v} ${p.label}`).join(' ');
+}
+
+function showCombatResult(att, def, win, playerIsAttacker, af, df) {
+  const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.blitz,label:'blitz'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'}]);
+  const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.iron,label:'iron'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'}]);
+  const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
+  const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
+  const el = document.createElement('div');
+  el.className = 'combat-flash';
+  el.innerHTML = `
+    <div class="combat-side">
+      <span class="combat-label">${attLabel}</span>
+      <span class="roll-line">${faces[att.die-1]} ${attMods} <b>= ${att.total}</b></span>
+    </div>
+    <div class="combat-side">
+      <span class="combat-label">${defLabel}</span>
+      <span class="roll-line">${faces[def.die-1]} ${defMods} <b>= ${def.total}</b></span>
+    </div>
+    <div class="result-line ${win?'win-line':'lose-line'}">${win?'⚡ ATTACKER WINS!':'🛡️ DEFENDER HOLDS!'}</div>
+  `;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2400);
+}
+
+// ============================================================
+// ADJACENCY
+// ============================================================
+function adjacent(a, b) {
+  if (a.row === b.row) return Math.abs(a.col - b.col) === 1;
+  if (Math.abs(a.row - b.row) !== 1) return false;
+  // Offset hex grid: odd rows are shifted right by half a tile.
+  // For odd rows, neighbors above/below are at col and col+1.
+  // For even rows, neighbors above/below are at col-1 and col.
+  if (a.row % 2 === 1) return b.col === a.col || b.col === a.col + 1;
+  else                 return b.col === a.col || b.col === a.col - 1;
+}
+
+// ============================================================
+// AI
+// ============================================================
+function runAITurn(fk) {
+  if (gameOver) return;
+  blitzCount = 0;
+  const f = G.factions[fk];
+  if (f.eliminated) { G.currentTurnIdx++; setTimeout(doNextTurn,200); return; }
+
+  const myTiles    = () => Object.values(G.tiles).filter(t=>t.owner===fk);
+  const enemyTiles = () => Object.values(G.tiles).filter(t=>t.owner && t.owner!==fk);
+  const findBestAttack = () => {
+    let best=null;
+    for (const atk of myTiles().filter(t=>t.troops>=2)) {
+      for (const def of enemyTiles()) {
+        if (!adjacent(atk,def)) continue;
+        // Honor pacts — unless we can seize a NODE with a commanding edge (betrayal)
+        const pact = hasPact(fk, def.owner);
+        const canBetray = def.isNode && atk.troops >= def.troops + 2;
+        if (pact && !canBetray) continue;
+        // Prefer: nodes, then weaker targets, then where we have a troop edge
+        const atkPower = Math.floor(atk.troops/3) + Math.min(blitzCount,2);
+        const defPower = Math.floor(def.troops/3) + Math.min(def.heldRounds||0,3);
+        const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
+        const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
+        if (!best || score > best.score) best = {atk, def, score, betray:pact};
+      }
+    }
+    return best;
+  };
+
+  let acts = 2;
+
+  for (let i=0; i<acts; i++) {
+    const best = findBestAttack();
+    const attackable = best && best.atk.troops >= 2 && !signalJamActive;
+
+    // Decision: attack if there's a good opportunity, else reinforce, else use ability
+    if (attackable && (best.def.isNode || best.atk.troops > best.def.troops)) {
+      if (best.betray) breakPactBetrayal(fk, best.def.owner);  // AI seizes a Node, pact be damned
+      resolveAttack(fk, best.atk.id, best.def.id, false);
+      renderSidebar();
+      if (checkWin()) return;
+      continue;
+    }
+
+    // Use special ability opportunistically
+    if (aiUseAbility(f, fk, myTiles, enemyTiles)) { renderSidebar(); continue; }
+
+    // Otherwise reinforce a frontline tile (one adjacent to an enemy)
+    const cost = reinforceCost(fk);
+    if (f.resources >= cost && myTiles().length > 0) {
+      const frontline = myTiles().filter(t => enemyTiles().some(e=>adjacent(t,e)));
+      const target = (frontline.length ? frontline : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
+      target.troops += reinforceAmount(fk); f.resources -= cost;
+      addLog(`${f.icon} ${f.name} reinforced ${target.name}`);
+      refreshHex(target.id);
+      continue;
+    }
+
+    // Nothing useful to do
+    break;
+  }
+
+  renderSidebar();
+  syncPush();              // broadcast the AI's completed turn (no-op offline)
+  if (checkWin()) return;
+  G.currentTurnIdx++;
+  setTimeout(doNextTurn, online ? 400 : 500);
+}
+
+function aiUseAbility(f, fk, myTiles, enemyTiles) {
+  // SABOTAGE: weaken a strong enemy node
+  if (f.ability==='sabotage' && f.resources>=2) {
+    const foes = enemyTiles().filter(t=>!hasPact(fk,t.owner));  // don't break pacts via sabotage
+    const target = foes.filter(t=>t.isNode).sort((a,b)=>b.troops-a.troops)[0]
+                || foes.sort((a,b)=>b.troops-a.troops)[0];
+    if (target) {
+      const prev = target.owner;
+      f.resources-=2;
+      if (target.troops>1) target.troops--; else { target.troops=0; target.owner=null; }
+      if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
+        G.factions[prev].eliminated = true;
+        addLog(`💀 ${G.factions[prev].name} ELIMINATED!`);
+      }
+      addLog(`👁️ ${f.name} sabotaged ${target.name}`);
+      refreshHex(target.id);
+      return true;
+    }
+  }
+  // BRIBE: steal from an adjacent enemy
+  if (f.ability==='bribe' && f.resources>=3) {
+    for (const mt of myTiles()) {
+      const tgt = enemyTiles().find(e=>adjacent(mt,e) && !hasPact(fk,e.owner));
+      if (tgt) {
+        const prev = tgt.owner;
+        f.resources-=3; tgt.troops--;
+        if (tgt.troops<=0) {
+          tgt.owner=fk; tgt.troops=1;
+          if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
+            G.factions[prev].eliminated = true;
+            addLog(`💀 ${G.factions[prev].name} ELIMINATED!`);
+          }
+        }
+        addLog(`💰 ${f.name} bribed ${tgt.name}`);
+        refreshHex(tgt.id);
+        return true;
+      }
+    }
+  }
+  // RALLY: buff a frontline cluster
+  if (f.ability==='rally' && f.resources>=2) {
+    const frontline = myTiles().filter(t => enemyTiles().some(e=>adjacent(t,e)));
+    if (frontline.length) {
+      const hub = frontline[0];
+      f.resources-=2; hub.troops++;
+      myTiles().filter(t=>adjacent(t,hub)).forEach(t=>{ t.troops++; refreshHex(t.id); });
+      addLog(`🌿 ${f.name} rallied around ${hub.name}`);
+      refreshHex(hub.id);
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+// EVENTS
+// ============================================================
+function applyBlackout() {
+  Object.values(G.tiles).filter(t=>t.nodeId==='node_power'&&t.owner&&t.troops>1)
+    .forEach(t=>{ t.troops--; });
+  addLog('⚡ EVENT: BLACKOUT — Power Node loses 1 troop');
+}
+function applySupplyDrop() {
+  Object.values(G.factions).filter(f=>!f.eliminated).forEach(f=>f.resources=Math.min(f.resources+2,14));
+  addLog('📦 EVENT: SUPPLY DROP — All factions +2 resources');
+}
+function applyRiot() {
+  const civ = Object.values(G.tiles).filter(t=>!t.isNode);
+  if (!civ.length) return;
+  const target = civ[Math.floor(Math.random()*civ.length)];
+  const alive  = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
+  const weakest = alive.sort((a,b)=>
+    Object.values(G.tiles).filter(t=>t.owner===a).length -
+    Object.values(G.tiles).filter(t=>t.owner===b).length
+  )[0];
+  target.owner = weakest; target.troops = Math.max(target.troops,1);
+  addLog(`🔥 EVENT: RIOT — ${target.name} → ${G.factions[weakest].name}`);
+}
+function applySignalJam() {
+  signalJamActive = true;
+  addLog('📡 EVENT: SIGNAL JAM — No attacks this round!');
+}
+function applyInsurgency() {
+  const alive = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
+  const weakest = alive.sort((a,b)=>
+    Object.values(G.tiles).filter(t=>t.owner===a).length -
+    Object.values(G.tiles).filter(t=>t.owner===b).length
+  )[0];
+  const big = Object.values(G.tiles).filter(t=>t.owner===weakest).sort((a,b)=>b.troops-a.troops)[0];
+  if (big) { big.troops+=2; refreshHex(big.id); }
+  addLog(`⚡ EVENT: INSURGENCY — ${G.factions[weakest].name} +2 troops`);
+}
+function applyDecay() {
+  const nodes = Object.values(G.tiles).filter(t=>t.isNode&&t.owner&&t.troops>1);
+  if (!nodes.length) return;
+  const t = nodes[Math.floor(Math.random()*nodes.length)];
+  t.troops--;
+  addLog(`🧱 EVENT: DECAY — ${t.name} loses 1 troop`);
+}
+function applyCache() {
+  const free = Object.values(G.tiles).filter(t=>!t.owner);
+  if (!free.length) return;
+  const t = free[Math.floor(Math.random()*free.length)];
+  t.troops=2;
+  addLog(`📦 EVENT: CACHE — ${t.name} gains 2 neutral troops`);
+}
+
+function showEventCard(ev, cb) {
+  document.getElementById('event-type').textContent  = ev.type+' EVENT';
+  document.getElementById('event-title').textContent = ev.title;
+  document.getElementById('event-body').textContent  = ev.body;
+  document.getElementById('event-choices').style.display = 'none';
+  document.getElementById('event-ok').style.display = '';
+  document.getElementById('event-overlay').classList.add('show');
+  pendingEvent = cb;
+}
+
+// Choice event: each living faction decides for itself — you via buttons, AI via aiChoose
+function showChoiceEvent(ev, cb) {
+  document.getElementById('event-type').textContent  = 'CHOICE EVENT';
+  document.getElementById('event-title').textContent = ev.title;
+  document.getElementById('event-body').textContent  = ev.body;
+  document.getElementById('event-ok').style.display = 'none';
+  const box = document.getElementById('event-choices');
+  box.style.display = 'flex';
+  box.innerHTML = '';
+  ev.choices.forEach((ch, idx) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-secondary';
+    b.style.cssText = 'font-size:14px; padding:10px 14px; text-align:left;';
+    b.textContent = ch.label;
+    b.onclick = () => {
+      ch.resolve(G.playerFaction);
+      addLog(`🃏 ${ev.title}: YOU chose "${ch.label}"`);
+      Object.keys(G.factions)
+        .filter(k => k!==G.playerFaction && !G.factions[k].eliminated)
+        .forEach(k => { ev.choices[ ev.aiChoose ? ev.aiChoose(k) : 0 ].resolve(k); });
+      document.getElementById('event-overlay').classList.remove('show');
+      cb();
+    };
+    box.appendChild(b);
+  });
+  document.getElementById('event-overlay').classList.add('show');
+}
+
+function dismissEvent() {
+  document.getElementById('event-overlay').classList.remove('show');
+  if (pendingEvent) { const cb=pendingEvent; pendingEvent=null; cb(); }
+}
+
+// ============================================================
+// WIN CHECK
+// ============================================================
+function checkWin() {
+  for (const [k,f] of Object.entries(G.factions)) {
+    if (f.eliminated) continue;
+    const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
+    if (n>=3) { showWin(k,'NODE CONTROL',`${f.name} seized 3 Core Nodes and commands Nexus.`); return true; }
+  }
+  const alive = Object.entries(G.factions).filter(([,f])=>!f.eliminated);
+  if (alive.length===1) {
+    showWin(alive[0][0],'LAST STANDING',`${alive[0][1].name} eliminated all rivals.`);
+    return true;
+  }
+  return false;
+}
+
+function showWin(fk, condition, detail) {
+  gameOver = true;
+  G.winner = { fk, condition, detail, round: G.round };  // recorded so it can broadcast online
+  syncPush();
+  renderWin(G.winner);
+}
+
+function renderWin(w) {
+  const f = G.factions[w.fk];
+  const humanWon = !f.isAI;  // a human seat took it
+  document.getElementById('win-title').textContent   = humanWon ? '⚡ VICTORY!' : '💀 AI WINS';
+  document.getElementById('win-title').style.color   = humanWon ? 'var(--node-glow)' : 'var(--syndicate)';
+  document.getElementById('win-subtitle').textContent = `${f.icon} ${f.name} — ${w.condition}`;
+  document.getElementById('win-detail').textContent   = w.detail + ` (Round ${w.round})`;
+  switchScreen('win-screen');
+  document.getElementById('rules-btn').style.display = 'none';
+}
+
+function openRules()  { document.getElementById('rules-overlay').classList.add('show'); }
+function closeRules() { document.getElementById('rules-overlay').classList.remove('show'); }
+</script>
+</body>
+</html>
