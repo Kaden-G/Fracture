@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRACTURE</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
+<!-- Firebase SDK (compat) for online multiplayer -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
   :root {
     --ink: #0a0a0a;
@@ -794,6 +797,18 @@
   .seat-opt:hover { border-color:var(--node-glow); }
   .seat-opt.selected { background:var(--node-glow); color:var(--ink); border-color:var(--node-glow); }
 
+  /* ===== ONLINE LOBBY ===== */
+  #lobby-screen {
+    min-height:100vh; padding:30px 20px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .seat-mini {
+    font-family:'Oswald',sans-serif; font-weight:700; font-size:11px;
+    padding:5px 9px; border:2px solid #444; background:#0d1117;
+    color:#ccc; cursor:pointer; letter-spacing:1px; transition:all .12s;
+  }
+  .seat-mini:hover { border-color:var(--node-glow); color:var(--node-glow); }
+
   /* ===== HAND-OFF (hot-seat) ===== */
   #handoff-overlay {
     display:none; position:fixed; inset:0;
@@ -845,6 +860,13 @@
     Dominate. Negotiate. Betray. Survive.
   </p>
   <button class="btn btn-primary" onclick="showSetup()">⚡ NEW GAME</button>
+  <button class="btn btn-secondary" style="margin-top:12px;" onclick="goOnline()">🌐 PLAY ONLINE</button>
+</div>
+
+<!-- ONLINE LOBBY -->
+<div id="lobby-screen" class="screen">
+  <div class="panel-header">ONLINE LOBBY</div>
+  <div id="lobby-body" style="width:100%;"></div>
 </div>
 
 <!-- SETUP -->
@@ -1101,8 +1123,17 @@ let online        = false;   // true once in an online room
 let isDriver       = true;    // may THIS client advance the engine (run AI/events)? always true offline
 let myTurnActive   = false;   // is it currently a local human's turn we've begun?
 let applyingRemote = false;   // suppress pushes while loading a remote snapshot
+let onlineStarting = false;   // host: round 1 in progress, flip room to started after first turn
 let roomCode       = null;
-let db             = null;    // Firebase Realtime Database ref (set by online layer)
+let roomRef        = null;    // Firebase ref to /rooms/{CODE}
+let stateRef       = null;    // Firebase ref to /rooms/{CODE}/state
+let lastRoomData   = null;    // most recent room snapshot (seats + state)
+let lobbyIsHost    = false;
+let myClientId     = null;
+let myName         = '';
+let myTrait        = '';
+let fbInited       = false;
+let db             = null;    // Firebase Realtime Database handle (set by online layer)
 
 // Push the full game state to the room (no-op offline). Defined fully by the online layer;
 // stubbed here so the engine can call it unconditionally.
@@ -1111,7 +1142,7 @@ function netPushState() {}   // overridden when the online layer loads
 
 // Whose turn is it, and may the local player act right now?
 function activeFk()  { return G.turnOrder[G.currentTurnIdx]; }
-function canActNow() { const a=activeFk(); return !gameOver && a===G.playerFaction && mySeats.includes(a) && !G.factions[a].isAI; }
+function canActNow() { if (!G.turnOrder || gameOver) return false; const a=activeFk(); return a===G.playerFaction && mySeats.includes(a) && G.factions[a] && !G.factions[a].isAI; }
 
 // ============================================================
 // HELPERS — tiles, nodes, economy, diplomacy
@@ -1169,11 +1200,13 @@ function aiConsiderPact(aiFk, propFk){
 // NAV
 // ============================================================
 function showTitle() {
+  if (typeof resetNet === 'function') resetNet();
   switchScreen('title-screen');
   document.getElementById('rules-btn').style.display = 'none';
 }
 
 function showSetup() {
+  if (typeof resetNet === 'function') resetNet();
   switchScreen('setup-screen');
   G = {};
   renderSetup();
@@ -1563,6 +1596,8 @@ function doNextTurn() {
   const fk = G.turnOrder[G.currentTurnIdx];
   applyIncome(fk);
   syncPush();              // broadcast income + whose turn (no-op offline)
+  // Host: now that round 1's first turn state is live, open the room to joiners.
+  if (online && onlineStarting) { onlineStarting = false; if (roomRef) roomRef.update({ started: true }); }
   beginTurnFor(fk);
 }
 
@@ -2255,6 +2290,273 @@ function renderWin(w) {
 
 function openRules()  { document.getElementById('rules-overlay').classList.add('show'); }
 function closeRules() { document.getElementById('rules-overlay').classList.remove('show'); }
+</script>
+
+<script>
+// ============================================================
+// ONLINE MULTIPLAYER — Firebase Realtime Database
+// Rooms by code · full-state broadcast · active-player engine baton.
+// All of this is dormant until the player taps PLAY ONLINE.
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDVa8eOLH6CXTt1nbgH9v7mkAb-RtgcbXg",
+  authDomain: "fracture-105c1.firebaseapp.com",
+  databaseURL: "https://fracture-105c1-default-rtdb.firebaseio.com",
+  projectId: "fracture-105c1",
+  storageBucket: "fracture-105c1.firebasestorage.app",
+  messagingSenderId: "926577785338",
+  appId: "1:926577785338:web:8c5170c92ced85e7b9cc43",
+  measurementId: "G-6GHGZ28Q7W"
+};
+
+function initFirebase() {
+  if (fbInited) return !!db;
+  if (typeof firebase === 'undefined') return false;
+  try { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.database(); fbInited = true; return true; }
+  catch (e) { console.error('Firebase init failed:', e); return false; }
+}
+
+// Persist a stable client id so a refresh keeps your claimed seat.
+function clientId() {
+  let id;
+  try { id = localStorage.getItem('fracture_cid'); } catch (e) {}
+  if (!id) {
+    id = 'c' + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem('fracture_cid', id); } catch (e) {}
+  }
+  return id;
+}
+
+function resetNet() {
+  detachRoom();
+  online = false; isDriver = true; myTurnActive = false; applyingRemote = false;
+  onlineStarting = false; lobbyIsHost = false; roomCode = null; lastRoomData = null;
+}
+function detachRoom() { if (roomRef) { roomRef.off(); } roomRef = null; stateRef = null; }
+
+// --- the engine's broadcast hook, now real ---
+netPushState = function () {
+  if (!stateRef) return;
+  G.seq = (G.seq || 0) + 1;
+  const snap = Object.assign({}, G, { _signalJam: signalJamActive, _gameOver: gameOver });
+  stateRef.set(JSON.parse(JSON.stringify(snap)));
+};
+
+function loadRemoteState(s) {
+  const sj = !!s._signalJam, go = !!s._gameOver;
+  const clean = Object.assign({}, s); delete clean._signalJam; delete clean._gameOver;
+  // Firebase strips empty objects/arrays — restore the containers the engine assumes exist.
+  clean.pacts   = clean.pacts   || {};
+  clean.grudges = clean.grudges || {};
+  clean.log     = clean.log     || [];
+  G = clean;
+  signalJamActive = sj; gameOver = go;
+  if (mySeats.length) G.playerFaction = mySeats[0];  // always view through my own seat
+}
+
+function ensureGameScreen() {
+  if (!document.getElementById('game-screen').classList.contains('active')) {
+    switchScreen('game-screen');
+    document.getElementById('rules-btn').style.display = 'flex';
+  }
+}
+
+// Apply a freshly received snapshot and route the turn.
+function onRemoteState(s) {
+  if (!s) return;
+  if (typeof s.seq === 'number' && s.seq <= (G.seq || 0)) return;   // ignore our own echo / stale writes
+  applyingRemote = true;
+  loadRemoteState(s);
+  applyingRemote = false;
+
+  ensureGameScreen();
+  renderMap(); renderSidebar();
+
+  if (gameOver) { if (G.winner) renderWin(G.winner); return; }
+
+  const a = activeFk(), f = a && G.factions[a];
+  if (f && !f.isAI && mySeats.includes(a)) {
+    if (!myTurnActive) { isDriver = true; beginTurnFor(a); }   // my turn — take the baton
+  } else {
+    // Spectating an AI or remote-human turn.
+    myTurnActive = false; isDriver = false;
+    disablePlayerActions();
+    const lbl = document.getElementById('turn-label');
+    lbl.className = 'turn-indicator';
+    lbl.textContent = f ? (f.isAI ? `${f.icon} AI` : `⌛ ${f.name}`) : '';
+    document.getElementById('phase-label').textContent = `ROUND ${G.round}${f ? ' · ' + f.name : ''}`;
+    setActionLog(f ? (f.isAI ? `${f.name} is moving…` : `Waiting for ${f.name}…`) : '');
+  }
+}
+
+// ============================================================
+// LOBBY
+// ============================================================
+function goOnline() {
+  if (!initFirebase()) { alert('Online play is unavailable — Firebase did not load. Check your connection and reload.'); return; }
+  online = true;
+  myClientId = clientId();
+  switchScreen('lobby-screen');
+  renderLobbyHome();
+}
+
+function renderLobbyHome() {
+  document.getElementById('lobby-body').innerHTML = `
+    <div class="setup-card" style="max-width:420px; margin:0 auto;">
+      <h3>🌐 ONLINE GAME</h3>
+      <p style="font-size:13px;color:#aaa;margin-bottom:14px;line-height:1.5;">Host a new room and share the 4-letter code, or join a friend's room.</p>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:14px;font-size:22px;" onclick="hostRoom()">🎮 HOST A ROOM</button>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input class="input-field" id="join-code" placeholder="ROOM CODE" maxlength="4" style="text-transform:uppercase;margin:0;flex:1;">
+        <button class="btn btn-secondary" style="font-size:18px;" onclick="joinRoomPrompt()">JOIN →</button>
+      </div>
+      <button class="btn btn-secondary" style="width:100%;font-size:16px;" onclick="showTitle()">← BACK</button>
+    </div>`;
+}
+
+function genCode() {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';  // no confusable chars
+  let s = ''; for (let i = 0; i < 4; i++) s += A[Math.floor(Math.random() * A.length)];
+  return s;
+}
+
+function hostRoom() {
+  lobbyIsHost = true;
+  roomCode = genCode();
+  roomRef = db.ref('rooms/' + roomCode);
+  stateRef = roomRef.child('state');
+  const seats = {};
+  Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'ai', by: null, name: '', trait: '' });
+  roomRef.set({ host: myClientId, started: false, seats })
+    .then(() => roomRef.on('value', onRoom))
+    .catch(e => alert('Could not create room: ' + e.message));
+}
+
+function joinRoomPrompt() {
+  const code = (document.getElementById('join-code').value || '').trim().toUpperCase();
+  if (code.length < 4) { alert('Enter the 4-letter room code.'); return; }
+  roomCode = code; lobbyIsHost = false;
+  roomRef = db.ref('rooms/' + roomCode);
+  stateRef = roomRef.child('state');
+  roomRef.once('value').then(snap => {
+    if (!snap.exists()) { alert('No room found with code ' + code); roomRef = null; return; }
+    roomRef.on('value', onRoom);
+  });
+}
+
+function onRoom(snap) {
+  const data = snap.val();
+  if (!data) return;
+  lastRoomData = data;
+  mySeats = Object.keys(data.seats || {}).filter(k => data.seats[k].type === 'human' && data.seats[k].by === myClientId);
+  if (data.started && data.state) onRemoteState(data.state);
+  else renderLobby(data);
+}
+
+function setMyName(v) { myName = v; }
+function setMyTrait(v) { myTrait = v; renderLobby(lastRoomData); }
+
+function claimSeat(fk) {
+  if (!myName.trim() || !myTrait) { alert('Enter your name and pick a trait first.'); return; }
+  const seats = lastRoomData.seats || {};
+  const updates = {};
+  Object.keys(seats).forEach(k => { if (seats[k].by === myClientId) updates['seats/' + k] = { type: 'human', by: null, name: '', trait: '' }; });
+  updates['seats/' + fk] = { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait };
+  roomRef.update(updates);
+}
+
+function hostSetSeat(fk, kind) {  // 'ai' or 'open'
+  if (!lobbyIsHost) return;
+  roomRef.child('seats/' + fk).set(kind === 'ai'
+    ? { type: 'ai', by: null, name: '', trait: '' }
+    : { type: 'human', by: null, name: '', trait: '' });
+}
+
+function renderLobby(data) {
+  const seats = data.seats || {};
+  const rows = Object.entries(FACTIONS).map(([k, f]) => {
+    const s = seats[k] || { type: 'ai' };
+    let status;
+    if (s.type === 'ai') status = '🤖 AI';
+    else if (s.by) status = (s.by === myClientId ? '⭐ YOU — ' : '🎮 ') + (s.name || 'Player');
+    else status = '🟢 OPEN';
+    let actions = '';
+    if (lobbyIsHost) {
+      actions = `<button class="seat-mini" onclick="hostSetSeat('${k}','ai')">AI</button>
+                 <button class="seat-mini" onclick="hostSetSeat('${k}','open')">OPEN</button>
+                 <button class="seat-mini" onclick="claimSeat('${k}')">PLAY</button>`;
+    } else if (s.type === 'human' && !s.by) {
+      actions = `<button class="seat-mini" onclick="claimSeat('${k}')">CLAIM</button>`;
+    } else if (s.by === myClientId) {
+      actions = `<button class="seat-mini" onclick="claimSeat('${k}')">↻</button>`;
+    }
+    return `<div class="faction-row" style="justify-content:space-between; gap:8px;">
+        <span style="color:${f.color};font-family:'Bangers';letter-spacing:1px;min-width:96px;">${f.icon} ${f.name}</span>
+        <span style="font-size:12px;flex:1;text-align:center;color:#ccc;">${status}</span>
+        <span style="display:flex;gap:4px;">${actions}</span>
+      </div>`;
+  }).join('');
+
+  const iHaveSeat = Object.values(seats).some(s => s.by === myClientId);
+  const canStart = lobbyIsHost && iHaveSeat;
+  document.getElementById('lobby-body').innerHTML = `
+    <div class="setup-card" style="max-width:500px; margin:0 auto;">
+      <h3>ROOM CODE: <span style="color:var(--node-glow);letter-spacing:4px;">${roomCode}</span></h3>
+      <p style="font-size:12px;color:#999;margin-bottom:10px;line-height:1.5;">
+        ${lobbyIsHost ? 'Share the code. Set each seat to AI or OPEN, claim one with PLAY, then START.' : 'Claim an OPEN seat, then wait for the host to start.'}
+      </p>
+      <label>YOUR NAME</label>
+      <input class="input-field" maxlength="16" placeholder="Your name..." value="${(myName || '').replace(/"/g, '&quot;')}" oninput="setMyName(this.value)">
+      <label>PASSIVE TRAIT</label>
+      <div class="trait-select" style="margin-bottom:12px;">
+        ${TRAITS.map(t => `<div class="trait-option ${myTrait === t.id ? 'selected' : ''}" onclick="setMyTrait('${t.id}')"><strong>${t.name}:</strong> ${t.desc}</div>`).join('')}
+      </div>
+      ${rows}
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-secondary" style="font-size:16px;" onclick="showTitle()">← LEAVE</button>
+        ${lobbyIsHost
+          ? `<button class="btn btn-primary" style="font-size:20px;flex:1;${canStart ? '' : 'opacity:.4;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
+          : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${iHaveSeat ? 'WAITING FOR HOST…' : 'CLAIM A SEAT'}</div>`}
+      </div>
+    </div>`;
+}
+
+function hostStart() {
+  if (!lobbyIsHost) return;
+  const seats = JSON.parse(JSON.stringify(lastRoomData.seats));
+  // Unclaimed human seats fall back to AI.
+  Object.keys(seats).forEach(k => { if (seats[k].type === 'human' && !seats[k].by) seats[k] = { type: 'ai', by: null, name: '', trait: '' }; });
+  if (!Object.values(seats).some(s => s.type === 'human')) { alert('Claim at least one seat before starting.'); return; }
+
+  buildOnlineGame(seats);
+  isDriver = true;
+  mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
+  G.playerFaction = mySeats[0] || G.turnOrder[0];
+  onlineStarting = true;   // doNextTurn flips the room to "started" once round 1's first turn is live
+
+  ensureGameScreen();
+  renderMap(); renderSidebar();
+  // Finalize seats now; the round-1 event runs on the host (driver) and broadcasts as it goes.
+  roomRef.update({ seats }).then(() => startRound());
+}
+
+function buildOnlineGame(seats) {
+  const order = Object.keys(FACTIONS);
+  const factions = {};
+  order.forEach(k => {
+    const s = seats[k];
+    factions[k] = (s.type === 'human')
+      ? mkFaction(s.name || FACTIONS[k].name, k, false, s.trait || randTrait())
+      : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait());
+  });
+  G = {
+    round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
+    factions, turnOrder: order.slice(), humans: order.filter(k => seats[k].type === 'human'),
+    tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
+  };
+  gameOver = false;
+  G.tiles = buildMap();
+}
 </script>
 </body>
 </html>
