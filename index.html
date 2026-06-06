@@ -1052,8 +1052,16 @@
       <li><strong>BETRAYAL:</strong> Break a pact to strike and the victim gets <strong>+2</strong> in every fight against you for 2 rounds (a grudge). The AI honors pacts too — but may betray <em>you</em> to seize a Node.</li>
       <li><strong>COALITION:</strong> Whoever holds 2+ Nodes is the threat — everyone else gets <strong>+1</strong> attacking them. No runaway snowball to victory.</li>
     </ul>
-    <h3>🃏 CHOICE EVENTS</h3>
-    <p>Some events hand every faction a decision (coin vs. steel, overload vs. conserve). You pick from buttons; the AI picks for itself.</p>
+    <h3>🃏 ROUND EVENTS</h3>
+    <p>Every round opens with an event that hits ALL factions by rule (no random favorites). They swing hard:</p>
+    <ul>
+      <li><strong>MARKET CRASH:</strong> everyone loses half their resources.</li>
+      <li><strong>THE UPRISING:</strong> every 4+ stack loses 2 troops & its dig-in.</li>
+      <li><strong>REVOLUTION:</strong> the Node leader loses a Node to neutral.</li>
+      <li><strong>TOTAL WAR:</strong> entrenchment wiped, all attackers +1 this round.</li>
+      <li><strong>GOLD RUSH:</strong> everyone +5 resources. <strong>SIGNAL JAM:</strong> no attacks.</li>
+      <li><strong>BLACKOUT / MOBILIZATION / INSURGENCY</strong> and choice events (<strong>Warlord's Tribute</strong>, <strong>Mercenary Contract</strong>) where each faction decides for itself.</li>
+    </ul>
     <h3>🧬 PASSIVE TRAITS</h3>
     <ul>
       <li><strong>IRON WILL:</strong> +1 when defending</li>
@@ -1113,28 +1121,32 @@ const TRAITS = [
 ];
 
 const EVENTS = [
-  { type:'CHAOS', title:'BLACKOUT',             body:'All Power Node tiles lose 1 troop (min 1).',            apply: applyBlackout    },
-  { type:'LUCK',  title:'SUPPLY DROP',          body:'All factions gain +2 resources. Manna from Nexus.',     apply: applySupplyDrop  },
-  { type:'CHAOS', title:'RIOT!',                body:'A random district falls to the weakest faction.',       apply: applyRiot        },
-  { type:'CHAOS', title:'SIGNAL JAM',           body:'Communications jammed. No attacks this round.',        apply: applySignalJam   },
-  { type:'LUCK',  title:'INSURGENCY',           body:'The weakest faction gains +2 troops on their largest tile.',  apply: applyInsurgency },
-  { type:'CHAOS', title:'INFRASTRUCTURE DECAY', body:'A random Node loses 1 troop. The grid crumbles.',      apply: applyDecay       },
-  { type:'LUCK',  title:'NEXUS CACHE',          body:'An unclaimed tile gains 2 ruins troops. Take it if you dare.', apply: applyCache },
-  // ---- CHOICE EVENTS: every faction (you + AI) decides for itself ----
-  { type:'CHOICE', title:"SMUGGLER'S MARKET",
-    body:'A black-market caravan rolls through Nexus. Coin or steel?',
+  // ---- CHAOS: big disruptions, mostly rule-based so they're fair, not random screw-jobs ----
+  { type:'CHAOS', title:'MARKET CRASH', body:'Currency collapses — every faction loses HALF its resources. Hoarders weep.', apply: applyCrash },
+  { type:'CHAOS', title:'THE UPRISING', body:'The masses turn on the powerful — every stack of 4+ troops loses 2 and its dug-in bonus.', apply: applyUprising },
+  { type:'CHAOS', title:'REVOLUTION',   body:'The Node leader is overthrown — they lose one Core Node to the mob.', apply: applyRevolution },
+  { type:'CHAOS', title:'BLACKOUT',     body:'The grid fails — EVERY Core Node loses 2 troops (min 1).', apply: applyBlackout },
+  { type:'CHAOS', title:'SIGNAL JAM',   body:'Comms jammed — no attacks at all this round. An enforced ceasefire.', apply: applySignalJam },
+  { type:'CHAOS', title:'TOTAL WAR',    body:'Bloodlust takes hold — ALL entrenchment is wiped and attackers strike +1 this round.', apply: applyTotalWar },
+  // ---- LUCK: big upside, with catch-up tilted toward whoever is behind ----
+  { type:'LUCK',  title:'GOLD RUSH',         body:'A resource boom — every faction gains +5 resources. Spend it or waste it.', apply: applyGoldRush },
+  { type:'LUCK',  title:'INSURGENCY',        body:'The underdog rises — the weakest faction gains +4 troops and +3 resources.', apply: applyInsurgency },
+  { type:'LUCK',  title:'MASS MOBILIZATION', body:'A call to arms — every faction gains +1 troop on EVERY tile it holds.', apply: applyMobilization },
+  // ---- CHOICE: money-vs-blood decisions, every faction picks for itself ----
+  { type:'CHOICE', title:"WARLORD'S TRIBUTE",
+    body:'A warlord marches on Nexus and demands payment. Coin, or blood?',
     choices:[
-      { label:'💰 TAKE COIN  (+4 resources)',  resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.min(f.resources+4,RES_CAP); } },
-      { label:'🪖 TAKE STEEL (+3 troops on your largest tile)', resolve:(fk)=>{ const t=tilesOf(fk).sort((a,b)=>b.troops-a.troops)[0]; if(t) t.troops+=3; } },
+      { label:'💰 PAY TRIBUTE (−4 resources)', resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.max(0,f.resources-4); } },
+      { label:'🩸 REFUSE (−1 troop on every tile)', resolve:(fk)=>{ tilesOf(fk).forEach(t=>{ if(t.troops>1) t.troops--; refreshHex(t.id); }); } },
     ],
-    aiChoose:(fk)=> aiTroopHunger(fk) ? 1 : 0 },
-  { type:'CHOICE', title:'POWER SURGE',
-    body:'Raw current floods the grid — harness it or cash out.',
+    aiChoose:(fk)=> G.factions[fk].resources>=4 ? 0 : 1 },
+  { type:'CHOICE', title:'MERCENARY CONTRACT',
+    body:'Sellswords are for hire — at a steep price.',
     choices:[
-      { label:'⚡ OVERLOAD (+1 troop per Node you hold, −2 res)', resolve:(fk)=>{ const f=G.factions[fk]; nodesOf(fk).forEach(t=>t.troops++); f.resources=Math.max(0,f.resources-2); } },
-      { label:'🔋 CONSERVE (+3 resources)', resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.min(f.resources+3,RES_CAP); } },
+      { label:'🪖 HIRE (−5 res → +4 troops on your strongest tile)', resolve:(fk)=>{ const f=G.factions[fk]; if(f.resources>=5){ f.resources-=5; const t=tilesOf(fk).sort((a,b)=>b.troops-a.troops)[0]; if(t){ t.troops+=4; refreshHex(t.id);} } } },
+      { label:'🔋 DECLINE (+3 resources)', resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.min(f.resources+3,RES_CAP); } },
     ],
-    aiChoose:(fk)=> countNodes(fk)>=1 ? 0 : 1 },
+    aiChoose:(fk)=> (G.factions[fk].resources>=5 && aiTroopHunger(fk)) ? 0 : 1 },
 ];
 
 const NODE_TILES = [
@@ -1166,6 +1178,7 @@ let G = {};
 let selectedTile   = null;
 let currentAction  = null;
 let signalJamActive = false;
+let totalWar       = false;  // TOTAL WAR event: attackers +1 this round
 let pendingEvent   = null;
 let gameOver       = false;
 let blitzCount     = 0;  // successful attacks by current actor this turn
@@ -1615,6 +1628,7 @@ function setActionLog(msg) {
 function startRound() {
   G.currentTurnIdx = 0;
   signalJamActive = false;
+  totalWar = false;
   // Entrenchment: tiles held with 2+ troops dig in deeper each round
   Object.values(G.tiles).forEach(t => {
     if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, 3);
@@ -2019,8 +2033,10 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 7. Grudge: a betrayed faction fights harder against its betrayer
   const grudgeA = grudgeAtkBonus(attackerFk, tgt.owner);
   const grudgeD = grudgeDefBonus(attackerFk, tgt.owner);
+  // 8. TOTAL WAR event: every attacker swings +1 this round
+  const war = totalWar ? 1 : 0;
 
-  const attTotal = attDie + attForce + blitz + comms + coalition + grudgeA;
+  const attTotal = attDie + attForce + blitz + comms + coalition + grudgeA + war;
   const defTotal = defDie + defForce + entrench + ironWill + data + grudgeD;
 
   // Attacker wins ties; fortify makes them need to clear by a margin
@@ -2030,7 +2046,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
-      { die: attDie, force: attForce, blitz, comms, coalition, grudge: grudgeA, total: attTotal },
+      { die: attDie, force: attForce, blitz, comms, coalition, grudge: grudgeA, war, total: attTotal },
       { die: defDie, force: defForce, entrench, iron: ironWill, fortify, data, grudge: grudgeD, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
@@ -2070,7 +2086,7 @@ function modParts(arr) {
 
 function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
-  const attMods = modParts([{v:att.force,label:'force'},{v:att.blitz,label:'blitz'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'}]);
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.blitz,label:'blitz'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.iron,label:'iron'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
@@ -2319,54 +2335,61 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
 // ============================================================
 // EVENTS
 // ============================================================
+function livingKeys() { return Object.keys(G.factions).filter(k=>!G.factions[k].eliminated); }
+function weakestKey() {
+  return livingKeys().sort((a,b)=> tilesOf(a).length - tilesOf(b).length)[0];
+}
+
+function applyCrash() {
+  livingKeys().forEach(k => { G.factions[k].resources = Math.floor(G.factions[k].resources / 2); });
+  addLog('💸 EVENT: MARKET CRASH — every faction loses half its resources');
+}
+function applyUprising() {
+  let hit = 0;
+  Object.values(G.tiles).forEach(t => {
+    if (t.owner && t.troops >= 4) { t.troops = Math.max(1, t.troops - 2); t.heldRounds = 0; hit++; refreshHex(t.id); }
+  });
+  addLog(`✊ EVENT: THE UPRISING — ${hit} large stack${hit===1?'':'s'} cut down by 2`);
+}
+function applyRevolution() {
+  const alive = livingKeys();
+  let leader = null, bestN = -1, bestT = -1;
+  alive.forEach(k => { const n = countNodes(k), t = tilesOf(k).length; if (n > bestN || (n === bestN && t > bestT)) { bestN = n; bestT = t; leader = k; } });
+  if (!leader || bestN <= 0) { addLog('🚩 EVENT: REVOLUTION — but no Node leader to topple'); return; }
+  const their = nodesOf(leader);
+  const node = their[Math.floor(Math.random() * their.length)];
+  node.owner = null; node.troops = 0; node.heldRounds = 0; refreshHex(node.id);
+  addLog(`🚩 EVENT: REVOLUTION — ${G.factions[leader].name} loses ${node.name} to the mob`);
+}
 function applyBlackout() {
-  Object.values(G.tiles).filter(t=>t.nodeId==='node_power'&&t.owner&&t.troops>1)
-    .forEach(t=>{ t.troops--; });
-  addLog('⚡ EVENT: BLACKOUT — Power Node loses 1 troop');
-}
-function applySupplyDrop() {
-  Object.values(G.factions).filter(f=>!f.eliminated).forEach(f=>f.resources=Math.min(f.resources+2,14));
-  addLog('📦 EVENT: SUPPLY DROP — All factions +2 resources');
-}
-function applyRiot() {
-  const civ = Object.values(G.tiles).filter(t=>!t.isNode);
-  if (!civ.length) return;
-  const target = civ[Math.floor(Math.random()*civ.length)];
-  const alive  = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
-  const weakest = alive.sort((a,b)=>
-    Object.values(G.tiles).filter(t=>t.owner===a).length -
-    Object.values(G.tiles).filter(t=>t.owner===b).length
-  )[0];
-  target.owner = weakest; target.troops = Math.max(target.troops,1);
-  addLog(`🔥 EVENT: RIOT — ${target.name} → ${G.factions[weakest].name}`);
+  Object.values(G.tiles).filter(t => t.isNode && t.owner).forEach(t => { t.troops = Math.max(1, t.troops - 2); refreshHex(t.id); });
+  addLog('⚡ EVENT: BLACKOUT — every Core Node loses 2 troops');
 }
 function applySignalJam() {
   signalJamActive = true;
-  addLog('📡 EVENT: SIGNAL JAM — No attacks this round!');
+  addLog('📡 EVENT: SIGNAL JAM — no attacks this round!');
+}
+function applyTotalWar() {
+  totalWar = true;
+  Object.values(G.tiles).forEach(t => { if (t.heldRounds) { t.heldRounds = 0; refreshHex(t.id); } });
+  addLog('⚔️ EVENT: TOTAL WAR — entrenchment wiped, attackers strike +1 this round!');
+}
+function applyGoldRush() {
+  livingKeys().forEach(k => { G.factions[k].resources = Math.min(G.factions[k].resources + 5, RES_CAP); });
+  addLog('💰 EVENT: GOLD RUSH — every faction +5 resources');
 }
 function applyInsurgency() {
-  const alive = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
-  const weakest = alive.sort((a,b)=>
-    Object.values(G.tiles).filter(t=>t.owner===a).length -
-    Object.values(G.tiles).filter(t=>t.owner===b).length
-  )[0];
-  const big = Object.values(G.tiles).filter(t=>t.owner===weakest).sort((a,b)=>b.troops-a.troops)[0];
-  if (big) { big.troops+=2; refreshHex(big.id); }
-  addLog(`⚡ EVENT: INSURGENCY — ${G.factions[weakest].name} +2 troops`);
+  const w = weakestKey();
+  if (!w) return;
+  const f = G.factions[w];
+  f.resources = Math.min(f.resources + 3, RES_CAP);
+  const mine = tilesOf(w).sort((a,b)=>b.troops-a.troops);
+  if (mine.length) for (let i = 0; i < 4; i++) { const t = mine[i % mine.length]; t.troops++; refreshHex(t.id); }
+  addLog(`✊ EVENT: INSURGENCY — ${f.name} gains +4 troops & +3 resources`);
 }
-function applyDecay() {
-  const nodes = Object.values(G.tiles).filter(t=>t.isNode&&t.owner&&t.troops>1);
-  if (!nodes.length) return;
-  const t = nodes[Math.floor(Math.random()*nodes.length)];
-  t.troops--;
-  addLog(`🧱 EVENT: DECAY — ${t.name} loses 1 troop`);
-}
-function applyCache() {
-  const free = Object.values(G.tiles).filter(t=>!t.owner);
-  if (!free.length) return;
-  const t = free[Math.floor(Math.random()*free.length)];
-  t.troops=2;
-  addLog(`📦 EVENT: CACHE — ${t.name} gains 2 neutral troops`);
+function applyMobilization() {
+  livingKeys().forEach(k => tilesOf(k).forEach(t => { t.troops++; refreshHex(t.id); }));
+  addLog('🎖️ EVENT: MASS MOBILIZATION — +1 troop on every owned tile');
 }
 
 function showEventCard(ev, cb) {
@@ -2497,19 +2520,19 @@ function detachRoom() { if (roomRef) { roomRef.off(); } roomRef = null; stateRef
 netPushState = function () {
   if (!stateRef) return;
   G.seq = (G.seq || 0) + 1;
-  const snap = Object.assign({}, G, { _signalJam: signalJamActive, _gameOver: gameOver });
+  const snap = Object.assign({}, G, { _signalJam: signalJamActive, _totalWar: totalWar, _gameOver: gameOver });
   stateRef.set(JSON.parse(JSON.stringify(snap)));
 };
 
 function loadRemoteState(s) {
-  const sj = !!s._signalJam, go = !!s._gameOver;
-  const clean = Object.assign({}, s); delete clean._signalJam; delete clean._gameOver;
+  const sj = !!s._signalJam, tw = !!s._totalWar, go = !!s._gameOver;
+  const clean = Object.assign({}, s); delete clean._signalJam; delete clean._totalWar; delete clean._gameOver;
   // Firebase strips empty objects/arrays — restore the containers the engine assumes exist.
   clean.pacts   = clean.pacts   || {};
   clean.grudges = clean.grudges || {};
   clean.log     = clean.log     || [];
   G = clean;
-  signalJamActive = sj; gameOver = go;
+  signalJamActive = sj; totalWar = tw; gameOver = go;
   if (mySeats.length) G.playerFaction = mySeats[0];  // always view through my own seat
 }
 
