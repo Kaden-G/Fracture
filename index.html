@@ -377,6 +377,17 @@
     filter: drop-shadow(0 0 1px rgba(0,0,0,0.8));
   }
 
+  .hex-node-art {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 96%;
+    height: auto;
+    pointer-events: none;
+    z-index: 2;
+  }
+
   .hex-region {
     position: absolute;
     top: 20px;
@@ -1209,6 +1220,15 @@ const NODE_BONUSES = {
   node_data:    '+1 defense rolls',
 };
 
+// Custom artwork for each Core Node (transparent hex badges).
+const NODE_IMAGES = {
+  node_power:   'assets/node_power.png',
+  node_water:   'assets/node_water.png',
+  node_transit: 'assets/node_transit.png',
+  node_comms:   'assets/node_comms.png',
+  node_data:    'assets/node_data.png',
+};
+
 // ---- REGIONS: a pinwheel split of the 5×5 grid into N/S/E/W (6 tiles each) + a neutral CORE.
 const REGION_NAMES  = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST', C:'CORE' };
 const REGION_COLORS = { N:'#5dade2', S:'#e74c3c', E:'#2ecc71', W:'#f1c40f', C:'#888' };
@@ -1620,8 +1640,17 @@ function makeHex(tile) {
   const reg = tile.region;
   const regTag = (reg && reg !== 'C')
     ? `<div class="hex-region" style="color:${REGION_COLORS[reg]}" title="${REGION_NAMES[reg]} region">${reg}</div>` : '';
-  // Group tiles into regions with a soft region-colored tint over the fill.
-  const regTint = reg ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22" fill="${REGION_COLORS[reg]}" opacity="0.14"/>` : '';
+  // Group tiles into regions with a soft region-colored tint over the fill (non-node tiles).
+  const regTint = (reg && !tile.isNode) ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22" fill="${REGION_COLORS[reg]}" opacity="0.14"/>` : '';
+
+  // Node artwork badge — owner-colored glow shows ownership; the owner-fill hex behind it reads as a ring.
+  let nodeArt = '';
+  if (tile.isNode && NODE_IMAGES[tile.nodeId]) {
+    const glow = tile.owner
+      ? `drop-shadow(0 0 5px ${G.factions[tile.owner].color}) drop-shadow(0 0 2px ${G.factions[tile.owner].color})`
+      : 'drop-shadow(0 0 3px rgba(0,0,0,0.65))';
+    nodeArt = `<img class="hex-node-art" src="${NODE_IMAGES[tile.nodeId]}" alt="" draggable="false" style="filter:${glow}">`;
+  }
 
   div.innerHTML = `
     <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
@@ -1630,10 +1659,9 @@ function makeHex(tile) {
       ${regTint}
       ${entrench>0 && tile.owner ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
         fill="none" stroke="#ffffff" stroke-width="${entrench}" opacity="0.35"/>` : ''}
-      ${tile.isNode ? `<polygon points="40,10 70,27 70,63 40,80 10,63 10,27"
-        fill="none" stroke="#f1c40f" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>` : ''}
     </svg>
-    <div class="hex-label">${tile.isNode?'★\n':''}${tile.short}</div>
+    ${nodeArt}
+    <div class="hex-label">${tile.isNode ? '' : tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
     ${regTag}
     ${entrenchPips}
