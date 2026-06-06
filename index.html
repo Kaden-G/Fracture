@@ -457,8 +457,7 @@
     padding: 6px 14px;
     min-height: 46px;
     max-height: 58px;
-    overflow-x: auto;
-    white-space: nowrap;
+    overflow: hidden;
   }
   #event-strip .log-title {
     font-family: 'Bangers', cursive;
@@ -467,7 +466,17 @@
     font-size: 18px;
     flex-shrink: 0;
   }
-  #event-log { display: flex; align-items: center; gap: 12px; }
+  /* the log itself scrolls; newest is appended on the right and auto-scrolled into view */
+  #event-log {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    overflow-x: auto;
+    white-space: nowrap;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+  }
   .log-chip {
     color: var(--log-text);
     font-size: 13px;
@@ -476,8 +485,7 @@
     padding-right: 12px;
     border-right: 1px solid #2a2a3e;
   }
-  .log-chip:first-child { color: #fff; font-weight: 700; }
-  .log-chip:last-child { border-right: none; }
+  .log-chip:last-child { color: #fff; font-weight: 700; border-right: none; }
 
   .quick-ref { font-size: 12px; line-height: 1.55; color: #c9d1d9; }
   .quick-ref > div { margin-bottom: 6px; }
@@ -1574,14 +1582,27 @@ function renderSidebar() {
       ? rows.map(r=>`<div class="faction-row-sub" style="padding:2px 0">${r}</div>`).join('')
       : `<div class="faction-row-sub" style="opacity:0.6">No active pacts or grudges.</div>`;
   }
+
+  renderLog();   // keep the bottom feed current (incl. when loading remote online state)
 }
 
 function addLog(msg) {
-  G.log.unshift(msg);
-  if (G.log.length > 14) G.log.pop();
+  if (!G.log) G.log = [];
+  G.log.push(msg);                 // newest at the end
+  if (G.log.length > 10) G.log.shift();   // tail the last 10
+  renderLog();
+}
+
+function renderLog() {
   const el = document.getElementById('event-log');
-  if (el) el.innerHTML = G.log.map((m,i) =>
-    `<span class="log-chip" style="opacity:${Math.max(0.45,1-i*0.07)}">${m}</span>`).join('');
+  if (!el) return;
+  const log = G.log || [];
+  const n = log.length;
+  el.innerHTML = log.map((m, i) => {
+    const op = n <= 1 ? 1 : Math.max(0.4, 0.45 + 0.55 * (i / (n - 1)));  // older → dimmer
+    return `<span class="log-chip" style="opacity:${op.toFixed(2)}">${m}</span>`;
+  }).join('');
+  el.scrollLeft = el.scrollWidth;  // auto-scroll to keep the newest entry in view
 }
 
 function setActionLog(msg) {
