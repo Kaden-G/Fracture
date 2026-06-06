@@ -253,9 +253,10 @@
   /* ===== GAME SCREEN ===== */
   #game-screen {
     display: grid;
-    grid-template-columns: 1fr 300px;
+    grid-template-columns: 1fr 450px;
     grid-template-rows: auto 1fr auto auto;  /* header | board+sidebar | event feed | actions */
     min-height: 100vh;
+    max-height: 100vh;
     gap: 0;
   }
   #game-screen.active { display: grid; }
@@ -295,6 +296,9 @@
     background: #1a1a2e;
     background-image: radial-gradient(circle, rgba(241,196,15,0.05) 1px, transparent 1px);
     background-size: 24px 24px;
+    display: flex;            /* center the board so leftover space is balanced, not dumped below */
+    align-items: safe center; /* 'safe' = center when it fits, but stay scrollable if it overflows */
+    justify-content: safe center;
   }
 
   #hex-grid {
@@ -372,6 +376,22 @@
     filter: drop-shadow(0 0 1px rgba(0,0,0,0.8));
   }
 
+  .hex-region {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    font-family: 'Bangers', cursive;
+    font-size: 15px;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 3;
+    opacity: 0.8;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+  }
+  /* tiles in the round's active event region get a glowing ring */
+  .hex.region-active svg polygon:first-child { filter: drop-shadow(0 0 6px var(--node-glow)); }
+  .hex.region-active { filter: brightness(1.12); }
+
   /* ===== SIDEBAR ===== */
   #sidebar {
     background: var(--sidebar-bg);
@@ -389,7 +409,7 @@
 
   .sidebar-section h4 {
     font-family: 'Bangers', cursive;
-    font-size: 19px;
+    font-size: 20px;
     letter-spacing: 2px;
     margin-bottom: 10px;
     color: var(--node-glow);
@@ -402,7 +422,7 @@
     padding: 8px 10px;
     border: 1px solid #2a2a3e;
     background: #0d1117;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     margin-bottom: 5px;
     color: var(--card-text);
@@ -417,7 +437,7 @@
   }
 
   .faction-row-sub {
-    font-size: 12px;
+    font-size: 13px;
     color: #999;
     font-weight: 600;
   }
@@ -428,7 +448,7 @@
     justify-content: space-between;
     padding: 7px 10px;
     border: 1px solid #2a2a3e;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     background: #0d1117;
     margin-bottom: 4px;
@@ -440,7 +460,7 @@
     border: 2px solid #2a2a3e;
     padding: 5px 11px;
     font-family: 'Bangers', cursive;
-    font-size: 17px;
+    font-size: 18px;
     letter-spacing: 1px;
     color: var(--card-text);
     margin: 3px;
@@ -452,11 +472,11 @@
     background: var(--log-bg);
     border-top: 4px solid var(--node-glow);
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 12px;
-    padding: 6px 14px;
-    min-height: 46px;
-    max-height: 58px;
+    padding: 8px 14px;
+    min-height: 104px;
+    max-height: 140px;
     overflow: hidden;
   }
   #event-strip .log-title {
@@ -465,29 +485,30 @@
     letter-spacing: 2px;
     font-size: 18px;
     flex-shrink: 0;
+    align-self: flex-start;
+    padding-top: 2px;
   }
-  /* the log itself scrolls; newest is appended on the right and auto-scrolled into view */
+  /* the log scrolls as a vertical column; newest line is at the bottom and auto-scrolled into view */
   #event-log {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 3px;
     flex: 1;
-    overflow-x: auto;
-    white-space: nowrap;
+    overflow-y: auto;
     scroll-behavior: smooth;
     scrollbar-width: thin;
   }
   .log-chip {
     color: var(--log-text);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
-    flex-shrink: 0;
-    padding-right: 12px;
-    border-right: 1px solid #2a2a3e;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .log-chip:last-child { color: #fff; font-weight: 700; border-right: none; }
+  .log-chip:last-child { color: #fff; font-weight: 700; }
 
-  .quick-ref { font-size: 12px; line-height: 1.55; color: #c9d1d9; }
+  .quick-ref { font-size: 13px; line-height: 1.55; color: #c9d1d9; }
   .quick-ref > div { margin-bottom: 6px; }
   .quick-ref strong { color: var(--node-glow); font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
   .quick-ref b { color: #fff; }
@@ -871,13 +892,19 @@
   }
   .handoff-hint { font-size:13px; color:#777; margin-top:14px; }
 
-  @media (max-width: 640px) {
-    #game-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto auto auto; }
-    #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 200px; }
+  @media (max-width: 900px) {
+    #game-screen {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr auto auto auto;
+      max-height: none;            /* let the page scroll on small screens */
+    }
+    #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 220px; }
+    #event-strip { min-height: 80px; max-height: 110px; }
     .hex { width: 88px; height: 98px; }
     .hex-row.offset { margin-left: 49px; }
     .hex-row { margin-top: -16px; }
     .hex-troops { bottom: 16px; right: 16px; font-size: 16px; width: 24px; height: 24px; }
+    .hex-region { top: 14px; left: 14px; font-size: 13px; }
   }
 </style>
 </head>
@@ -1061,15 +1088,14 @@
       <li><strong>BETRAYAL:</strong> Break a pact to strike and the victim gets <strong>+2</strong> in every fight against you for 2 rounds (a grudge). The AI honors pacts too — but may betray <em>you</em> to seize a Node.</li>
       <li><strong>COALITION:</strong> Whoever holds 2+ Nodes is the threat — everyone else gets <strong>+1</strong> attacking them. No runaway snowball to victory.</li>
     </ul>
+    <h3>🧭 REGIONS</h3>
+    <p>The map is split into four cardinal regions — <strong style="color:#5dade2">NORTH</strong>, <strong style="color:#2ecc71">EAST</strong>, <strong style="color:#e74c3c">SOUTH</strong>, <strong style="color:#f1c40f">WEST</strong> — marked by a letter on each tile (the center is the neutral CORE). Many events strike one whole region. Across a full game each region is hit equally often, but in a random order — so <em>where</em> you commit your forces matters.</p>
     <h3>🃏 ROUND EVENTS</h3>
-    <p>Every round opens with an event that hits ALL factions by rule (no random favorites). They swing hard:</p>
+    <p>Every round opens with an event. Regional ones name their target region; global ones hit everyone:</p>
     <ul>
-      <li><strong>MARKET CRASH:</strong> everyone loses half their resources.</li>
-      <li><strong>THE UPRISING:</strong> every 4+ stack loses 2 troops & its dig-in.</li>
-      <li><strong>REVOLUTION:</strong> the Node leader loses a Node to neutral.</li>
-      <li><strong>TOTAL WAR:</strong> entrenchment wiped, all attackers +1 this round.</li>
-      <li><strong>GOLD RUSH:</strong> everyone +5 resources. <strong>SIGNAL JAM:</strong> no attacks.</li>
-      <li><strong>BLACKOUT / MOBILIZATION / INSURGENCY</strong> and choice events (<strong>Warlord's Tribute</strong>, <strong>Mercenary Contract</strong>) where each faction decides for itself.</li>
+      <li><strong>Regional:</strong> Power Failure, The Uprising, Earthquake, Riot, Siege (−dig-in), Muster (+troops), Gold Strike (+res per tile held there).</li>
+      <li><strong>Global:</strong> Market Crash (−½ res), Revolution (Node leader loses a Node), Total War (no dig-in, attackers +1), Insurgency (underdog buff).</li>
+      <li><strong>Choice:</strong> Warlord's Tribute & Mercenary Contract — each faction picks coin vs. blood.</li>
     </ul>
     <h3>🧬 PASSIVE TRAITS</h3>
     <ul>
@@ -1130,17 +1156,19 @@ const TRAITS = [
 ];
 
 const EVENTS = [
-  // ---- CHAOS: big disruptions, mostly rule-based so they're fair, not random screw-jobs ----
-  { type:'CHAOS', title:'MARKET CRASH', body:'Currency collapses — every faction loses HALF its resources. Hoarders weep.', apply: applyCrash },
-  { type:'CHAOS', title:'THE UPRISING', body:'The masses turn on the powerful — every stack of 4+ troops loses 2 and its dug-in bonus.', apply: applyUprising },
-  { type:'CHAOS', title:'REVOLUTION',   body:'The Node leader is overthrown — they lose one Core Node to the mob.', apply: applyRevolution },
-  { type:'CHAOS', title:'BLACKOUT',     body:'The grid fails — EVERY Core Node loses 2 troops (min 1).', apply: applyBlackout },
-  { type:'CHAOS', title:'SIGNAL JAM',   body:'Comms jammed — no attacks at all this round. An enforced ceasefire.', apply: applySignalJam },
-  { type:'CHAOS', title:'TOTAL WAR',    body:'Bloodlust takes hold — ALL entrenchment is wiped and attackers strike +1 this round.', apply: applyTotalWar },
-  // ---- LUCK: big upside, with catch-up tilted toward whoever is behind ----
-  { type:'LUCK',  title:'GOLD RUSH',         body:'A resource boom — every faction gains +5 resources. Spend it or waste it.', apply: applyGoldRush },
-  { type:'LUCK',  title:'INSURGENCY',        body:'The underdog rises — the weakest faction gains +4 troops and +3 resources.', apply: applyInsurgency },
-  { type:'LUCK',  title:'MASS MOBILIZATION', body:'A call to arms — every faction gains +1 troop on EVERY tile it holds.', apply: applyMobilization },
+  // ---- REGIONAL: hit the round's target region. The region bag keeps N/S/E/W even over a game ----
+  { type:'CHAOS', region:true, title:'POWER FAILURE', body:'Every held tile in the region loses 1 troop and its dig-in.', apply: applyPowerFailure },
+  { type:'CHAOS', region:true, title:'THE UPRISING',  body:'Every 4+ stack in the region loses 2 troops and its dig-in.',  apply: applyUprising },
+  { type:'CHAOS', region:true, title:'EARTHQUAKE',    body:'The region is shaken — tiles lose 1 troop, Nodes lose 2.',     apply: applyQuake },
+  { type:'CHAOS', region:true, title:'RIOT',          body:'A district in the region falls to the weakest faction.',       apply: applyRiot },
+  { type:'CHAOS', region:true, title:'SIEGE',         body:'All entrenchment across the region is broken.',                apply: applySiege },
+  { type:'LUCK',  region:true, title:'MUSTER',        body:'+1 troop on every tile you hold in the region.',               apply: applyMuster },
+  { type:'LUCK',  region:true, title:'GOLD STRIKE',   body:'+1 resource for each tile you hold in the region.',            apply: applyGoldStrike },
+  // ---- GLOBAL: board-wide swings ----
+  { type:'CHAOS', title:'MARKET CRASH', body:'Every faction loses HALF its resources. Hoarders weep.',       apply: applyCrash },
+  { type:'CHAOS', title:'REVOLUTION',   body:'The Node leader is overthrown — they lose one Core Node.',      apply: applyRevolution },
+  { type:'CHAOS', title:'TOTAL WAR',    body:'ALL entrenchment wiped and attackers strike +1 this round.',    apply: applyTotalWar },
+  { type:'LUCK',  title:'INSURGENCY',   body:'The weakest faction gains +4 troops and +3 resources.',         apply: applyInsurgency },
   // ---- CHOICE: money-vs-blood decisions, every faction picks for itself ----
   { type:'CHOICE', title:"WARLORD'S TRIBUTE",
     body:'A warlord marches on Nexus and demands payment. Coin, or blood?',
@@ -1174,6 +1202,27 @@ const NODE_BONUSES = {
   node_comms:   '+1 attack rolls',
   node_data:    '+1 defense rolls',
 };
+
+// ---- REGIONS: a pinwheel split of the 5×5 grid into N/S/E/W (6 tiles each) + a neutral CORE.
+const REGION_NAMES  = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST', C:'CORE' };
+const REGION_COLORS = { N:'#5dade2', S:'#e74c3c', E:'#2ecc71', W:'#f1c40f', C:'#888' };
+function regionOf(t) {
+  const dr = t.row - 2, dc = t.col - 2;
+  if (dr === 0 && dc === 0) return 'C';
+  const adr = Math.abs(dr), adc = Math.abs(dc);
+  if (adr > adc) return dr < 0 ? 'N' : 'S';
+  if (adc > adr) return dc < 0 ? 'W' : 'E';
+  // diagonal ties → pinwheel: top-left→N, top-right→E, bottom-right→S, bottom-left→W
+  if (dr < 0) return dc < 0 ? 'N' : 'E';
+  return dc < 0 ? 'W' : 'S';
+}
+function regionTiles(reg) { return Object.values(G.tiles).filter(t => t.region === reg); }
+// Draw the next region from a shuffled bag, refilling when empty — so over a whole game
+// each of N/S/E/W is targeted equally often, in a random order each playthrough.
+function nextRegion() {
+  if (!G.regionBag || !G.regionBag.length) G.regionBag = shuffle(['N','S','E','W']);
+  return G.regionBag.pop();
+}
 
 const DISTRICT_NAMES = ['ASHFIELD','LOWGATE','COPPERWAY','IRONSIDE','DUSKHOLM',
   'REDMERE','VAULTYARD','CINDERBLOCK','FENWICK','QUARRY ROW',
@@ -1471,6 +1520,9 @@ function buildMap() {
     });
   });
 
+  // Stamp each tile with its cardinal region (used by region-targeted events).
+  Object.values(tiles).forEach(t => { t.region = regionOf(t); });
+
   return tiles;
 }
 
@@ -1513,6 +1565,10 @@ function makeHex(tile) {
   const entrenchPips = entrench>0 && tile.owner
     ? `<div class="hex-entrench" title="Dug in +${entrench}">${'🛡️'.repeat(entrench)}</div>` : '';
 
+  const reg = tile.region;
+  const regTag = (reg && reg !== 'C')
+    ? `<div class="hex-region" style="color:${REGION_COLORS[reg]}" title="${REGION_NAMES[reg]} region">${reg}</div>` : '';
+
   div.innerHTML = `
     <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
       <polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
@@ -1524,10 +1580,12 @@ function makeHex(tile) {
     </svg>
     <div class="hex-label">${tile.isNode?'★\n':''}${tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
+    ${regTag}
     ${entrenchPips}
   `;
 
   if (selectedTile === tile.id) div.classList.add('selected');
+  if (G.eventRegion && reg === G.eventRegion) div.classList.add('region-active');
   return div;
 }
 
@@ -1624,7 +1682,7 @@ function renderLog() {
     const op = n <= 1 ? 1 : Math.max(0.4, 0.45 + 0.55 * (i / (n - 1)));  // older → dimmer
     return `<span class="log-chip" style="opacity:${op.toFixed(2)}">${m}</span>`;
   }).join('');
-  el.scrollLeft = el.scrollWidth;  // auto-scroll to keep the newest entry in view
+  el.scrollTop = el.scrollHeight;  // newest line is at the bottom — keep it in view
 }
 
 function setActionLog(msg) {
@@ -1650,12 +1708,15 @@ function startRound() {
 
   const ev = EVENTS[Math.floor(Math.random()*EVENTS.length)];
   if (ev.choices) {
+    G.eventRegion = null;
     showChoiceEvent(ev, () => { renderMap(); renderSidebar(); doNextTurn(); });
   } else {
-    ev.apply();
+    const reg = ev.region ? nextRegion() : null;   // regional events draw from the even-distribution bag
+    G.eventRegion = reg;
+    ev.apply(reg);
     renderMap();
     renderSidebar();
-    showEventCard(ev, () => doNextTurn());
+    showEventCard(ev, () => doNextTurn(), reg);
   }
 }
 
@@ -2413,13 +2474,48 @@ function applyCrash() {
   livingKeys().forEach(k => { G.factions[k].resources = Math.floor(G.factions[k].resources / 2); });
   addLog('💸 EVENT: MARKET CRASH — every faction loses half its resources');
 }
-function applyUprising() {
-  let hit = 0;
-  Object.values(G.tiles).forEach(t => {
-    if (t.owner && t.troops >= 4) { t.troops = Math.max(1, t.troops - 2); t.heldRounds = 0; hit++; refreshHex(t.id); }
-  });
-  addLog(`✊ EVENT: THE UPRISING — ${hit} large stack${hit===1?'':'s'} cut down by 2`);
+// ---- REGIONAL events (receive the round's target region key) ----
+function applyPowerFailure(reg) {
+  regionTiles(reg).forEach(t => { if (t.owner) { t.troops = Math.max(1, t.troops - 1); t.heldRounds = 0; refreshHex(t.id); } });
+  addLog(`⚡ EVENT: POWER FAILURE — ${REGION_NAMES[reg]} loses 1 troop per tile & digs out`);
 }
+function applyUprising(reg) {
+  let hit = 0;
+  regionTiles(reg).forEach(t => {
+    if (t.owner && t.troops >= 4) { t.troops -= 2; t.heldRounds = 0; hit++; refreshHex(t.id); }
+  });
+  addLog(`✊ EVENT: THE UPRISING — ${hit} large stack${hit===1?'':'s'} cut down in ${REGION_NAMES[reg]}`);
+}
+function applyQuake(reg) {
+  regionTiles(reg).forEach(t => { if (t.owner) { t.troops = Math.max(1, t.troops - (t.isNode ? 2 : 1)); t.heldRounds = 0; refreshHex(t.id); } });
+  addLog(`🌋 EVENT: EARTHQUAKE — ${REGION_NAMES[reg]} shaken; Nodes hit hardest`);
+}
+function applyRiot(reg) {
+  const tiles = regionTiles(reg).filter(t => t.owner && !t.isNode);
+  const w = weakestKey();
+  if (!tiles.length || !w) { addLog(`🔥 EVENT: RIOT — ${REGION_NAMES[reg]} stays calm`); return; }
+  const target = tiles[Math.floor(Math.random() * tiles.length)];
+  const prev = target.owner;
+  target.owner = w; target.heldRounds = 0; refreshHex(target.id);
+  if (prev !== w && tilesOf(prev).length === 0) { G.factions[prev].eliminated = true; addLog(`💀 ${G.factions[prev].name} ELIMINATED!`); }
+  addLog(`🔥 EVENT: RIOT — ${target.name} in ${REGION_NAMES[reg]} falls to ${G.factions[w].name}`);
+}
+function applySiege(reg) {
+  let n = 0;
+  regionTiles(reg).forEach(t => { if (t.heldRounds) { t.heldRounds = 0; n++; refreshHex(t.id); } });
+  addLog(`⚔️ EVENT: SIEGE — entrenchment broken across ${REGION_NAMES[reg]} (${n} tile${n===1?'':'s'})`);
+}
+function applyMuster(reg) {
+  regionTiles(reg).forEach(t => { if (t.owner) { t.troops++; refreshHex(t.id); } });
+  addLog(`🎖️ EVENT: MUSTER — +1 troop on every held tile in ${REGION_NAMES[reg]}`);
+}
+function applyGoldStrike(reg) {
+  const tiles = regionTiles(reg);
+  livingKeys().forEach(k => { const n = tiles.filter(t => t.owner === k).length; if (n) G.factions[k].resources = Math.min(G.factions[k].resources + n, RES_CAP); });
+  addLog(`💰 EVENT: GOLD STRIKE — ${REGION_NAMES[reg]} pays +1 res per tile held there`);
+}
+
+// ---- GLOBAL events ----
 function applyRevolution() {
   const alive = livingKeys();
   let leader = null, bestN = -1, bestT = -1;
@@ -2430,22 +2526,10 @@ function applyRevolution() {
   node.owner = null; node.troops = 0; node.heldRounds = 0; refreshHex(node.id);
   addLog(`🚩 EVENT: REVOLUTION — ${G.factions[leader].name} loses ${node.name} to the mob`);
 }
-function applyBlackout() {
-  Object.values(G.tiles).filter(t => t.isNode && t.owner).forEach(t => { t.troops = Math.max(1, t.troops - 2); refreshHex(t.id); });
-  addLog('⚡ EVENT: BLACKOUT — every Core Node loses 2 troops');
-}
-function applySignalJam() {
-  signalJamActive = true;
-  addLog('📡 EVENT: SIGNAL JAM — no attacks this round!');
-}
 function applyTotalWar() {
   totalWar = true;
   Object.values(G.tiles).forEach(t => { if (t.heldRounds) { t.heldRounds = 0; refreshHex(t.id); } });
   addLog('⚔️ EVENT: TOTAL WAR — entrenchment wiped, attackers strike +1 this round!');
-}
-function applyGoldRush() {
-  livingKeys().forEach(k => { G.factions[k].resources = Math.min(G.factions[k].resources + 5, RES_CAP); });
-  addLog('💰 EVENT: GOLD RUSH — every faction +5 resources');
 }
 function applyInsurgency() {
   const w = weakestKey();
@@ -2456,14 +2540,10 @@ function applyInsurgency() {
   if (mine.length) for (let i = 0; i < 4; i++) { const t = mine[i % mine.length]; t.troops++; refreshHex(t.id); }
   addLog(`✊ EVENT: INSURGENCY — ${f.name} gains +4 troops & +3 resources`);
 }
-function applyMobilization() {
-  livingKeys().forEach(k => tilesOf(k).forEach(t => { t.troops++; refreshHex(t.id); }));
-  addLog('🎖️ EVENT: MASS MOBILIZATION — +1 troop on every owned tile');
-}
 
-function showEventCard(ev, cb) {
+function showEventCard(ev, cb, reg) {
   document.getElementById('event-type').textContent  = ev.type+' EVENT';
-  document.getElementById('event-title').textContent = ev.title;
+  document.getElementById('event-title').textContent = ev.title + (reg ? ' · ' + REGION_NAMES[reg] : '');
   document.getElementById('event-body').textContent  = ev.body;
   document.getElementById('event-choices').style.display = 'none';
   document.getElementById('event-ok').style.display = '';
