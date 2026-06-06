@@ -303,8 +303,8 @@
 
   #hex-grid {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    flex-direction: row;        /* flat-top hexes tile in columns */
+    align-items: flex-start;
     gap: 0;
     user-select: none;
     position: relative;
@@ -318,16 +318,16 @@
     border-radius: 10px;
   }
 
-  .hex-row { display: flex; margin-top: -13px; }
-  .hex-row:first-child { margin-top: 0; }
-  .hex-row.offset { margin-left: 35px; }
+  .hex-col { display: flex; flex-direction: column; }
+  .hex-col:not(:first-child) { margin-left: -23px; }  /* overlap columns by W/4 */
+  .hex-col.down { margin-top: 39px; }                 /* odd columns shifted down H/2 */
 
   .hex {
-    width: 64px;
-    height: 72px;
+    width: 90px;
+    height: 78px;
     position: relative;
     cursor: pointer;
-    margin: 0 3px;
+    margin: 0;
     transition: filter 0.15s, transform 0.15s;
   }
   .hex svg { width: 100%; height: 100%; }
@@ -342,7 +342,7 @@
     left: 50%;
     transform: translate(-50%,-50%);
     font-family: 'Bangers', cursive;
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.3px;
     text-align: center;
     pointer-events: none;
@@ -355,14 +355,14 @@
 
   .hex-troops {
     position: absolute;
-    bottom: 11px;
-    right: 12px;
+    bottom: 12px;
+    right: 20px;
     background: var(--ink);
     color: var(--node-glow);
     font-family: 'Bangers', cursive;
-    font-size: 12px;
-    width: 19px;
-    height: 19px;
+    font-size: 14px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -374,10 +374,10 @@
 
   .hex-entrench {
     position: absolute;
-    top: 7px;
+    top: 4px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 7px;
+    font-size: 8px;
     letter-spacing: -2px;
     pointer-events: none;
     z-index: 3;
@@ -385,17 +385,7 @@
     filter: drop-shadow(0 0 1px rgba(0,0,0,0.8));
   }
 
-  .hex-node-art {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 96%;
-    height: auto;
-    pointer-events: none;
-    z-index: 2;
-  }
-  .hex-faction-art {
+  .hex-node-art, .hex-faction-art {
     position: absolute;
     top: 50%;
     left: 50%;
@@ -403,15 +393,16 @@
     width: 100%;
     height: auto;
     pointer-events: none;
-    z-index: 1;
   }
+  .hex-node-art { z-index: 2; }
+  .hex-faction-art { z-index: 1; }
 
   .hex-region {
     position: absolute;
-    top: 9px;
-    left: 10px;
+    top: 6px;
+    left: 22px;
     font-family: 'Bangers', cursive;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1;
     pointer-events: none;
     z-index: 3;
@@ -930,11 +921,11 @@
     }
     #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 220px; }
     #event-strip { min-height: 80px; max-height: 110px; }
-    .hex { width: 54px; height: 60px; }
-    .hex-row.offset { margin-left: 30px; }
-    .hex-row { margin-top: -11px; }
-    .hex-troops { bottom: 9px; right: 9px; font-size: 11px; width: 17px; height: 17px; }
-    .hex-region { top: 7px; left: 7px; font-size: 9px; }
+    .hex { width: 64px; height: 55px; }
+    .hex-col:not(:first-child) { margin-left: -16px; }
+    .hex-col.down { margin-top: 28px; }
+    .hex-troops { bottom: 8px; right: 14px; font-size: 11px; width: 17px; height: 17px; }
+    .hex-region { top: 4px; left: 15px; font-size: 9px; }
   }
 </style>
 </head>
@@ -1173,7 +1164,7 @@ window.onerror = function(msg, src, line) {
 // GAME DATA
 // ============================================================
 const RES_CAP = 14;  // resource stockpile ceiling
-const GRID    = 10;  // board is GRID x GRID tiles
+const GRID    = 7;   // board is GRID x GRID tiles
 
 const FACTIONS = {
   grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'reinforce', perk:'Industrial: reinforce −1 cost & +3 troops' },
@@ -1519,12 +1510,13 @@ function randTrait() { return TRAITS[Math.floor(Math.random()*TRAITS.length)].id
 // ============================================================
 // Symmetric node positions on the GRIDxGRID board: one node near each corner
 // (so every faction has a nearby objective) + a contested central node.
+const _Q = 1, _MID = Math.floor((GRID - 1) / 2);
 const NODE_POSITIONS = {
-  node_power:   { row: 2, col: 2 },              // NW quadrant
-  node_water:   { row: 2, col: GRID-3 },         // NE quadrant
-  node_transit: { row: (GRID>>1)-1, col: (GRID>>1)-1 },  // center (contested)
-  node_comms:   { row: GRID-3, col: 2 },         // SW quadrant
-  node_data:    { row: GRID-3, col: GRID-3 },    // SE quadrant
+  node_power:   { row: _Q,          col: _Q          },  // NW quadrant
+  node_water:   { row: _Q,          col: GRID-1-_Q   },  // NE quadrant
+  node_transit: { row: _MID,        col: _MID        },  // center (contested)
+  node_comms:   { row: GRID-1-_Q,   col: _Q          },  // SW quadrant
+  node_data:    { row: GRID-1-_Q,   col: GRID-1-_Q   },  // SE quadrant
 };
 
 // Each faction starts in a corner with 2 adjacent tiles, mirrored across the board.
@@ -1591,17 +1583,17 @@ function shuffle(a) {
 function renderMap() {
   const grid = document.getElementById('hex-grid');
   grid.innerHTML = '';
-  const rows = Array.from({length: GRID}, () => []);
-  Object.values(G.tiles).forEach(t => rows[t.row].push(t));
-  rows.forEach(r => r.sort((a,b)=>a.col-b.col));
+  // Flat-top hexes tile in COLUMNS; odd columns are shifted down half a tile.
+  const cols = Array.from({length: GRID}, () => []);
+  Object.values(G.tiles).forEach(t => cols[t.col].push(t));
+  cols.forEach(c => c.sort((a,b)=>a.row-b.row));
 
-  rows.forEach((row, ri) => {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'hex-row' + (ri%2===1?' offset':'');
-    row.forEach(tile => rowEl.appendChild(makeHex(tile)));
-    grid.appendChild(rowEl);
+  cols.forEach((col, ci) => {
+    const colEl = document.createElement('div');
+    colEl.className = 'hex-col' + (ci%2===1 ? ' down' : '');
+    col.forEach(tile => colEl.appendChild(makeHex(tile)));
+    grid.appendChild(colEl);
   });
-
 }
 
 function makeHex(tile) {
@@ -1640,16 +1632,17 @@ function makeHex(tile) {
     factionArt = `<img class="hex-faction-art" src="${FACTION_IMAGES[tile.owner]}" alt="" draggable="false" style="filter:drop-shadow(0 0 4px ${oc})">`;
   }
 
+  const HEX = '25,2 75,2 98,43.5 75,85 25,85 2,43.5';   // flat-top hexagon
+  const hideLabel = tile.isNode && NODE_IMAGES[tile.nodeId];  // art tiles need no text
   div.innerHTML = `
-    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
-        fill="${fillColor}" stroke="${strokeC}" stroke-width="${strokeW}"/>
-      ${entrench>0 && tile.owner ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
+    <svg viewBox="0 0 100 87" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="${HEX}" fill="${fillColor}" stroke="${strokeC}" stroke-width="${strokeW}"/>
+      ${entrench>0 && tile.owner ? `<polygon points="${HEX}"
         fill="none" stroke="#ffffff" stroke-width="${entrench}" opacity="0.35"/>` : ''}
     </svg>
     ${factionArt}
     ${nodeArt}
-    <div class="hex-label">${tile.isNode ? '' : tile.short}</div>
+    <div class="hex-label">${hideLabel ? '' : tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
     ${regTag}
     ${entrenchPips}
@@ -2255,6 +2248,11 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       if (defLeft===0) {
         G.factions[prev].eliminated = true;
         addLog(`💀 ${G.factions[prev].name} ELIMINATED!`);
+        // Bounty: wiping a rival turns their final tile into a Node you own (encourages PvP).
+        if (!tgt.isNode) {
+          tgt.isNode = true; tgt.nodeId = 'node_spoils'; tgt.name = 'SPOILS'; tgt.short = '☠ SPOILS';
+          addLog(`🏆 ${af.icon} claimed the SPOILS — ${tgt.name} is now a Node!`);
+        }
       }
     } else {
       tgt.heldRounds = 0;   // taking casualties breaks entrenchment
@@ -2308,13 +2306,13 @@ function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
 // ADJACENCY
 // ============================================================
 function adjacent(a, b) {
-  if (a.row === b.row) return Math.abs(a.col - b.col) === 1;
-  if (Math.abs(a.row - b.row) !== 1) return false;
-  // Offset hex grid: odd rows are shifted right by half a tile.
-  // For odd rows, neighbors above/below are at col and col+1.
-  // For even rows, neighbors above/below are at col-1 and col.
-  if (a.row % 2 === 1) return b.col === a.col || b.col === a.col + 1;
-  else                 return b.col === a.col || b.col === a.col - 1;
+  // Flat-top hexes laid out in columns; ODD columns are shifted DOWN by half a tile.
+  const dc = Math.abs(a.col - b.col);
+  if (dc === 0) return Math.abs(a.row - b.row) === 1;   // same column: up / down
+  if (dc !== 1) return false;                            // must be an adjacent column
+  const dr = b.row - a.row;
+  return (a.col % 2 === 0) ? (dr === -1 || dr === 0)     // even col → neighbors at r-1, r
+                          : (dr === 0  || dr === 1);     // odd col  → neighbors at r, r+1
 }
 
 // ============================================================
