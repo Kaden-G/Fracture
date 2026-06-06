@@ -985,6 +985,11 @@
         <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) + Blitz &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
         <div><strong>NODES:</strong> +1 res each, plus a passive (see Core Nodes above).</div>
         <div><strong>PACTS:</strong> no attacks while allied — betray and they get <b>+2</b> vs you.</div>
+        <div style="margin-top:4px"><strong>REGIONS:</strong>
+          <span style="color:#5dade2">┄ NORTH</span> &nbsp;<span style="color:#2ecc71">┄ EAST</span>
+          &nbsp;<span style="color:#e74c3c">┄ SOUTH</span> &nbsp;<span style="color:#f1c40f">┄ WEST</span>
+          <span style="color:#999"> — many events hit one region.</span>
+        </div>
         <div id="ref-ability"></div>
       </div>
       <button class="action-btn" style="width:100%; margin-top:10px; font-size:14px;" onclick="openRules()">📖 FULL RULES</button>
@@ -1569,6 +1574,29 @@ function makeHex(tile) {
   const regTag = (reg && reg !== 'C')
     ? `<div class="hex-region" style="color:${REGION_COLORS[reg]}" title="${REGION_NAMES[reg]} region">${reg}</div>` : '';
 
+  // Region outline: draw a dotted, region-colored line on each edge that borders a
+  // DIFFERENT region (or the map edge), so every region is encircled in its own color.
+  let regLines = '';
+  if (reg) {
+    const r = tile.row, c = tile.col, odd = (r % 2 === 1);
+    const regAt = (rr, cc) => {
+      const t = (rr>=0&&rr<5&&cc>=0&&cc<5) ? G.tiles['tile_'+rr+'_'+cc] : null;
+      return t ? t.region : null;
+    };
+    const edges = [
+      { nr:r,   nc:c+1,         p:'78,22 78,68' },  // right
+      { nr:r,   nc:c-1,         p:'2,22 2,68'   },  // left
+      { nr:r-1, nc:odd?c:c-1,   p:'40,2 2,22'   },  // up-left
+      { nr:r-1, nc:odd?c+1:c,   p:'40,2 78,22'  },  // up-right
+      { nr:r+1, nc:odd?c:c-1,   p:'2,68 40,88'  },  // down-left
+      { nr:r+1, nc:odd?c+1:c,   p:'78,68 40,88' },  // down-right
+    ];
+    const col = REGION_COLORS[reg];
+    regLines = edges.filter(e => regAt(e.nr, e.nc) !== reg)
+      .map(e => `<polyline points="${e.p}" fill="none" stroke="${col}" stroke-width="2.6" stroke-dasharray="3,3" stroke-linecap="round" opacity="0.95"/>`)
+      .join('');
+  }
+
   div.innerHTML = `
     <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
       <polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
@@ -1577,6 +1605,7 @@ function makeHex(tile) {
         fill="none" stroke="#ffffff" stroke-width="${entrench}" opacity="0.35"/>` : ''}
       ${tile.isNode ? `<polygon points="40,10 70,27 70,63 40,80 10,63 10,27"
         fill="none" stroke="#f1c40f" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>` : ''}
+      ${regLines}
     </svg>
     <div class="hex-label">${tile.isNode?'★\n':''}${tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
