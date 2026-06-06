@@ -310,16 +310,16 @@
     position: relative;   /* anchor for the adjacency-link overlay */
   }
 
-  .hex-row { display: flex; margin-top: -24px; }
+  .hex-row { display: flex; margin-top: -13px; }
   .hex-row:first-child { margin-top: 0; }
-  .hex-row.offset { margin-left: 66px; }
+  .hex-row.offset { margin-left: 35px; }
 
   .hex {
-    width: 122px;
-    height: 136px;
+    width: 64px;
+    height: 72px;
     position: relative;
     cursor: pointer;
-    margin: 0 5px;
+    margin: 0 3px;
     transition: filter 0.15s, transform 0.15s;
   }
   .hex svg { width: 100%; height: 100%; }
@@ -334,11 +334,11 @@
     left: 50%;
     transform: translate(-50%,-50%);
     font-family: 'Bangers', cursive;
-    font-size: 16px;
-    letter-spacing: 0.5px;
+    font-size: 9px;
+    letter-spacing: 0.3px;
     text-align: center;
     pointer-events: none;
-    line-height: 1.25;
+    line-height: 1.15;
     white-space: pre-line;
     z-index: 2;
     color: white;
@@ -347,14 +347,14 @@
 
   .hex-troops {
     position: absolute;
-    bottom: 22px;
-    right: 24px;
+    bottom: 11px;
+    right: 12px;
     background: var(--ink);
     color: var(--node-glow);
     font-family: 'Bangers', cursive;
-    font-size: 19px;
-    width: 30px;
-    height: 30px;
+    font-size: 12px;
+    width: 19px;
+    height: 19px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -366,10 +366,10 @@
 
   .hex-entrench {
     position: absolute;
-    top: 16px;
+    top: 7px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 9px;
+    font-size: 7px;
     letter-spacing: -2px;
     pointer-events: none;
     z-index: 3;
@@ -400,10 +400,10 @@
 
   .hex-region {
     position: absolute;
-    top: 20px;
-    left: 20px;
+    top: 9px;
+    left: 10px;
     font-family: 'Bangers', cursive;
-    font-size: 15px;
+    font-size: 10px;
     line-height: 1;
     pointer-events: none;
     z-index: 3;
@@ -922,11 +922,11 @@
     }
     #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 220px; }
     #event-strip { min-height: 80px; max-height: 110px; }
-    .hex { width: 88px; height: 98px; }
-    .hex-row.offset { margin-left: 49px; }
-    .hex-row { margin-top: -16px; }
-    .hex-troops { bottom: 16px; right: 16px; font-size: 16px; width: 24px; height: 24px; }
-    .hex-region { top: 14px; left: 14px; font-size: 13px; }
+    .hex { width: 54px; height: 60px; }
+    .hex-row.offset { margin-left: 30px; }
+    .hex-row { margin-top: -11px; }
+    .hex-troops { bottom: 9px; right: 9px; font-size: 11px; width: 17px; height: 17px; }
+    .hex-region { top: 7px; left: 7px; font-size: 9px; }
   }
 </style>
 </head>
@@ -1165,6 +1165,7 @@ window.onerror = function(msg, src, line) {
 // GAME DATA
 // ============================================================
 const RES_CAP = 14;  // resource stockpile ceiling
+const GRID    = 10;  // board is GRID x GRID tiles
 
 const FACTIONS = {
   grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'reinforce', perk:'Industrial: reinforce −1 cost & +3 troops' },
@@ -1251,7 +1252,8 @@ const FACTION_IMAGES = {
 const REGION_NAMES  = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST', C:'CORE' };
 const REGION_COLORS = { N:'#5dade2', S:'#e74c3c', E:'#2ecc71', W:'#f1c40f', C:'#888' };
 function regionOf(t) {
-  const dr = t.row - 2, dc = t.col - 2;
+  const mid = (GRID - 1) / 2;
+  const dr = t.row - mid, dc = t.col - mid;
   if (dr === 0 && dc === 0) return 'C';
   const adr = Math.abs(dr), adc = Math.abs(dc);
   if (adr > adc) return dr < 0 ? 'N' : 'S';
@@ -1507,34 +1509,32 @@ function randTrait() { return TRAITS[Math.floor(Math.random()*TRAITS.length)].id
 // ============================================================
 // MAP BUILD
 // ============================================================
-// Fixed, symmetric node positions on the 5x5 grid: 4 quadrants + dead center.
-// This guarantees every faction's corner is equidistant from the central node
-// and has one quadrant node nearby — no random spawn advantage.
+// Symmetric node positions on the GRIDxGRID board: one node near each corner
+// (so every faction has a nearby objective) + a contested central node.
 const NODE_POSITIONS = {
-  node_power:   { row: 1, col: 1 },  // NW quadrant
-  node_water:   { row: 1, col: 3 },  // NE quadrant
-  node_transit: { row: 2, col: 2 },  // dead center (contested by all)
-  node_comms:   { row: 3, col: 1 },  // SW quadrant
-  node_data:    { row: 3, col: 3 },  // SE quadrant
+  node_power:   { row: 2, col: 2 },              // NW quadrant
+  node_water:   { row: 2, col: GRID-3 },         // NE quadrant
+  node_transit: { row: (GRID>>1)-1, col: (GRID>>1)-1 },  // center (contested)
+  node_comms:   { row: GRID-3, col: 2 },         // SW quadrant
+  node_data:    { row: GRID-3, col: GRID-3 },    // SE quadrant
 };
 
 // Each faction starts in a corner with 2 adjacent tiles, mirrored across the board.
-// Corners are symmetric: equal distance to center, each near one quadrant node.
 const START_CORNERS = [
-  { tiles: [{row:0,col:0},{row:0,col:1}], label:'NW' },  // top-left
-  { tiles: [{row:0,col:4},{row:1,col:4}], label:'NE' },  // top-right
-  { tiles: [{row:4,col:0},{row:3,col:0}], label:'SW' },  // bottom-left
-  { tiles: [{row:4,col:4},{row:4,col:3}], label:'SE' },  // bottom-right
+  { tiles: [{row:0,col:0},{row:0,col:1}],               label:'NW' },
+  { tiles: [{row:0,col:GRID-1},{row:1,col:GRID-1}],     label:'NE' },
+  { tiles: [{row:GRID-1,col:0},{row:GRID-2,col:0}],     label:'SW' },
+  { tiles: [{row:GRID-1,col:GRID-1},{row:GRID-1,col:GRID-2}], label:'SE' },
 ];
 
 function buildMap() {
   const tiles = {};
 
-  // 1. Lay down all 25 cells as neutral districts first.
+  // 1. Lay down all GRID*GRID cells as neutral districts first.
   //    Shuffle district NAMES only (cosmetic), positions stay fixed.
   const districtNames = shuffle([...DISTRICT_NAMES]);
   let dn = 0;
-  for (let r=0; r<5; r++) for (let c=0; c<5; c++) {
+  for (let r=0; r<GRID; r++) for (let c=0; c<GRID; c++) {
     const id = `tile_${r}_${c}`;
     const name = districtNames[dn++ % districtNames.length];
     tiles[id] = { id, name, short:name.slice(0,6), isNode:false,
@@ -1583,7 +1583,7 @@ function shuffle(a) {
 function renderMap() {
   const grid = document.getElementById('hex-grid');
   grid.innerHTML = '';
-  const rows = [[],[],[],[],[]];
+  const rows = Array.from({length: GRID}, () => []);
   Object.values(G.tiles).forEach(t => rows[t.row].push(t));
   rows.forEach(r => r.sort((a,b)=>a.col-b.col));
 
@@ -1941,9 +1941,10 @@ function endTurn() {
   if (!checkWin()) setTimeout(doNextTurn, 200);
 }
 
+const ROUND_CAP = 30;
 function endRound() {
   G.round++;
-  if (G.round > 15) {
+  if (G.round > ROUND_CAP) {
     // Tiebreak: most nodes
     let best=null, bestN=-1;
     for (const [k,f] of Object.entries(G.factions)) {
@@ -1951,7 +1952,7 @@ function endRound() {
       const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       if (n>bestN) { bestN=n; best=k; }
     }
-    showWin(best,'TIMED OUT',`After 15 rounds, ${G.factions[best].name} held the most Nodes.`);
+    showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most Nodes.`);
     return;
   }
   startRound();
