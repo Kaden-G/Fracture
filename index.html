@@ -307,6 +307,7 @@
     align-items: center;
     gap: 0;
     user-select: none;
+    position: relative;   /* anchor for the adjacency-link overlay */
   }
 
   .hex-row { display: flex; margin-top: -24px; }
@@ -985,10 +986,10 @@
         <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) + Blitz &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
         <div><strong>NODES:</strong> +1 res each, plus a passive (see Core Nodes above).</div>
         <div><strong>PACTS:</strong> no attacks while allied — betray and they get <b>+2</b> vs you.</div>
-        <div style="margin-top:4px"><strong>REGIONS:</strong>
-          <span style="color:#5dade2">┄ NORTH</span> &nbsp;<span style="color:#2ecc71">┄ EAST</span>
-          &nbsp;<span style="color:#e74c3c">┄ SOUTH</span> &nbsp;<span style="color:#f1c40f">┄ WEST</span>
-          <span style="color:#999"> — many events hit one region.</span>
+        <div style="margin-top:4px"><strong>REGIONS</strong> (tinted zones):
+          <span style="color:#5dade2">● NORTH</span> &nbsp;<span style="color:#2ecc71">● EAST</span>
+          &nbsp;<span style="color:#e74c3c">● SOUTH</span> &nbsp;<span style="color:#f1c40f">● WEST</span>
+          <span style="color:#999"> — many events hit one region. Dotted links show what connects.</span>
         </div>
         <div id="ref-ability"></div>
       </div>
@@ -1094,7 +1095,7 @@
       <li><strong>COALITION:</strong> Whoever holds 2+ Nodes is the threat — everyone else gets <strong>+1</strong> attacking them. No runaway snowball to victory.</li>
     </ul>
     <h3>🧭 REGIONS</h3>
-    <p>The map is split into four cardinal regions — <strong style="color:#5dade2">NORTH</strong>, <strong style="color:#2ecc71">EAST</strong>, <strong style="color:#e74c3c">SOUTH</strong>, <strong style="color:#f1c40f">WEST</strong> — marked by a letter on each tile (the center is the neutral CORE). Many events strike one whole region. Across a full game each region is hit equally often, but in a random order — so <em>where</em> you commit your forces matters.</p>
+    <p>The map is split into four cardinal regions — <strong style="color:#5dade2">NORTH</strong>, <strong style="color:#2ecc71">EAST</strong>, <strong style="color:#e74c3c">SOUTH</strong>, <strong style="color:#f1c40f">WEST</strong> — shown as soft color-tinted zones (the center is the neutral CORE). Dotted links between tiles show which ones connect for Move/Attack. Many events strike one whole region; across a full game each region is hit equally often, in a random order — so <em>where</em> you commit your forces matters.</p>
     <h3>🃏 ROUND EVENTS</h3>
     <p>Every round opens with an event. Regional ones name their target region; global ones hit everyone:</p>
     <ul>
@@ -1554,6 +1555,52 @@ function renderMap() {
     row.forEach(tile => rowEl.appendChild(makeHex(tile)));
     grid.appendChild(rowEl);
   });
+
+  drawConnections();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(drawConnections);  // after layout settles
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__linksResize) {
+    window.__linksResize = true;
+    window.addEventListener('resize', () => drawConnections());
+  }
+}
+
+// Risk-style adjacency: a short dotted connector drawn in the seam between every pair of
+// tiles you can move/attack between. Uses real laid-out positions, so it tracks any layout.
+function drawConnections() {
+  const grid = document.getElementById('hex-grid');
+  if (!grid || typeof grid.getBoundingClientRect !== 'function') return;
+  const gr = grid.getBoundingClientRect();
+  if (!gr.width) return;
+  const cen = {};
+  Object.values(G.tiles || {}).forEach(t => {
+    const el = document.getElementById('hex-' + t.id);
+    if (!el || typeof el.getBoundingClientRect !== 'function') return;
+    const r = el.getBoundingClientRect();
+    cen[t.id] = { x: r.left - gr.left + r.width / 2, y: r.top - gr.top + r.height / 2 };
+  });
+  const tiles = Object.values(G.tiles || {});
+  let lines = '';
+  for (let i = 0; i < tiles.length; i++) {
+    for (let j = i + 1; j < tiles.length; j++) {
+      if (!adjacent(tiles[i], tiles[j])) continue;
+      const a = cen[tiles[i].id], b = cen[tiles[j].id];
+      if (!a || !b) continue;
+      // draw only the middle ~40% of the link so it sits in the seam, clear of labels
+      const x1 = a.x + 0.32*(b.x-a.x), y1 = a.y + 0.32*(b.y-a.y);
+      const x2 = a.x + 0.68*(b.x-a.x), y2 = a.y + 0.68*(b.y-a.y);
+      lines += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#e8d4a0" stroke-width="2.4" stroke-dasharray="1.5,4" stroke-linecap="round" opacity="0.6"/>`;
+    }
+  }
+  let svg = document.getElementById('hex-links');
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'hex-links';
+    svg.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;z-index:5;overflow:visible;';
+    grid.appendChild(svg);
+  }
+  svg.setAttribute('width', grid.scrollWidth);
+  svg.setAttribute('height', grid.scrollHeight);
+  svg.innerHTML = lines;
 }
 
 function makeHex(tile) {
@@ -1573,39 +1620,18 @@ function makeHex(tile) {
   const reg = tile.region;
   const regTag = (reg && reg !== 'C')
     ? `<div class="hex-region" style="color:${REGION_COLORS[reg]}" title="${REGION_NAMES[reg]} region">${reg}</div>` : '';
-
-  // Region outline: draw a dotted, region-colored line on each edge that borders a
-  // DIFFERENT region (or the map edge), so every region is encircled in its own color.
-  let regLines = '';
-  if (reg) {
-    const r = tile.row, c = tile.col, odd = (r % 2 === 1);
-    const regAt = (rr, cc) => {
-      const t = (rr>=0&&rr<5&&cc>=0&&cc<5) ? G.tiles['tile_'+rr+'_'+cc] : null;
-      return t ? t.region : null;
-    };
-    const edges = [
-      { nr:r,   nc:c+1,         p:'78,22 78,68' },  // right
-      { nr:r,   nc:c-1,         p:'2,22 2,68'   },  // left
-      { nr:r-1, nc:odd?c:c-1,   p:'40,2 2,22'   },  // up-left
-      { nr:r-1, nc:odd?c+1:c,   p:'40,2 78,22'  },  // up-right
-      { nr:r+1, nc:odd?c:c-1,   p:'2,68 40,88'  },  // down-left
-      { nr:r+1, nc:odd?c+1:c,   p:'78,68 40,88' },  // down-right
-    ];
-    const col = REGION_COLORS[reg];
-    regLines = edges.filter(e => regAt(e.nr, e.nc) !== reg)
-      .map(e => `<polyline points="${e.p}" fill="none" stroke="${col}" stroke-width="2.6" stroke-dasharray="3,3" stroke-linecap="round" opacity="0.95"/>`)
-      .join('');
-  }
+  // Group tiles into regions with a soft region-colored tint over the fill.
+  const regTint = reg ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22" fill="${REGION_COLORS[reg]}" opacity="0.14"/>` : '';
 
   div.innerHTML = `
     <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
       <polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
         fill="${fillColor}" stroke="${strokeC}" stroke-width="${strokeW}"/>
+      ${regTint}
       ${entrench>0 && tile.owner ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
         fill="none" stroke="#ffffff" stroke-width="${entrench}" opacity="0.35"/>` : ''}
       ${tile.isNode ? `<polygon points="40,10 70,27 70,63 40,80 10,63 10,27"
         fill="none" stroke="#f1c40f" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>` : ''}
-      ${regLines}
     </svg>
     <div class="hex-label">${tile.isNode?'★\n':''}${tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
