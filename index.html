@@ -758,7 +758,7 @@
     padding: 22px 36px;
     z-index: 300;
     text-align: center;
-    animation: flashIn 0.2s ease, flashOut 0.3s ease 2.0s forwards;
+    animation: flashIn 0.2s ease, flashOut 0.3s ease 1.2s forwards;
     pointer-events: none;
     box-shadow: 0 0 40px rgba(241,196,15,0.3);
     min-width: 320px;
@@ -2006,11 +2006,12 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const attWins = attTotal >= defTotal + fortify;
 
   // Flash the result whenever the human is involved — attacking OR defending
+  const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
       { die: attDie, force: attForce, blitz, comms, coalition, grudge: grudgeA, total: attTotal },
       { die: defDie, force: defForce, entrench, iron: ironWill, fortify, data, grudge: grudgeD, total: defTotal },
-      attWins, isPlayer, af, df
+      attWins, isPlayer, af, df, captured
     );
   }
 
@@ -2046,12 +2047,20 @@ function modParts(arr) {
   return arr.filter(p => p.v > 0).map(p => `+${p.v} ${p.label}`).join(' ');
 }
 
-function showCombatResult(att, def, win, playerIsAttacker, af, df) {
+function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
   const attMods = modParts([{v:att.force,label:'force'},{v:att.blitz,label:'blitz'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.iron,label:'iron'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
+  // Color + headline from the LOCAL player's point of view (green = good for you).
+  const goodForLocal = playerIsAttacker ? win : !win;
+  let headline;
+  if (captured)   headline = playerIsAttacker ? '⚡ TILE CAPTURED!' : '💥 TILE LOST!';
+  else if (win)   headline = '💢 HIT! −1 TROOP';           // round won, but the tile holds
+  else            headline = playerIsAttacker ? '🛡️ REPELLED' : '🛡️ YOU HOLD!';
+  // Never stack flashes — the latest combat replaces any prior one.
+  document.querySelectorAll('.combat-flash').forEach(e => e.remove());
   const el = document.createElement('div');
   el.className = 'combat-flash';
   el.innerHTML = `
@@ -2063,10 +2072,10 @@ function showCombatResult(att, def, win, playerIsAttacker, af, df) {
       <span class="combat-label">${defLabel}</span>
       <span class="roll-line">${faces[def.die-1]} ${defMods} <b>= ${def.total}</b></span>
     </div>
-    <div class="result-line ${win?'win-line':'lose-line'}">${win?'⚡ ATTACKER WINS!':'🛡️ DEFENDER HOLDS!'}</div>
+    <div class="result-line ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
   `;
   document.body.appendChild(el);
-  setTimeout(()=>el.remove(), 2400);
+  setTimeout(()=>el.remove(), 1550);
 }
 
 // ============================================================
@@ -2173,55 +2182,63 @@ function runAITurn(fk) {
     return best;
   };
 
-  let acts = 2;
+  // Take the two actions ONE AT A TIME, paced so each combat result is shown on its own
+  // (a combat flash needs a clear beat — otherwise two attacks blur into one and look wrong).
+  let actsLeft = 2;
+  const step = () => {
+    if (gameOver) return;
+    if (actsLeft <= 0) { finishAITurn(fk); return; }
+    actsLeft--;
+    const result = aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack);  // false | 'combat' | true
+    renderSidebar();
+    if (checkWin()) return;
+    if (!result) { finishAITurn(fk); return; }            // nothing useful left
+    setTimeout(step, result === 'combat' ? 1700 : 450);   // let a fight land before the next move
+  };
+  setTimeout(step, 250);
+}
 
-  for (let i=0; i<acts; i++) {
-    const best = findBestAttack();
-    const attackable = best && best.atk.troops >= 2 && !signalJamActive;
-
-    // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
-    if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
-      if (best.betray) breakPactBetrayal(fk, best.def.owner);
-      resolveAttack(fk, best.atk.id, best.def.id, false);
-      renderSidebar();
-      if (checkWin()) return;
-      continue;
-    }
-
-    // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
-    if (aiNodePush(fk)) { renderSidebar(); if (checkWin()) return; continue; }
-
-    // 3. Take any other favorable attack.
-    if (attackable && best.atk.troops > best.def.troops) {
-      if (best.betray) breakPactBetrayal(fk, best.def.owner);
-      resolveAttack(fk, best.atk.id, best.def.id, false);
-      renderSidebar();
-      if (checkWin()) return;
-      continue;
-    }
-
-    // 4. Use special ability opportunistically.
-    if (aiUseAbility(f, fk, myTiles, enemyTiles)) { renderSidebar(); continue; }
-
-    // 5. Reinforce — prefer a Node or frontline tile we already hold.
-    const cost = reinforceCost(fk);
-    if (f.resources >= cost && myTiles().length > 0) {
-      const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
-      const target = (priority.length ? priority : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
-      target.troops += reinforceAmount(fk); f.resources -= cost;
-      addLog(`${f.icon} ${f.name} reinforced ${target.name}`);
-      refreshHex(target.id);
-      continue;
-    }
-
-    break;
-  }
-
+function finishAITurn(fk) {
+  if (gameOver) return;
   renderSidebar();
-  syncPush();              // broadcast the AI's completed turn (no-op offline)
+  syncPush();                 // broadcast the AI's completed turn (no-op offline)
   if (checkWin()) return;
   G.currentTurnIdx++;
   setTimeout(doNextTurn, online ? 400 : 500);
+}
+
+// One AI action. Returns 'combat' if it fought, true for any other action, false if nothing to do.
+function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
+  const best = findBestAttack();
+  const attackable = best && best.atk.troops >= 2 && !signalJamActive;
+
+  // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
+  if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
+    if (best.betray) breakPactBetrayal(fk, best.def.owner);
+    resolveAttack(fk, best.atk.id, best.def.id, false);
+    return 'combat';
+  }
+  // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
+  if (aiNodePush(fk)) return true;
+  // 3. Take any other favorable attack.
+  if (attackable && best.atk.troops > best.def.troops) {
+    if (best.betray) breakPactBetrayal(fk, best.def.owner);
+    resolveAttack(fk, best.atk.id, best.def.id, false);
+    return 'combat';
+  }
+  // 4. Use special ability opportunistically.
+  if (aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
+  // 5. Reinforce — prefer a Node or frontline tile we already hold.
+  const cost = reinforceCost(fk);
+  if (f.resources >= cost && myTiles().length > 0) {
+    const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
+    const target = (priority.length ? priority : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
+    target.troops += reinforceAmount(fk); f.resources -= cost;
+    addLog(`${f.icon} ${f.name} reinforced ${target.name}`);
+    refreshHex(target.id);
+    return true;
+  }
+  return false;
 }
 
 function aiUseAbility(f, fk, myTiles, enemyTiles) {
