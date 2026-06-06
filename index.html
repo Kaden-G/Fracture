@@ -253,8 +253,8 @@
   /* ===== GAME SCREEN ===== */
   #game-screen {
     display: grid;
-    grid-template-columns: 1fr 320px;
-    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 1fr 300px;
+    grid-template-rows: auto 1fr auto auto;  /* header | board+sidebar | event feed | actions */
     min-height: 100vh;
     gap: 0;
   }
@@ -305,16 +305,16 @@
     user-select: none;
   }
 
-  .hex-row { display: flex; margin-top: -18px; }
+  .hex-row { display: flex; margin-top: -24px; }
   .hex-row:first-child { margin-top: 0; }
-  .hex-row.offset { margin-left: 50px; }
+  .hex-row.offset { margin-left: 66px; }
 
   .hex {
-    width: 94px;
-    height: 104px;
+    width: 122px;
+    height: 136px;
     position: relative;
     cursor: pointer;
-    margin: 0 3px;
+    margin: 0 5px;
     transition: filter 0.15s, transform 0.15s;
   }
   .hex svg { width: 100%; height: 100%; }
@@ -329,7 +329,7 @@
     left: 50%;
     transform: translate(-50%,-50%);
     font-family: 'Bangers', cursive;
-    font-size: 13px;
+    font-size: 16px;
     letter-spacing: 0.5px;
     text-align: center;
     pointer-events: none;
@@ -342,14 +342,14 @@
 
   .hex-troops {
     position: absolute;
-    bottom: 16px;
-    right: 16px;
+    bottom: 22px;
+    right: 24px;
     background: var(--ink);
     color: var(--node-glow);
     font-family: 'Bangers', cursive;
-    font-size: 17px;
-    width: 26px;
-    height: 26px;
+    font-size: 19px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -446,12 +446,43 @@
     margin: 3px;
   }
 
-  #event-log {
+  /* Full-width event feed below the board */
+  #event-strip {
+    grid-column: 1 / -1;
+    background: var(--log-bg);
+    border-top: 4px solid var(--node-glow);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 14px;
+    min-height: 46px;
+    max-height: 58px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  #event-strip .log-title {
+    font-family: 'Bangers', cursive;
+    color: var(--node-glow);
+    letter-spacing: 2px;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  #event-log { display: flex; align-items: center; gap: 12px; }
+  .log-chip {
+    color: var(--log-text);
     font-size: 13px;
     font-weight: 600;
-    line-height: 1.7;
-    color: #ddd;
+    flex-shrink: 0;
+    padding-right: 12px;
+    border-right: 1px solid #2a2a3e;
   }
+  .log-chip:first-child { color: #fff; font-weight: 700; }
+  .log-chip:last-child { border-right: none; }
+
+  .quick-ref { font-size: 12px; line-height: 1.55; color: #c9d1d9; }
+  .quick-ref > div { margin-bottom: 6px; }
+  .quick-ref strong { color: var(--node-glow); font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
+  .quick-ref b { color: #fff; }
 
   /* ===== ACTION PANEL ===== */
   #action-panel {
@@ -833,11 +864,12 @@
   .handoff-hint { font-size:13px; color:#777; margin-top:14px; }
 
   @media (max-width: 640px) {
-    #game-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto auto; }
-    #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 180px; }
-    .hex { width: 72px; height: 80px; }
-    .hex-row.offset { margin-left: 39px; }
-    .hex-row { margin-top: -10px; }
+    #game-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto auto auto; }
+    #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 200px; }
+    .hex { width: 88px; height: 98px; }
+    .hex-row.offset { margin-left: 49px; }
+    .hex-row { margin-top: -16px; }
+    .hex-troops { bottom: 16px; right: 16px; font-size: 16px; width: 24px; height: 24px; }
   }
 </style>
 </head>
@@ -910,9 +942,22 @@
       <div id="resources-display" style="display:flex; flex-wrap:wrap;"></div>
     </div>
     <div class="sidebar-section" style="flex:1;">
-      <h4>📋 EVENT LOG</h4>
-      <div id="event-log"></div>
+      <h4>📖 QUICK REFERENCE</h4>
+      <div class="quick-ref">
+        <div><strong>GOAL:</strong> Hold <b>3 of 5</b> ★ Nodes — or eliminate every rival.</div>
+        <div><strong>EACH TURN:</strong> 2 actions — Move, Attack, Reinforce, Pact, + your ability.</div>
+        <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) + Blitz &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
+        <div><strong>NODES:</strong> +1 res each, plus a passive (see Core Nodes above).</div>
+        <div><strong>PACTS:</strong> no attacks while allied — betray and they get <b>+2</b> vs you.</div>
+        <div id="ref-ability"></div>
+      </div>
+      <button class="action-btn" style="width:100%; margin-top:10px; font-size:14px;" onclick="openRules()">📖 FULL RULES</button>
     </div>
+  </div>
+  <!-- EVENT FEED — full width, directly below the board -->
+  <div id="event-strip">
+    <span class="log-title">📋 LOG</span>
+    <div id="event-log"></div>
   </div>
   <div id="action-panel">
     <button class="action-btn" id="btn-move"      onclick="setAction('move')">🚶 MOVE</button>
@@ -1508,6 +1553,10 @@ function renderSidebar() {
     <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}</div>
   `;
 
+  // Quick-reference: your faction's ability + perk
+  const refAb = document.getElementById('ref-ability');
+  if (refAb) refAb.innerHTML = `<strong>YOU (${FACTIONS[G.playerFaction].name}):</strong> ${FACTIONS[G.playerFaction].perk}`;
+
   // Diplomacy — active pacts and lingering grudges
   const dipEl = document.getElementById('diplomacy-list');
   if (dipEl) {
@@ -1529,9 +1578,10 @@ function renderSidebar() {
 
 function addLog(msg) {
   G.log.unshift(msg);
-  if (G.log.length > 10) G.log.pop();
-  document.getElementById('event-log').innerHTML =
-    G.log.map((m,i) => `<div style="opacity:${Math.max(0.4,1-i*0.1)};margin-bottom:2px;">${m}</div>`).join('');
+  if (G.log.length > 14) G.log.pop();
+  const el = document.getElementById('event-log');
+  if (el) el.innerHTML = G.log.map((m,i) =>
+    `<span class="log-chip" style="opacity:${Math.max(0.45,1-i*0.07)}">${m}</span>`).join('');
 }
 
 function setActionLog(msg) {
@@ -2035,6 +2085,66 @@ function adjacent(a, b) {
 // ============================================================
 // AI
 // ============================================================
+// Multi-source BFS over hex adjacency → { tileId: steps to nearest source tile }.
+function bfsFromTiles(sources) {
+  const tiles = Object.values(G.tiles);
+  const dist = {}; const q = [];
+  sources.forEach(s => { dist[s.id] = 0; q.push(s); });
+  for (let h = 0; h < q.length; h++) {
+    const cur = q[h];
+    for (const nb of tiles) {
+      if (dist[nb.id] === undefined && adjacent(cur, nb)) { dist[nb.id] = dist[cur.id] + 1; q.push(nb); }
+    }
+  }
+  return dist;
+}
+
+// AI node-seeking: capture an adjacent unclaimed Node, else march a troop toward the nearest Node.
+// This is what makes the AI actually contest the board's objectives (nodes start unowned).
+function aiNodePush(fk) {
+  const tiles   = Object.values(G.tiles);
+  const movable = tiles.filter(t => t.owner === fk && t.troops >= 2);
+  if (!movable.length) return false;
+  const targets = tiles.filter(t => t.isNode && t.owner !== fk);
+  if (!targets.length) return false;
+  const f = G.factions[fk];
+
+  // 1. Step straight onto an adjacent UNCLAIMED node.
+  for (const src of movable) {
+    const node = targets.find(n => !n.owner && adjacent(src, n));
+    if (node) {
+      src.troops--; node.owner = fk; node.troops = (node.troops || 0) + 1; node.heldRounds = 0;
+      addLog(`${f.icon} ${f.name} seized ${node.name}`);
+      refreshHex(src.id); refreshHex(node.id);
+      return true;
+    }
+  }
+
+  // 2. Otherwise march one troop a step closer to the nearest node, through empty/own tiles.
+  const dist = bfsFromTiles(targets);
+  let mv = null;
+  for (const src of movable) {
+    const here = dist[src.id];
+    if (here === undefined) continue;
+    for (const nb of tiles) {
+      if (adjacent(src, nb) && (!nb.owner || nb.owner === fk)) {
+        const d = dist[nb.id];
+        if (d !== undefined && d < here && (!mv || d < mv.d || (d === mv.d && src.troops > mv.src.troops)))
+          mv = { src, to: nb, d };
+      }
+    }
+  }
+  if (mv) {
+    mv.src.troops--;
+    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = 1; mv.to.heldRounds = 0; }
+    else mv.to.troops++;
+    addLog(`${f.icon} ${f.name} advanced toward a Node`);
+    refreshHex(mv.src.id); refreshHex(mv.to.id);
+    return true;
+  }
+  return false;
+}
+
 function runAITurn(fk) {
   if (gameOver) return;
   blitzCount = 0;
@@ -2069,30 +2179,41 @@ function runAITurn(fk) {
     const best = findBestAttack();
     const attackable = best && best.atk.troops >= 2 && !signalJamActive;
 
-    // Decision: attack if there's a good opportunity, else reinforce, else use ability
-    if (attackable && (best.def.isNode || best.atk.troops > best.def.troops)) {
-      if (best.betray) breakPactBetrayal(fk, best.def.owner);  // AI seizes a Node, pact be damned
+    // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
+    if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
+      if (best.betray) breakPactBetrayal(fk, best.def.owner);
       resolveAttack(fk, best.atk.id, best.def.id, false);
       renderSidebar();
       if (checkWin()) return;
       continue;
     }
 
-    // Use special ability opportunistically
+    // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
+    if (aiNodePush(fk)) { renderSidebar(); if (checkWin()) return; continue; }
+
+    // 3. Take any other favorable attack.
+    if (attackable && best.atk.troops > best.def.troops) {
+      if (best.betray) breakPactBetrayal(fk, best.def.owner);
+      resolveAttack(fk, best.atk.id, best.def.id, false);
+      renderSidebar();
+      if (checkWin()) return;
+      continue;
+    }
+
+    // 4. Use special ability opportunistically.
     if (aiUseAbility(f, fk, myTiles, enemyTiles)) { renderSidebar(); continue; }
 
-    // Otherwise reinforce a frontline tile (one adjacent to an enemy)
+    // 5. Reinforce — prefer a Node or frontline tile we already hold.
     const cost = reinforceCost(fk);
     if (f.resources >= cost && myTiles().length > 0) {
-      const frontline = myTiles().filter(t => enemyTiles().some(e=>adjacent(t,e)));
-      const target = (frontline.length ? frontline : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
+      const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
+      const target = (priority.length ? priority : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
       target.troops += reinforceAmount(fk); f.resources -= cost;
       addLog(`${f.icon} ${f.name} reinforced ${target.name}`);
       refreshHex(target.id);
       continue;
     }
 
-    // Nothing useful to do
     break;
   }
 
