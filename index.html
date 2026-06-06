@@ -387,6 +387,16 @@
     pointer-events: none;
     z-index: 2;
   }
+  .hex-faction-art {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: auto;
+    pointer-events: none;
+    z-index: 1;
+  }
 
   .hex-region {
     position: absolute;
@@ -1229,6 +1239,14 @@ const NODE_IMAGES = {
   node_data:    'assets/node_data.png',
 };
 
+// Themed frame artwork for each faction's owned (non-node) tiles.
+const FACTION_IMAGES = {
+  grid:      'assets/faction_grid.png',
+  syndicate: 'assets/faction_syndicate.png',
+  commune:   'assets/faction_commune.png',
+  ghost:     'assets/faction_ghost.png',
+};
+
 // ---- REGIONS: a pinwheel split of the 5×5 grid into N/S/E/W (6 tiles each) + a neutral CORE.
 const REGION_NAMES  = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST', C:'CORE' };
 const REGION_COLORS = { N:'#5dade2', S:'#e74c3c', E:'#2ecc71', W:'#f1c40f', C:'#888' };
@@ -1629,7 +1647,9 @@ function makeHex(tile) {
   div.id = 'hex-'+tile.id;
   div.onclick = () => handleTileClick(tile.id);
 
-  const fillColor = tile.owner ? G.factions[tile.owner].color : '#2a2a4e';
+  // Owned non-node tiles wear their faction's themed frame; nodes use their badge art.
+  const showFrame = !!(tile.owner && !tile.isNode && FACTION_IMAGES[tile.owner]);
+  const fillColor = showFrame ? '#161622' : (tile.owner ? G.factions[tile.owner].color : '#2a2a4e');
   const strokeW   = tile.isNode ? 3.5 : 2;
   const strokeC   = tile.isNode ? '#f1c40f' : 'rgba(0,0,0,0.6)';
 
@@ -1652,6 +1672,12 @@ function makeHex(tile) {
     nodeArt = `<img class="hex-node-art" src="${NODE_IMAGES[tile.nodeId]}" alt="" draggable="false" style="filter:${glow}">`;
   }
 
+  let factionArt = '';
+  if (showFrame) {
+    const oc = G.factions[tile.owner].color;
+    factionArt = `<img class="hex-faction-art" src="${FACTION_IMAGES[tile.owner]}" alt="" draggable="false" style="filter:drop-shadow(0 0 4px ${oc})">`;
+  }
+
   div.innerHTML = `
     <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg">
       <polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
@@ -1660,6 +1686,7 @@ function makeHex(tile) {
       ${entrench>0 && tile.owner ? `<polygon points="40,2 78,22 78,68 40,88 2,68 2,22"
         fill="none" stroke="#ffffff" stroke-width="${entrench}" opacity="0.35"/>` : ''}
     </svg>
+    ${factionArt}
     ${nodeArt}
     <div class="hex-label">${tile.isNode ? '' : tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
