@@ -2868,13 +2868,14 @@ function initFirebase() {
   catch (e) { console.error('Firebase init failed:', e); return false; }
 }
 
-// Persist a stable client id so a refresh keeps your claimed seat.
+// Per-TAB client id (sessionStorage): survives a refresh, but two tabs of the same browser
+// are distinct players — so you can test multiplayer in two tabs, and real players never collide.
 function clientId() {
   let id;
-  try { id = localStorage.getItem('fracture_cid'); } catch (e) {}
+  try { id = sessionStorage.getItem('fracture_cid'); } catch (e) {}
   if (!id) {
     id = 'c' + Math.random().toString(36).slice(2, 10);
-    try { localStorage.setItem('fracture_cid', id); } catch (e) {}
+    try { sessionStorage.setItem('fracture_cid', id); } catch (e) {}
   }
   return id;
 }
