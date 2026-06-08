@@ -1914,10 +1914,9 @@ function doNextTurn() {
   if (G.currentTurnIdx >= G.turnOrder.length) { endRound(); return; }
 
   const fk = G.turnOrder[G.currentTurnIdx];
+  if (online) G.live = true;   // turns are now live — remote clients may take theirs
   applyIncome(fk);
   syncPush();              // broadcast income + whose turn (no-op offline)
-  // Host: now that round 1's first turn state is live, open the room to joiners.
-  if (online && onlineStarting) { onlineStarting = false; if (roomRef) roomRef.update({ started: true }); }
   beginTurnFor(fk);
 }
 
@@ -2928,17 +2927,17 @@ function onRemoteState(s) {
   if (gameOver) { if (G.winner) renderWin(G.winner); return; }
 
   const a = activeFk(), f = a && G.factions[a];
-  if (f && !f.isAI && mySeats.includes(a)) {
+  if (G.live && f && !f.isAI && mySeats.includes(a)) {
     if (!myTurnActive) { isDriver = true; beginTurnFor(a); }   // my turn — take the baton
   } else {
-    // Spectating an AI or remote-human turn.
+    // Spectating: an AI turn, a remote human's turn, or the game not yet live (host still setting up).
     myTurnActive = false; isDriver = false;
     disablePlayerActions();
     const lbl = document.getElementById('turn-label');
     lbl.className = 'turn-indicator';
-    lbl.textContent = f ? (f.isAI ? `${f.icon} AI` : `⌛ ${f.name}`) : '';
+    lbl.textContent = !G.live ? '⏳ STARTING…' : (f ? (f.isAI ? `${f.icon} AI` : `⌛ ${f.name}`) : '');
     document.getElementById('phase-label').textContent = `ROUND ${G.round}${f ? ' · ' + f.name : ''}`;
-    setActionLog(f ? (f.isAI ? `${f.name} is moving…` : `Waiting for ${f.name}…`) : '');
+    setActionLog(!G.live ? 'The host is starting the game…' : (f ? (f.isAI ? `${f.name} is moving…` : `Waiting for ${f.name}…`) : ''));
   }
 }
 
@@ -2978,8 +2977,9 @@ function hostRoom() {
   roomCode = genCode();
   roomRef = db.ref('rooms/' + roomCode);
   stateRef = roomRef.child('state');
+  // All seats OPEN by default so anyone can claim one; unclaimed seats become AI at START.
   const seats = {};
-  Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'ai', by: null, name: '', trait: '' });
+  Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'human', by: null, name: '', trait: '' });
   roomRef.set({ host: myClientId, started: false, seats })
     .then(() => roomRef.on('value', onRoom))
     .catch(e => alert('Could not create room: ' + e.message));
@@ -3085,12 +3085,15 @@ function hostStart() {
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
   G.playerFaction = mySeats[0] || G.turnOrder[0];
-  onlineStarting = true;   // doNextTurn flips the room to "started" once round 1's first turn is live
 
   ensureGameScreen();
   renderMap(); renderSidebar();
-  // Finalize seats now; the round-1 event runs on the host (driver) and broadcasts as it goes.
-  roomRef.update({ seats }).then(() => startRound());
+
+  // Publish the board + state IMMEDIATELY (started:true) so every joiner's board appears at once.
+  // G.live stays false until doNextTurn — joiners spectate "Starting…" until round 1's first turn is live.
+  G.seq = 1;
+  const snap = JSON.parse(JSON.stringify(Object.assign({}, G, { _signalJam: signalJamActive, _totalWar: totalWar, _gameOver: gameOver })));
+  roomRef.update({ seats, started: true, state: snap }).then(() => startRound());
 }
 
 function buildOnlineGame(seats) {
@@ -3105,6 +3108,8 @@ function buildOnlineGame(seats) {
   G = {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder: order.slice(), humans: order.filter(k => seats[k].type === 'human'),
+    live: false,
+    tyrantOn: false, tyrantHarbor: 0, tyrantLastOffer: {},
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
