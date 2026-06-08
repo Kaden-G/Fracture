@@ -2980,7 +2980,7 @@ function hostRoom() {
   // All seats OPEN by default so anyone can claim one; unclaimed seats become AI at START.
   const seats = {};
   Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'human', by: null, name: '', trait: '' });
-  roomRef.set({ host: myClientId, started: false, seats })
+  roomRef.set({ host: myClientId, started: false, seats, tyrant: false })
     .then(() => roomRef.on('value', onRoom))
     .catch(e => alert('Could not create room: ' + e.message));
 }
@@ -3025,6 +3025,11 @@ function hostSetSeat(fk, kind) {  // 'ai' or 'open'
     : { type: 'human', by: null, name: '', trait: '' });
 }
 
+function hostSetTyrant() {
+  if (!lobbyIsHost) return;
+  roomRef.update({ tyrant: !(lastRoomData && lastRoomData.tyrant) });
+}
+
 function renderLobby(data) {
   const seats = data.seats || {};
   const rows = Object.entries(FACTIONS).map(([k, f]) => {
@@ -3065,6 +3070,11 @@ function renderLobby(data) {
         ${TRAITS.map(t => `<div class="trait-option ${myTrait === t.id ? 'selected' : ''}" onclick="setMyTrait('${t.id}')"><strong>${t.name}:</strong> ${t.desc}</div>`).join('')}
       </div>
       ${rows}
+      <div class="faction-row" style="justify-content:space-between; gap:8px; margin-top:8px; border-color:${TYRANT_DEF.color};">
+        <span style="color:${TYRANT_DEF.color};font-family:'Bangers';letter-spacing:1px;min-width:96px;">${TYRANT_DEF.icon} THE TYRANT</span>
+        <span style="font-size:12px;flex:1;text-align:center;color:#ccc;">${data.tyrant ? '☠ IN PLAY' : '— off —'}</span>
+        <span style="display:flex;gap:4px;">${lobbyIsHost ? `<button class="seat-mini" onclick="hostSetTyrant()">${data.tyrant ? 'REMOVE' : 'ADD'}</button>` : ''}</span>
+      </div>
       <div style="display:flex;gap:8px;margin-top:16px;">
         <button class="btn btn-secondary" style="font-size:16px;" onclick="showTitle()">← LEAVE</button>
         ${lobbyIsHost
@@ -3081,7 +3091,7 @@ function hostStart() {
   Object.keys(seats).forEach(k => { if (seats[k].type === 'human' && !seats[k].by) seats[k] = { type: 'ai', by: null, name: '', trait: '' }; });
   if (!Object.values(seats).some(s => s.type === 'human')) { alert('Claim at least one seat before starting.'); return; }
 
-  buildOnlineGame(seats);
+  buildOnlineGame(seats, !!lastRoomData.tyrant);
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
   G.playerFaction = mySeats[0] || G.turnOrder[0];
@@ -3096,7 +3106,7 @@ function hostStart() {
   roomRef.update({ seats, started: true, state: snap }).then(() => startRound());
 }
 
-function buildOnlineGame(seats) {
+function buildOnlineGame(seats, tyrant) {
   const order = Object.keys(FACTIONS);
   const factions = {};
   order.forEach(k => {
@@ -3105,15 +3115,17 @@ function buildOnlineGame(seats) {
       ? mkFaction(s.name || FACTIONS[k].name, k, false, s.trait || randTrait())
       : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait());
   });
+  const turnOrder = order.slice();
+  if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, randTrait()); turnOrder.push(TYRANT_KEY); }
   G = {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
-    factions, turnOrder: order.slice(), humans: order.filter(k => seats[k].type === 'human'),
+    factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
-    tyrantOn: false, tyrantHarbor: 0, tyrantLastOffer: {},
+    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {},
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
-  G.tiles = buildMap();
+  G.tiles = buildMap();   // places the Tyrant on the central Node when G.factions[TYRANT_KEY] exists
 }
 </script>
 </body>
