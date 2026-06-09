@@ -1084,6 +1084,7 @@
     <button class="action-btn" id="btn-sabotage"  onclick="setAction('sabotage')" style="display:none">👁️ SABOTAGE</button>
     <button class="action-btn" id="btn-bribe"     onclick="setAction('bribe')"    style="display:none">💰 BRIBE</button>
     <button class="action-btn" id="btn-rally"     onclick="setAction('rally')"    style="display:none">🌿 RALLY</button>
+    <button class="action-btn" id="btn-overclock" onclick="setAction('overclock')" style="display:none">⚙️ OVERCLOCK</button>
     <div class="action-log" id="action-log">Select an action, then click a tile.</div>
     <button class="end-turn-btn" onclick="endTurn()">END TURN →</button>
   </div>
@@ -1147,10 +1148,10 @@
     <p>Select your tile (2+ troops) → click adjacent empty or friendly tile. Moves 1 troop.</p>
     <h3>🎭 FACTIONS — ABILITY + PERK</h3>
     <ul>
-      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less AND adds +3 troops (not +2)</li>
-      <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (3 res) steals 1 troop from an adjacent enemy</li>
-      <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (2 res) buffs a tile + adjacent friendlies</li>
-      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (2 res) removes 1 troop from any enemy tile</li>
+      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less & adds +3 troops · OVERCLOCK (1 res) surges +5 troops onto a tile</li>
+      <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (1 res) steals 1 troop from an adjacent enemy</li>
+      <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (1 res) buffs a tile + adjacent friendlies</li>
+      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) removes 1 troop from any enemy tile</li>
     </ul>
     <h3>🔌 NODE BONUSES</h3>
     <p>Each Core Node grants its controller a passive — so <em>which</em> Nodes you hold matters, not just how many:</p>
@@ -1228,7 +1229,7 @@ const RES_CAP = 14;  // resource stockpile ceiling
 const GRID    = 7;   // board is GRID x GRID tiles
 
 const FACTIONS = {
-  grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'reinforce', perk:'Industrial: reinforce −1 cost & +3 troops' },
+  grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'overclock', perk:'Industrial: reinforce −1 cost & +3 troops' },
   syndicate: { name:'SYNDICATE',  icon:'💰',  color:'#e74c3c', ability:'bribe',     perk:'Cartel: +1 resource income each round'   },
   commune:   { name:'COMMUNE',    icon:'🌿',  color:'#2ecc71', ability:'rally',     perk:'Grassroots: +1 troop grows each round'   },
   ghost:     { name:'THE GHOST',  icon:'👁️', color:'#9b59b6', ability:'sabotage',  perk:'Phantom: attacks ignore entrenchment'    },
@@ -1394,11 +1395,11 @@ function controlsNode(fk, nodeId){ return !!fk && Object.values(G.tiles).some(t=
 // Economy (faction perks + node bonuses fold in here)
 function reinforceCost(fk){
   let c = 2;
-  if (G.factions[fk].ability==='reinforce') c -= 1;  // ⚙️ GRID industrial
+  if (fk==='grid')                           c -= 1;  // ⚙️ GRID industrial
   if (controlsNode(fk,'node_power'))         c -= 1;  // ⚡ POWER node
   return Math.max(1, c);
 }
-function reinforceAmount(fk){ return G.factions[fk].ability==='reinforce' ? 3 : 2; }  // ⚙️ GRID
+function reinforceAmount(fk){ return fk==='grid' ? 3 : 2; }  // ⚙️ GRID
 function moveTroopCount(fk){ return controlsNode(fk,'node_transit') ? 2 : 1; }          // 🚇 TRANSIT
 function moveRange(fk){ return G.factions[fk]?.trait==='ghost_step' ? 2 : 1; }  // 👻 GHOST STEP = reach 2
 // Is `dest` a legal move target for fk's troops starting at `src`? (does NOT check dest ownership)
@@ -2244,7 +2245,7 @@ function enablePlayerActions(fk) {
     const el = document.getElementById(id);
     el.disabled = false; el.classList.remove('active-action');
   });
-  ['btn-sabotage','btn-bribe','btn-rally'].forEach(id => {
+  ['btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
     document.getElementById(id).style.display = 'none';
     document.getElementById(id).disabled = false;
   });
@@ -2256,7 +2257,7 @@ function enablePlayerActions(fk) {
 }
 
 function disablePlayerActions() {
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.disabled = true; el.classList.remove('active-action'); }
   });
@@ -2270,7 +2271,7 @@ function setAction(action) {
   selectedTile  = null;
   clearHighlights();
   renderMap();
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
     document.getElementById(id)?.classList.remove('active-action');
   });
   document.getElementById('btn-'+action)?.classList.add('active-action');
@@ -2282,9 +2283,10 @@ function setAction(action) {
     pact:      "PACT: Click a rival's tile to propose a non-aggression pact (free, no action).",
     airlift:   'AIRLIFT (3 res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.',
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3).',
-    sabotage:  'SABOTAGE (2 res): Click any ENEMY tile to remove 1 troop.',
-    bribe:     'BRIBE (3 res): Click an enemy tile ADJACENT to your territory.',
-    rally:     'RALLY (2 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
+    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile to remove 1 troop.',
+    bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
+    rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
+    overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +5 troops (industrial surge).',
   };
   setActionLog(hints[action] || 'Pick a tile.');
 }
@@ -2475,12 +2477,12 @@ function handleTileClick(id) {
   // ---- SABOTAGE ----
   if (currentAction === 'sabotage') {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
-    if (f.resources < 2) { setActionLog('Sabotage costs 2 resources.'); return; }
+    if (f.resources < 1) { setActionLog('Sabotage costs 1 resource.'); return; }
     if (hasPact(G.playerFaction, tile.owner)) {
       if (!confirm(`Sabotaging ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Sabotage cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    f.resources -= 2;
+    f.resources -= 1;
     const sabPrev = tile.owner;
     if (tile.troops>1) tile.troops--; else { tile.owner=null; tile.troops=0; }
     if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
@@ -2498,14 +2500,14 @@ function handleTileClick(id) {
   // ---- BRIBE ----
   if (currentAction === 'bribe') {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile adjacent to your territory.'); return; }
-    if (f.resources < 3) { setActionLog('Bribe costs 3 resources.'); return; }
+    if (f.resources < 1) { setActionLog('Bribe costs 1 resource.'); return; }
     const myT = Object.values(G.tiles).filter(t=>t.owner===G.playerFaction);
     if (!myT.some(mt=>adjacent(mt,tile))) { setActionLog('Must be adjacent to YOUR territory.'); return; }
     if (hasPact(G.playerFaction, tile.owner)) {
       if (!confirm(`Bribing ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Bribe cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    f.resources -= 3;
+    f.resources -= 1;
     const bribedPrev = tile.owner;
     tile.troops--;
     if (tile.troops<=0) {
@@ -2521,14 +2523,26 @@ function handleTileClick(id) {
   // ---- RALLY ----
   if (currentAction === 'rally') {
     if (tile.owner !== G.playerFaction) { setActionLog('Rally on YOUR tiles only.'); return; }
-    if (f.resources < 2) { setActionLog('Rally costs 2 resources.'); return; }
-    f.resources -= 2;
+    if (f.resources < 1) { setActionLog('Rally costs 1 resource.'); return; }
+    f.resources -= 1;
     tile.troops++;
     const adj = Object.values(G.tiles).filter(t=>t.owner===G.playerFaction && adjacent(t,tile));
     adj.forEach(t=>{ t.troops++; refreshHex(t.id); });
     G.actionsUsed++;
     addLog(`🌿 Rally! +1 to ${tile.name} + ${adj.length} adjacent tiles`);
     setActionLog(`Rallied ${adj.length+1} tiles! ${3-G.actionsUsed} action(s) left.`);
+    refreshHex(id); renderSidebar(); return;
+  }
+
+  // ---- OVERCLOCK (GRID) ----
+  if (currentAction === 'overclock') {
+    if (tile.owner !== G.playerFaction) { setActionLog('Overclock YOUR tiles only.'); return; }
+    if (f.resources < 1) { setActionLog('Overclock costs 1 resource.'); return; }
+    f.resources -= 1;
+    tile.troops += 5;
+    G.actionsUsed++;
+    addLog(`⚙️ Overclock! +5 troops on ${tile.name}`);
+    setActionLog(`Overclocked! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
 }
@@ -2868,13 +2882,13 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
 
 function aiUseAbility(f, fk, myTiles, enemyTiles) {
   // SABOTAGE: weaken a strong enemy node
-  if (f.ability==='sabotage' && f.resources>=2) {
+  if (f.ability==='sabotage' && f.resources>=1) {
     const foes = enemyTiles().filter(t=>!hasPact(fk,t.owner));  // don't break pacts via sabotage
     const target = foes.filter(t=>t.isNode).sort((a,b)=>b.troops-a.troops)[0]
                 || foes.sort((a,b)=>b.troops-a.troops)[0];
     if (target) {
       const prev = target.owner;
-      f.resources-=2;
+      f.resources-=1;
       if (target.troops>1) target.troops--; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
       addLog(`👁️ ${f.name} sabotaged ${target.name}`);
@@ -2883,12 +2897,12 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
     }
   }
   // BRIBE: steal from an adjacent enemy
-  if (f.ability==='bribe' && f.resources>=3) {
+  if (f.ability==='bribe' && f.resources>=1) {
     for (const mt of myTiles()) {
       const tgt = enemyTiles().find(e=>adjacent(mt,e) && !hasPact(fk,e.owner));
       if (tgt) {
         const prev = tgt.owner;
-        f.resources-=3; tgt.troops--;
+        f.resources-=1; tgt.troops--;
         if (tgt.troops<=0) {
           tgt.owner=fk; tgt.troops=1;
           if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
@@ -2900,14 +2914,25 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
     }
   }
   // RALLY: buff a frontline cluster
-  if (f.ability==='rally' && f.resources>=2) {
+  if (f.ability==='rally' && f.resources>=1) {
     const frontline = myTiles().filter(t => enemyTiles().some(e=>adjacent(t,e)));
     if (frontline.length) {
       const hub = frontline[0];
-      f.resources-=2; hub.troops++;
+      f.resources-=1; hub.troops++;
       myTiles().filter(t=>adjacent(t,hub)).forEach(t=>{ t.troops++; refreshHex(t.id); });
       addLog(`🌿 ${f.name} rallied around ${hub.name}`);
       refreshHex(hub.id);
+      return true;
+    }
+  }
+  // OVERCLOCK (GRID): industrial surge — +5 troops on a key tile
+  if (f.ability==='overclock' && f.resources>=1) {
+    const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
+    const target = (priority.length ? priority : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
+    if (target) {
+      f.resources-=1; target.troops+=5;
+      addLog(`⚙️ ${f.name} overclocked ${target.name} (+5 troops)`);
+      refreshHex(target.id);
       return true;
     }
   }
