@@ -399,6 +399,22 @@
   .hex-node-art { z-index: 2; }
   .hex-faction-art { z-index: 1; }
 
+  /* Entrenched tiles read a shade (or two/three) darker than open ground. */
+  .hex-dug {
+    position: absolute; inset: 0;
+    background: #000;
+    clip-path: polygon(25% 2.3%, 75% 2.3%, 98% 50%, 75% 97.7%, 25% 97.7%, 2% 50%);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* SABOTAGE / casualty hit — quick red pulse so the troop drop is unmistakable. */
+  @keyframes hex-hit {
+    0%   { filter: brightness(2.2) drop-shadow(0 0 10px #e74c3c); transform: scale(1.12); }
+    100% { filter: none; transform: none; }
+  }
+  .hex.hit-flash { animation: hex-hit 0.6s ease-out; }
+
   .hex-region {
     position: absolute;
     top: 8px;
@@ -552,6 +568,34 @@
     border-top: 4px solid var(--node-glow);
     flex-wrap: wrap;
   }
+
+  /* Your live stats, sitting right with the action buttons. */
+  #player-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    width: 100%;
+    padding: 4px 2px 8px;
+    margin-bottom: 4px;
+    border-bottom: 2px solid #2a2a3e;
+    font-family: 'Oswald', sans-serif;
+  }
+  #player-stats .ps-name {
+    font-family: 'Bangers', cursive; font-size: 17px; letter-spacing: 1px;
+    display: flex; align-items: center; gap: 5px; padding-right: 4px;
+  }
+  #player-stats .ps-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 14px; font-weight: 600; color: #e8e8f0;
+    background: #0d1117; border: 2px solid #2a2a3e;
+    padding: 4px 10px; border-radius: 14px; white-space: nowrap;
+  }
+  #player-stats .ps-chip b { color: var(--node-glow); font-size: 15px; }
+  #player-stats .ps-chip.ps-acts b { color: #2ecc71; }
+  #player-stats .ps-chip.ps-acts.spent b { color: #e74c3c; }
+  #player-stats .ps-pacts { color: #f1c40f; }
+  #player-stats .ps-wait { color: #888; font-style: italic; font-size: 13px; }
 
   .action-btn {
     font-family: 'Bangers', cursive;
@@ -1030,6 +1074,7 @@
     <div id="event-log"></div>
   </div>
   <div id="action-panel">
+    <div id="player-stats"></div>
     <button class="action-btn" id="btn-move"      onclick="setAction('move')">🚶 MOVE</button>
     <button class="action-btn" id="btn-attack"    onclick="setAction('attack')">⚔️ ATTACK</button>
     <button class="action-btn" id="btn-reinforce" onclick="setAction('reinforce')">🛡️ REINFORCE</button>
@@ -1748,6 +1793,7 @@ function makeHex(tile) {
     </svg>
     ${factionArt}
     ${nodeArt}
+    ${entrench>0 && tile.owner ? `<div class="hex-dug" style="opacity:${(0.16*entrench).toFixed(2)}"></div>` : ''}
     <div class="hex-label">${hideLabel ? '' : tile.short}</div>
     ${tile.troops>0 ? `<div class="hex-troops">${tile.troops}</div>` : ''}
     ${regTag}
@@ -1765,6 +1811,15 @@ function refreshHex(id) {
   const n = makeHex(G.tiles[id]);
   if (selectedTile===id) n.classList.add('selected');
   old.replaceWith(n);
+}
+
+// Brief red pulse on a tile so a troop loss (sabotage / casualty) is impossible to miss.
+function flashHex(id) {
+  const el = document.getElementById('hex-'+id);
+  if (!el) return;
+  el.classList.remove('hit-flash');
+  void el.offsetWidth;            // restart the animation if it's already mid-flight
+  el.classList.add('hit-flash');
 }
 
 function renderSidebar() {
@@ -1844,6 +1899,46 @@ function renderSidebar() {
   }
 
   renderLog();   // keep the bottom feed current (incl. when loading remote online state)
+  renderPlayerStats();
+}
+
+// Your own live stats, rendered right alongside the action buttons.
+function renderPlayerStats() {
+  const el = document.getElementById('player-stats');
+  if (!el) return;
+  const fk = G.playerFaction;
+  const f  = G.factions && G.factions[fk];
+  if (!f) { el.innerHTML = ''; return; }
+  const tiles = Object.values(G.tiles).filter(t=>t.owner===fk);
+  const nodes = tiles.filter(t=>t.isNode).length;
+  const myTurn = (typeof activeFk==='function') && activeFk()===fk && !f.isAI;
+  const actsLeft = Math.max(0, 2 - (G.actionsUsed||0));
+
+  // Pacts visible to me (Tyrant deals stay secret unless I'm in them).
+  const partners = [];
+  for (const k of Object.keys(G.pacts||{})) {
+    const [a,b] = k.split('|');
+    if (a!==fk && b!==fk) continue;
+    const other = a===fk ? b : a;
+    if (!G.factions[other]) continue;
+    partners.push(`${G.factions[other].icon} ${G.factions[other].name}`);
+  }
+  const pactChip = partners.length
+    ? `<span class="ps-chip ps-pacts" title="Active non-aggression pacts">🤝 ${partners.join(', ')}</span>`
+    : `<span class="ps-chip" style="opacity:0.6">🤝 no pacts</span>`;
+
+  const actsChip = myTurn
+    ? `<span class="ps-chip ps-acts ${actsLeft===0?'spent':''}" title="Actions left this turn">⚡ Actions <b>${actsLeft}</b>/2</span>`
+    : `<span class="ps-wait">⏳ ${f.isAI?'(AI seat)':'waiting for your turn'}</span>`;
+
+  el.innerHTML = `
+    <span class="ps-name" style="color:${f.color}">${f.icon} ${f.name}</span>
+    <span class="ps-chip" title="Tiles you hold">▦ Tiles <b>${tiles.length}</b></span>
+    <span class="ps-chip" title="★ Nodes you control (need 3 to win)">★ Nodes <b>${nodes}</b>/5</span>
+    <span class="ps-chip" title="Resources on hand">🎒 Res <b>${f.resources}</b></span>
+    ${actsChip}
+    ${pactChip}
+  `;
 }
 
 function addLog(msg) {
@@ -2313,9 +2408,12 @@ function handleTileClick(id) {
       killFaction(sabPrev);
     }
     G.actionsUsed++;
-    addLog(`👁️ You sabotaged ${tile.name}!`);
-    setActionLog(`Sabotage hit! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
-    refreshHex(id); renderSidebar(); checkWin(); return;
+    const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
+    addLog(`👁️ You sabotaged ${tile.name} — ${sabLeft}!`);
+    setActionLog(`Sabotage hit! ${sabLeft}. ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    refreshHex(id); flashHex(id); renderSidebar(); checkWin();
+    syncPush();   // broadcast so online opponents see the troop drop immediately
+    return;
   }
 
   // ---- BRIBE ----
@@ -2699,7 +2797,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       if (target.troops>1) target.troops--; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
       addLog(`👁️ ${f.name} sabotaged ${target.name}`);
-      refreshHex(target.id);
+      refreshHex(target.id); flashHex(target.id);
       return true;
     }
   }
