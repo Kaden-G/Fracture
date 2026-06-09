@@ -995,7 +995,7 @@
     <div class="faction-badge">👁️ THE GHOST</div>
   </div>
   <p class="title-blurb">
-    1–4 Players · Ages 13+ · Control 3 of 5 Core Nodes to win.<br>
+    1–4 Players · Ages 13+ · Hold 3 of 5 Core Nodes for 2 rounds to win.<br>
     Dominate. Negotiate. Betray. Survive.
   </p>
   <button class="btn btn-primary" onclick="showSetup()">⚡ NEW GAME</button>
@@ -1051,7 +1051,7 @@
     <div class="sidebar-section" style="flex:1;">
       <h4>📖 QUICK REFERENCE</h4>
       <div class="quick-ref">
-        <div><strong>GOAL:</strong> Hold <b>3 of 5</b> ★ Nodes — or eliminate every rival.</div>
+        <div><strong>GOAL:</strong> Hold <b>3 of 5</b> ★ Nodes <b>for 2 rounds</b> — or eliminate every rival.</div>
         <div><strong>EACH TURN:</strong> 2 actions — Move, Attack, Reinforce, Airlift, Entrench, Pact, + your ability.</div>
         <div><strong>SPEND ON:</strong> troops (Reinforce), position (Airlift 3), or defense (Entrench 2).</div>
         <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
@@ -1117,7 +1117,7 @@
   <div class="rules-panel">
     <h2>📖 HOW TO PLAY</h2>
     <h3>🎯 OBJECTIVE</h3>
-    <p>Control 3 of 5 Core Nodes (★ tiles) to win — or eliminate all rival factions.</p>
+    <p>Control 3 of 5 Core Nodes (★ tiles) <b>for 2 consecutive rounds</b> to win — or eliminate all rival factions.</p>
     <h3>🗺️ THE MAP</h3>
     <p>Nexus is a 25-tile hex grid. Node tiles are marked ★. Controlling a Node earns +1 resource per round.</p>
     <h3>🔄 TURN STRUCTURE</h3>
@@ -1430,8 +1430,7 @@ function breakPactBetrayal(betrayer, victim){
   delete G.pacts[pairKey(betrayer,victim)];
   G.grudges[victim+'>'+betrayer] = G.round + 2;  // victim seethes for 2 rounds
   // Keep Tyrant betrayals vague in the shared log to preserve secrecy.
-  if (betrayer===TYRANT_KEY || victim===TYRANT_KEY) addLog(`🗡️🦠 A secret pact was shattered!`);
-  else addLog(`🗡️ ${G.factions[betrayer].name} BETRAYED ${G.factions[victim].name}!`);
+  addLog('🗡️ A non-aggression pact was broken!');
 }
 function grudgeAtkBonus(atk, def){ return (G.grudges[atk+'>'+def] >= G.round) ? 2 : 0; }
 function grudgeDefBonus(atk, def){ return (G.grudges[def+'>'+atk] >= G.round) ? 2 : 0; }
@@ -1461,8 +1460,8 @@ function aiConsiderPact(aiFk, propFk){
 function tyrantOn()      { return !!(G.tyrantOn && G.factions[TYRANT_KEY]); }
 function tyrantAlive()   { return tyrantOn() && !G.factions[TYRANT_KEY].eliminated; }
 function tyrantAllies()  { return livingKeys().filter(k => k!==TYRANT_KEY && hasPact(TYRANT_KEY, k)); }
-// A pact is "secret" if it involves the Tyrant — hidden from anyone who isn't a party to it.
-function pactVisibleTo(a, b, viewer){ return (a!==TYRANT_KEY && b!==TYRANT_KEY) || a===viewer || b===viewer; }
+// All pacts are secret — visible only to the two parties involved.
+function pactVisibleTo(a, b, viewer){ return a===viewer || b===viewer; }
 
 // All elimination flows route through here so the Tyrant can get its harbor reprieve.
 function killFaction(fk){
@@ -1610,6 +1609,7 @@ function startGame() {
     tyrantOn: !!G.setup.tyrant,
     tyrantHarbor: 0,        // round the harbor reprieve expires (0 = not harbored)
     tyrantLastOffer: {},    // fk -> round the Tyrant last offered them a pact
+    nodesHeldSince: {},     // fk -> round they first held 3+ nodes (for 2-round win check)
     tiles: {},
     log: [],
     pacts: {},     // pairKey -> round formed
@@ -1884,23 +1884,27 @@ function renderSidebar() {
   if (dipEl) {
     const viewer = G.playerFaction;
     const rows = [];
-    let hiddenTyrantDeals = 0;
+    let hiddenPacts = 0;
     for (const k of Object.keys(G.pacts||{})) {
       const [a,b] = k.split('|');
       if (!G.factions[a] || !G.factions[b]) continue;
-      if (!pactVisibleTo(a, b, viewer)) { hiddenTyrantDeals++; continue; }
-      const secret = (a===TYRANT_KEY || b===TYRANT_KEY) ? ' 🤫' : '';
-      rows.push(`🤝 ${G.factions[a].icon} ${G.factions[a].name} ↔ ${G.factions[b].icon} ${G.factions[b].name}${secret}`);
+      if (!pactVisibleTo(a, b, viewer)) { hiddenPacts++; continue; }
+      rows.push(`🤝 ${G.factions[a].icon} ${G.factions[a].name} ↔ ${G.factions[b].icon} ${G.factions[b].name}`);
     }
     for (const k of Object.keys(G.grudges||{})) {
       if (G.grudges[k] < G.round) continue;
       const [v,br] = k.split('>');
       if (!G.factions[v] || !G.factions[br]) continue;
-      if (!pactVisibleTo(v, br, viewer)) continue;   // hide grudges with the Tyrant from non-parties
+      if (!pactVisibleTo(v, br, viewer)) continue;
       rows.push(`🗡️ ${G.factions[v].icon} ${G.factions[v].name} grudge → ${G.factions[br].icon} ${G.factions[br].name}`);
     }
-    if (tyrantAlive() && hiddenTyrantDeals > 0)
-      rows.push(`<span style="color:${TYRANT_DEF.color}">🦠 The Tyrant has hidden dealings…</span>`);
+    if (hiddenPacts > 0)
+      rows.push(`<span style="opacity:0.6">🔒 ${hiddenPacts} other pact${hiddenPacts>1?'s':''} in Nexus</span>`);
+    if (tyrantAlive()) {
+      const tp = Object.keys(G.pacts||{}).filter(k => { const [a,b]=k.split('|'); return a===TYRANT_KEY||b===TYRANT_KEY; }).length;
+      const need = livingKeys().filter(k=>k!==TYRANT_KEY).length;
+      rows.push(`<span style="color:${TYRANT_DEF.color}">🦠 Tyrant pacts: <b>${tp}/${need}</b>${tp>=need?' ⚠️ WINNING!':''}</span>`);
+    }
     dipEl.innerHTML = rows.length
       ? rows.map(r=>`<div class="faction-row-sub" style="padding:2px 0">${r}</div>`).join('')
       : `<div class="faction-row-sub" style="opacity:0.6">No active pacts or grudges.</div>`;
@@ -2118,8 +2122,8 @@ function beginTurnFor(fk) {
       const fromF = G.factions[from];
       if (fromF && !fromF.eliminated && !hasPact(from, fk)) {
         const accepted = confirm(`🤝 ${fromF.name} proposes a non-aggression pact!\n\nWhile it holds, neither of you attacks the other.\nOK = accept   ·   Cancel = refuse`);
-        if (accepted) { formPact(from, fk); addLog(`🤝 PACT: ${fromF.name} ↔ ${f.name}`); }
-        else          { addLog(`✋ ${f.name} refused a pact from ${fromF.name}`); }
+        if (accepted) { formPact(from, fk); addLog('🤝 A non-aggression pact was formed.'); }
+        else          { addLog('✋ A pact proposal was refused.'); }
       }
       G.pactProposal = null;
       syncPush(); renderSidebar();
@@ -2188,6 +2192,16 @@ function endTurn() {
 
 const ROUND_CAP = 30;
 function endRound() {
+  // Node dominance win: held 3+ nodes for 2 consecutive round-ends
+  if (G.nodesHeldSince) {
+    for (const [k, since] of Object.entries(G.nodesHeldSince)) {
+      const f = G.factions[k];
+      if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 1) {
+        showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`);
+        return;
+      }
+    }
+  }
   G.round++;
   if (G.round > ROUND_CAP) {
     // Tiebreak: most nodes
@@ -2280,10 +2294,10 @@ function handleTileClick(id) {
     if (G.factions[other].isAI) {
       if (aiConsiderPact(other, G.playerFaction)) {
         formPact(G.playerFaction, other);
-        addLog(other===TYRANT_KEY ? '🦠 A secret pact takes hold in the shadows…' : `🤝 PACT: YOU ↔ ${G.factions[other].name}`);
+        addLog('🤝 A non-aggression pact was formed.');
         setActionLog(`${G.factions[other].name} ACCEPTED your non-aggression pact!`);
       } else {
-        addLog(other===TYRANT_KEY ? '🦠 The Tyrant rebuffs your overture…' : `✋ ${G.factions[other].name} refused a pact`);
+        addLog('✋ A pact proposal was refused.');
         setActionLog(`${G.factions[other].name} REFUSED — they don't need you yet.`);
       }
     }
@@ -2292,10 +2306,10 @@ function handleTileClick(id) {
       const accepted = confirm(`🤝 ${G.factions[G.playerFaction].name} proposes a non-aggression pact with ${G.factions[other].name}.\n\nDoes ${G.factions[other].name} accept?\nOK = accept   ·   Cancel = refuse`);
       if (accepted) {
         formPact(G.playerFaction, other);
-        addLog(`🤝 PACT: ${G.factions[G.playerFaction].name} ↔ ${G.factions[other].name}`);
+        addLog('🤝 A non-aggression pact was formed.');
         setActionLog(`${G.factions[other].name} ACCEPTED your pact!`);
       } else {
-        addLog(`✋ ${G.factions[other].name} refused a pact with ${G.factions[G.playerFaction].name}`);
+        addLog('✋ A pact proposal was refused.');
         setActionLog(`${G.factions[other].name} REFUSED your pact.`);
       }
     }
@@ -2303,7 +2317,7 @@ function handleTileClick(id) {
     else {
       if (G.pactProposal) { setActionLog('A pact proposal is already pending — wait for their response.'); renderSidebar(); return; }
       G.pactProposal = { from: G.playerFaction, to: other };
-      addLog(`📨 You proposed a pact to ${G.factions[other].name} — they'll decide on their turn.`);
+      addLog('🤝 A pact has been proposed.');
       setActionLog(`Pact proposed to ${G.factions[other].name}! They'll see it on their turn.`);
       syncPush();
     }
@@ -3011,10 +3025,19 @@ function dismissEvent() {
 // WIN CHECK
 // ============================================================
 function checkWin() {
+  // Node dominance tracking: announce when someone reaches 3+ nodes, clear when they drop below.
+  // The actual node-hold WIN is checked in endRound (must hold for 2 consecutive round-ends).
+  if (!G.nodesHeldSince) G.nodesHeldSince = {};
   for (const [k,f] of Object.entries(G.factions)) {
-    if (f.eliminated) continue;
-    const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
-    if (n>=3) { showWin(k,'NODE CONTROL',`${f.name} seized 3 Core Nodes and commands Nexus.`); return true; }
+    if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
+    const n = countNodes(k);
+    if (n >= 3 && !G.nodesHeldSince[k]) {
+      G.nodesHeldSince[k] = G.round;
+      addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 2 rounds to win.`);
+    } else if (n < 3 && G.nodesHeldSince[k]) {
+      delete G.nodesHeldSince[k];
+      addLog(`📢 ${f.name} lost node dominance — hold timer reset.`);
+    }
   }
   // The Tyrant wins by diplomacy: a (secret) pact with EVERY surviving rival = no enemies left.
   if (tyrantAlive()) {
@@ -3113,6 +3136,7 @@ function loadRemoteState(s) {
   clean.grudges        = clean.grudges        || {};
   clean.log            = clean.log            || [];
   clean.tyrantLastOffer = clean.tyrantLastOffer || {};
+  clean.nodesHeldSince  = clean.nodesHeldSince  || {};
   G = clean;
   signalJamActive = sj; totalWar = tw; gameOver = go;
   if (mySeats.length) G.playerFaction = mySeats[0];  // always view through my own seat
@@ -3339,7 +3363,7 @@ function buildOnlineGame(seats, tyrant) {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
-    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {},
+    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, nodesHeldSince: {},
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
