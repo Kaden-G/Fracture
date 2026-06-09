@@ -291,14 +291,12 @@
 
   /* ===== MAP ===== */
   #map-area {
-    padding: 16px;
-    overflow: auto;
+    padding: 12px;
+    overflow: hidden;           /* the board is auto-scaled to fit — never scrolls */
+    position: relative;
     background: #1a1a2e;
     background-image: radial-gradient(circle, rgba(241,196,15,0.05) 1px, transparent 1px);
     background-size: 24px 24px;
-    display: flex;            /* center the board so leftover space is balanced, not dumped below */
-    align-items: safe center; /* 'safe' = center when it fits, but stay scrollable if it overflows */
-    justify-content: safe center;
   }
 
   #hex-grid {
@@ -307,7 +305,11 @@
     align-items: flex-start;
     gap: 0;
     user-select: none;
-    position: relative;
+    position: absolute;         /* centered + scaled by fitBoard() to always fit the area */
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
     /* Cardinal-region backdrop: 4 colored wedges meeting at the board's center
        (N=blue top, E=green right, S=red bottom, W=yellow left). */
     background: conic-gradient(from -45deg,
@@ -430,7 +432,7 @@
 
   .sidebar-section h4 {
     font-family: 'Bangers', cursive;
-    font-size: 23px;
+    font-size: 25px;
     letter-spacing: 2px;
     margin-bottom: 10px;
     color: var(--node-glow);
@@ -443,7 +445,7 @@
     padding: 9px 11px;
     border: 1px solid #2a2a3e;
     background: #0d1117;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     margin-bottom: 5px;
     color: var(--card-text);
@@ -458,7 +460,7 @@
   }
 
   .faction-row-sub {
-    font-size: 14px;
+    font-size: 16px;
     color: #999;
     font-weight: 600;
   }
@@ -469,7 +471,7 @@
     justify-content: space-between;
     padding: 8px 11px;
     border: 1px solid #2a2a3e;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
     background: #0d1117;
     margin-bottom: 4px;
@@ -481,7 +483,7 @@
     border: 2px solid #2a2a3e;
     padding: 6px 13px;
     font-family: 'Bangers', cursive;
-    font-size: 20px;
+    font-size: 22px;
     letter-spacing: 1px;
     color: var(--card-text);
     margin: 3px;
@@ -534,7 +536,7 @@
   }
   .log-chip:last-child { color: #fff; font-weight: 700; }
 
-  .quick-ref { font-size: 14px; line-height: 1.6; color: #c9d1d9; }
+  .quick-ref { font-size: 16px; line-height: 1.6; color: #c9d1d9; }
   .quick-ref > div { margin-bottom: 6px; }
   .quick-ref strong { color: var(--node-glow); font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
   .quick-ref b { color: #fff; }
@@ -1663,6 +1665,26 @@ function renderMap() {
     col.forEach(tile => colEl.appendChild(makeHex(tile)));
     grid.appendChild(colEl);
   });
+
+  fitBoard();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitBoard);   // after layout settles
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__fitResize) {
+    window.__fitResize = true;
+    window.addEventListener('resize', () => fitBoard());
+  }
+}
+
+// Scale the whole board so it always fits its area — no scrolling, as large as possible.
+function fitBoard() {
+  const area = document.getElementById('map-area');
+  const grid = document.getElementById('hex-grid');
+  if (!area || !grid || typeof grid.offsetWidth !== 'number') return;
+  const bw = grid.offsetWidth, bh = grid.offsetHeight;   // layout size (unaffected by transform)
+  if (!bw || !bh) return;
+  const aw = area.clientWidth - 20, ah = area.clientHeight - 20;
+  if (aw <= 0 || ah <= 0) return;
+  const s = Math.max(0.2, Math.min(aw / bw, ah / bh));
+  grid.style.transform = `translate(-50%,-50%) scale(${s.toFixed(3)})`;
 }
 
 function makeHex(tile) {
