@@ -1836,12 +1836,20 @@ function renderSidebar() {
     Object.entries(G.factions).map(([k,f]) => {
       const tiles = Object.values(G.tiles).filter(t=>t.owner===k).length;
       const nodes = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
+      const isActive = k===activeFk();
+      const isMe = mySeats.includes(k);
       return `
-        <div class="faction-row" style="${f.eliminated?'opacity:0.35;':''}">
+        <div class="faction-row" style="
+          border: 2px solid ${f.color}${isActive?'':'55'};
+          background: ${f.color}${isActive?'28':'10'};
+          border-radius: 6px;
+          ${isActive?`box-shadow: 0 0 10px ${f.color}44;`:''}
+          ${f.eliminated?'opacity:0.35;':''}
+        ">
           <div class="faction-dot" style="background:${f.color}"></div>
           <div style="flex:1">
             <div style="font-family:'Bangers'; font-size:13px; letter-spacing:1px; color:${f.color}">
-              ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${k===activeFk()?' ◄ TURN':''}
+              ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${isMe?' 👤':''}${isActive?' ◄ TURN':''}
             </div>
             <div class="faction-row-sub">${tiles} tiles · ${nodes}★ nodes · ${f.resources} res ${f.eliminated?'· DEAD':''}</div>
           </div>
@@ -1878,8 +1886,7 @@ function renderSidebar() {
   const refAb = document.getElementById('ref-ability');
   if (refAb) refAb.innerHTML = `<strong>YOU (${FACTIONS[G.playerFaction].name}):</strong> ${FACTIONS[G.playerFaction].perk}`;
 
-  // Diplomacy — active pacts and lingering grudges. Tyrant deals are SECRET: shown only to the
-  // player who is party to them (the local viewer = the faction whose turn/seat this is).
+  // Diplomacy — all pacts are secret, shown only to the two parties. Tyrant pact COUNT is public.
   const dipEl = document.getElementById('diplomacy-list');
   if (dipEl) {
     const viewer = G.playerFaction;
@@ -1903,7 +1910,8 @@ function renderSidebar() {
     if (tyrantAlive()) {
       const tp = Object.keys(G.pacts||{}).filter(k => { const [a,b]=k.split('|'); return a===TYRANT_KEY||b===TYRANT_KEY; }).length;
       const need = livingKeys().filter(k=>k!==TYRANT_KEY).length;
-      rows.push(`<span style="color:${TYRANT_DEF.color}">🦠 Tyrant pacts: <b>${tp}/${need}</b>${tp>=need?' ⚠️ WINNING!':''}</span>`);
+      const left = need - tp;
+      rows.push(`<span style="color:${TYRANT_DEF.color}; font-weight:700">🦠 TYRANT has <b>${tp}</b> pact${tp!==1?'s':''} of <b>${need}</b> needed to win${left>0?` — ${left} more to go`:' — ⚠️ WINNING!'}</span>`);
     }
     dipEl.innerHTML = rows.length
       ? rows.map(r=>`<div class="faction-row-sub" style="padding:2px 0">${r}</div>`).join('')
@@ -2016,15 +2024,27 @@ function startRound() {
   }
   document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
 
-  const ev = EVENTS[Math.floor(Math.random()*EVENTS.length)];
+  const evIdx = Math.floor(Math.random()*EVENTS.length);
+  const ev = EVENTS[evIdx];
   const reg = ev.region ? nextRegion() : null;   // regional events draw from the even-distribution bag
   G.eventRegion = reg;
   // Record the event so EVERY client can display the card (not just the driver).
-  G.eventCard = { type: ev.type, title: ev.title, body: ev.body, reg, n: (G.eventN = (G.eventN || 0) + 1) };
+  G.eventCard = { type: ev.type, title: ev.title, body: ev.body, reg, n: (G.eventN = (G.eventN || 0) + 1), evIdx };
   lastShownEventN = G.eventCard.n;   // the driver shows its own card below; don't re-show on echo
   if (ev.choices) {
-    syncPush();   // broadcast the event card (no-op offline)
-    showChoiceEvent(ev, () => { renderMap(); renderSidebar(); doNextTurn(); });
+    if (online) {
+      // Online: AI resolves immediately on driver; humans choose on their own devices
+      Object.keys(G.factions).filter(k => G.factions[k].isAI && !G.factions[k].eliminated)
+        .forEach(k => { ev.choices[ev.aiChoose ? ev.aiChoose(k) : 0].resolve(k); });
+      const pendingHumans = G.humans.filter(k => !G.factions[k].eliminated);
+      G.pendingChoiceEvent = { evIdx, choicesMade: {}, pending: pendingHumans };
+      renderMap(); renderSidebar();
+      syncPush();
+      showOnlineChoiceUI();
+    } else {
+      syncPush();
+      showChoiceEvent(ev, () => { renderMap(); renderSidebar(); doNextTurn(); });
+    }
   } else {
     ev.apply(reg);
     renderMap();
@@ -3016,6 +3036,66 @@ function showChoiceEvent(ev, cb) {
   document.getElementById('event-overlay').classList.add('show');
 }
 
+// Online choice event: each human player picks on their own device.
+// Driver collects all choices, then resolves and proceeds.
+function showOnlineChoiceUI() {
+  if (!G.pendingChoiceEvent) return;
+  const pce = G.pendingChoiceEvent;
+  const ev = EVENTS[pce.evIdx];
+  if (!ev || !ev.choices) return;
+  const myPending = mySeats.filter(k => pce.pending.includes(k) && !(pce.choicesMade && pce.choicesMade[k] !== undefined));
+  if (myPending.length === 0) {
+    // Already chosen — show informational "waiting" card
+    if (!document.getElementById('event-overlay').classList.contains('show')) {
+      document.getElementById('event-type').textContent = 'CHOICE EVENT';
+      document.getElementById('event-title').textContent = ev.title;
+      document.getElementById('event-body').textContent  = ev.body + '\n\n⏳ Waiting for other players…';
+      document.getElementById('event-choices').style.display = 'none';
+      document.getElementById('event-ok').style.display = '';
+      document.getElementById('event-overlay').classList.add('show');
+      pendingEvent = null;
+    }
+    return;
+  }
+  const fk = myPending[0];
+  document.getElementById('event-type').textContent  = 'CHOICE EVENT';
+  document.getElementById('event-title').textContent = ev.title;
+  document.getElementById('event-body').textContent  = ev.body;
+  document.getElementById('event-ok').style.display  = 'none';
+  const box = document.getElementById('event-choices');
+  box.style.display = 'flex';
+  box.innerHTML = '';
+  ev.choices.forEach((ch, idx) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-secondary';
+    b.style.cssText = 'font-size:14px; padding:10px 14px; text-align:left;';
+    b.textContent = ch.label;
+    b.onclick = () => {
+      if (!G.pendingChoiceEvent) return;
+      G.pendingChoiceEvent.choicesMade[fk] = idx;
+      addLog(`🃏 ${ev.title}: ${G.factions[fk].name} chose "${ch.label}"`);
+      document.getElementById('event-overlay').classList.remove('show');
+      syncPush();
+      checkOnlineChoicesDone();
+    };
+    box.appendChild(b);
+  });
+  document.getElementById('event-overlay').classList.add('show');
+}
+
+function checkOnlineChoicesDone() {
+  if (!isDriver || !G.pendingChoiceEvent) return;
+  const pce = G.pendingChoiceEvent;
+  const allDone = pce.pending.every(k => pce.choicesMade && pce.choicesMade[k] !== undefined);
+  if (!allDone) return;
+  const ev = EVENTS[pce.evIdx];
+  pce.pending.forEach(k => { ev.choices[pce.choicesMade[k]].resolve(k); });
+  delete G.pendingChoiceEvent;
+  renderMap(); renderSidebar();
+  syncPush();
+  doNextTurn();
+}
+
 function dismissEvent() {
   document.getElementById('event-overlay').classList.remove('show');
   if (pendingEvent) { const cb=pendingEvent; pendingEvent=null; cb(); }
@@ -3137,6 +3217,7 @@ function loadRemoteState(s) {
   clean.log            = clean.log            || [];
   clean.tyrantLastOffer = clean.tyrantLastOffer || {};
   clean.nodesHeldSince  = clean.nodesHeldSince  || {};
+  if (clean.pendingChoiceEvent) clean.pendingChoiceEvent.choicesMade = clean.pendingChoiceEvent.choicesMade || {};
   G = clean;
   signalJamActive = sj; totalWar = tw; gameOver = go;
   if (mySeats.length) G.playerFaction = mySeats[0];  // always view through my own seat
@@ -3163,7 +3244,22 @@ function onRemoteState(s) {
   // Show this round's event card here too, so every player sees it (not just the driver).
   if (G.eventCard && G.eventCard.n > lastShownEventN) {
     lastShownEventN = G.eventCard.n;
-    showEventCardInfo(G.eventCard);
+    if (G.pendingChoiceEvent) {
+      showOnlineChoiceUI();   // choice event: show buttons, not just an info card
+    } else {
+      showEventCardInfo(G.eventCard);
+    }
+  }
+
+  // Online choice event: re-show choice UI if overlay was closed but I haven't chosen yet
+  if (G.pendingChoiceEvent) {
+    const pce = G.pendingChoiceEvent;
+    const myPending = mySeats.filter(k => pce.pending.includes(k) && !(pce.choicesMade && pce.choicesMade[k] !== undefined));
+    if (myPending.length > 0 && !document.getElementById('event-overlay').classList.contains('show')) {
+      showOnlineChoiceUI();
+    }
+    checkOnlineChoicesDone();
+    return;   // don't route turns while a choice event is pending
   }
 
   if (gameOver) { if (G.winner) renderWin(G.winner); return; }
