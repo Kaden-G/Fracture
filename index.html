@@ -1010,7 +1010,8 @@
         <div><strong>GOAL:</strong> Hold <b>3 of 5</b> ★ Nodes — or eliminate every rival.</div>
         <div><strong>EACH TURN:</strong> 2 actions — Move, Attack, Reinforce, Airlift, Entrench, Pact, + your ability.</div>
         <div><strong>SPEND ON:</strong> troops (Reinforce), position (Airlift 3), or defense (Entrench 2).</div>
-        <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) + Blitz &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
+        <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
+        <div><strong>PRESS THE ASSAULT:</strong> a win lets you keep attacking that turn for free — but each strike, defenders rally <b>+1</b>. Grind until repelled.</div>
         <div><strong>NODES:</strong> +1 res each, plus a passive (see Core Nodes above).</div>
         <div><strong>PACTS:</strong> no attacks while allied — betray and they get <b>+2</b> vs you.</div>
         <div style="margin-top:4px"><strong>REGIONS</strong> (tinted zones):
@@ -1086,7 +1087,7 @@
     <ul>
       <li><strong>🪖 Force:</strong> +1 per 3 troops on the stack (both sides). Big armies hit harder.</li>
       <li><strong>🛡️ Dug in:</strong> +1 per round a defender holds a tile with 2+ troops, max +3. Taking any casualty resets it. A veteran garrison can repel a larger green force.</li>
-      <li><strong>⚡ Blitz:</strong> +1 per successful attack you've already made this turn (max +2). Commit both actions to a push for momentum.</li>
+      <li><strong>⚔️ Press the Assault:</strong> after a winning attack you may keep striking from that tile for free (one action launches the whole assault) — but each strike this turn, defenders <strong>rally +1</strong> (overextension). A repel, an emptied stack, or picking another action ends the assault. So a strong army can punch through several tiles, but a deep grind gets riskier the further you push.</li>
     </ul>
     <p style="margin-top:6px;font-size:12px;color:#999;">The shields on a hex show how dug-in it is. Fresh captures start at 0.</p>
     <h3>🛡️ REINFORCE</h3>
@@ -1298,7 +1299,8 @@ let signalJamActive = false;
 let totalWar       = false;  // TOTAL WAR event: attackers +1 this round
 let pendingEvent   = null;
 let gameOver       = false;
-let blitzCount     = 0;  // successful attacks by current actor this turn
+let turnAttacks    = 0;  // attacks made this turn → escalating defender "overextension" bonus
+let assaultOn      = false;  // a "press the assault" attack chain is in progress (player)
 let mySeats        = [];  // faction keys THIS device controls (hot-seat: all humans; online: your claimed seat)
 
 // ---- Networking state (all inert while offline; online layer flips these) ----
@@ -1979,7 +1981,7 @@ function beginTurnFor(fk) {
   // A local human's turn (any human in hot-seat, or my own seat online).
   G.playerFaction = fk;
   G.actionsUsed = 0;
-  blitzCount = 0;
+  turnAttacks = 0; assaultOn = false;
   selectedTile = null; currentAction = null;
   myTurnActive = true; isDriver = true;
 
@@ -2044,7 +2046,7 @@ function showHandoff(fk, cb) {
 
 function endTurn() {
   if (online && !canActNow()) return;   // only the active local player may end the turn
-  selectedTile = null; currentAction = null;
+  selectedTile = null; currentAction = null; assaultOn = false;
   clearHighlights();
   myTurnActive = false;
   G.currentTurnIdx++;
@@ -2099,6 +2101,7 @@ function disablePlayerActions() {
 }
 
 function setAction(action) {
+  assaultOn = false;        // choosing a new action halts any assault in progress
   currentAction = action;
   selectedTile  = null;
   clearHighlights();
@@ -2252,7 +2255,7 @@ function handleTileClick(id) {
       return;
     }
     const src = G.tiles[selectedTile];
-    if (!adjacent(src,tile))          { setActionLog('Not adjacent!'); selectedTile=null; renderMap(); return; }
+    if (!adjacent(src,tile))          { setActionLog('Not adjacent — pick an enemy next to your assault tile.'); return; }
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
     if (hasPact(G.playerFaction, tile.owner)) {
@@ -2261,11 +2264,21 @@ function handleTileClick(id) {
       }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    resolveAttack(G.playerFaction, selectedTile, id, true);
-    G.actionsUsed++;
-    selectedTile=null; currentAction=null;
+    if (!assaultOn) { G.actionsUsed++; assaultOn = true; }   // launching the assault costs ONE action
+    const won = resolveAttack(G.playerFaction, selectedTile, id, true);
+    renderSidebar();
+    if (checkWin()) return;
+    // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +1.
+    if (won && G.tiles[selectedTile] && G.tiles[selectedTile].troops >= 2) {
+      setActionLog(`⚔️ Assault presses on! Next strike, defenders rally +${turnAttacks}. Click another adjacent enemy — or pick another action to halt.`);
+      renderMap();
+      document.getElementById('hex-'+selectedTile)?.classList.add('selected');
+      return;
+    }
+    // Repelled, source spent, or nothing left — the assault is over.
+    assaultOn = false; selectedTile=null; currentAction=null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    renderMap(); renderSidebar(); checkWin(); return;
+    renderMap(); renderSidebar(); return;
   }
 
   // ---- SABOTAGE ----
@@ -2353,8 +2366,9 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 1. Force ratio: every 3 troops on a stack = +1 (raw numbers matter)
   const attForce = Math.floor(src.troops / 3);
   const defForce = Math.floor(tgt.troops / 3);
-  // 2. Blitz: momentum from prior successful attacks this turn (attacker only)
-  const blitz = Math.min(blitzCount, 2);
+  // 2. Overextension: each attack you've ALREADY made this turn rallies the defender +1.
+  //    This is the brake on "press the assault" — chains get harder the deeper you push.
+  const overextend = turnAttacks;
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
   let entrench = Math.min(tgt.heldRounds || 0, 3);
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
@@ -2372,24 +2386,25 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 8. TOTAL WAR event: every attacker swings +1 this round
   const war = totalWar ? 1 : 0;
 
-  const attTotal = attDie + attForce + blitz + comms + coalition + grudgeA + war;
-  const defTotal = defDie + defForce + entrench + ironWill + data + grudgeD;
+  const attTotal = attDie + attForce + comms + coalition + grudgeA + war;
+  const defTotal = defDie + defForce + entrench + ironWill + data + grudgeD + overextend;
 
   // Attacker wins ties; fortify makes them need to clear by a margin
   const attWins = attTotal >= defTotal + fortify;
+
+  turnAttacks++;  // this attack now counts toward overextension on the NEXT strike
 
   // Flash the result whenever the human is involved — attacking OR defending
   const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
-      { die: attDie, force: attForce, blitz, comms, coalition, grudge: grudgeA, war, total: attTotal },
-      { die: defDie, force: defForce, entrench, iron: ironWill, fortify, data, grudge: grudgeD, total: defTotal },
+      { die: attDie, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
+      { die: defDie, force: defForce, entrench, iron: ironWill, fortify, data, grudge: grudgeD, overextend, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
   }
 
   if (attWins) {
-    blitzCount++;  // momentum builds for the next attack this turn
     tgt.troops--;
     if (tgt.troops <= 0) {
       const prev = tgt.owner;
@@ -2417,6 +2432,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   }
 
   refreshHex(srcId); refreshHex(tgtId);
+  return attWins;
 }
 
 function modParts(arr) {
@@ -2426,8 +2442,8 @@ function modParts(arr) {
 
 function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
-  const attMods = modParts([{v:att.force,label:'force'},{v:att.blitz,label:'blitz'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
-  const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.iron,label:'iron'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'}]);
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
+  const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.iron,label:'iron'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
   // Color + headline from the LOCAL player's point of view (green = good for you).
@@ -2546,7 +2562,7 @@ function tyrantSpread(fk) {
 
 function runAITurn(fk) {
   if (gameOver) return;
-  blitzCount = 0;
+  turnAttacks = 0;
   const f = G.factions[fk];
   if (f.eliminated) { G.currentTurnIdx++; setTimeout(doNextTurn,200); return; }
 
@@ -2571,8 +2587,8 @@ function runAITurn(fk) {
         const canBetray = def.isNode && atk.troops >= def.troops + 2;
         if (pact && !canBetray) continue;
         // Prefer: nodes, then weaker targets, then where we have a troop edge
-        const atkPower = Math.floor(atk.troops/3) + Math.min(blitzCount,2);
-        const defPower = Math.floor(def.troops/3) + Math.min(def.heldRounds||0,3);
+        const atkPower = Math.floor(atk.troops/3);
+        const defPower = Math.floor(def.troops/3) + Math.min(def.heldRounds||0,3) + turnAttacks;  // overextension
         const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
         const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
         if (!best || score > best.score) best = {atk, def, score, betray:pact};
@@ -2581,18 +2597,21 @@ function runAITurn(fk) {
     return best;
   };
 
-  // Take the two actions ONE AT A TIME, paced so each combat result is shown on its own
-  // (a combat flash needs a clear beat — otherwise two attacks blur into one and look wrong).
-  let actsLeft = 2;
+  // Take actions ONE AT A TIME, paced so each combat result is shown on its own. A winning
+  // attack "presses the assault" (doesn't spend an action) until repelled, the targets run dry
+  // (overextension makes nothing favorable), or an 8-attack safety cap — mirroring the player.
+  let actsLeft = 2, aiAttacks = 0;
   const step = () => {
     if (gameOver) return;
     if (actsLeft <= 0) { finishAITurn(fk); return; }
-    actsLeft--;
-    const result = aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack);  // false | 'combat' | true
+    const result = aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack);  // false | 'won' | 'repelled' | true
     renderSidebar();
     if (checkWin()) return;
-    if (!result) { finishAITurn(fk); return; }            // nothing useful left
-    setTimeout(step, result === 'combat' ? 1700 : 450);   // let a fight land before the next move
+    if (!result) { finishAITurn(fk); return; }
+    const combat = (result === 'won' || result === 'repelled');
+    if (combat) aiAttacks++;
+    if (result !== 'won' || aiAttacks >= 8) actsLeft--;   // wins are free; repels/other/cap spend an action
+    setTimeout(step, combat ? 1700 : 450);
   };
   setTimeout(step, 250);
 }
@@ -2614,16 +2633,14 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
   if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
-    resolveAttack(fk, best.atk.id, best.def.id, false);
-    return 'combat';
+    return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
   }
   // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
   if (aiNodePush(fk)) return true;
   // 3. Take any other favorable attack.
   if (attackable && best.atk.troops > best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
-    resolveAttack(fk, best.atk.id, best.def.id, false);
-    return 'combat';
+    return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
   }
   // 4. Use special ability opportunistically.
   if (aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
