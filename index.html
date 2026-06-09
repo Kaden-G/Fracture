@@ -1055,8 +1055,8 @@
         <div><strong>GOAL:</strong> Hold <b>3 of 5</b> ★ Nodes <b>for 2 rounds</b> — or eliminate every rival.</div>
         <div><strong>EACH TURN:</strong> 3 actions — Move, Attack, Reinforce, Airlift, Entrench, Pact, + your ability.</div>
         <div><strong>SPEND ON:</strong> troops (Reinforce), position (Airlift 3), or defense (Entrench 2).</div>
-        <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
-        <div><strong>PRESS THE ASSAULT:</strong> a win lets you keep attacking that turn for free — but each strike, defenders rally <b>+1</b>. Grind until repelled.</div>
+        <div><strong>COMBAT:</strong> 2d6 + Force (+1 per 4 troops, max +2) &nbsp;vs&nbsp; 2d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
+        <div><strong>PRESS THE ASSAULT:</strong> a win lets you keep attacking for free — but each strike, defenders rally <b>+2</b>. Max <b>3 captures</b> per assault chain.</div>
         <div><strong>NODES:</strong> +1 res each, plus a passive (see Core Nodes above).</div>
         <div><strong>PACTS:</strong> no attacks while allied — betray and they get <b>+2</b> vs you.</div>
         <div style="margin-top:4px"><strong>REGIONS</strong> (tinted zones):
@@ -1129,27 +1129,28 @@
       <li><strong>3 ACTIONS:</strong> Move, Attack, Reinforce, or Special Ability</li>
     </ul>
     <h3>⚔️ COMBAT</h3>
-    <p>Click ATTACK → your tile → adjacent enemy tile. Both roll a d6, then add modifiers. Attacker wins ties. Loser drops 1 troop; defender at 0 → captured.</p>
+    <p>Click ATTACK → your tile → adjacent enemy tile. Both roll <strong>2d6</strong>, then add modifiers. Attacker wins ties. Loser drops 1 troop; defender at 0 → captured.</p>
     <p style="margin-top:6px"><strong>Modifiers stack on the roll:</strong></p>
     <ul>
-      <li><strong>🪖 Force:</strong> +1 per 3 troops on the stack (both sides). Big armies hit harder.</li>
-      <li><strong>🛡️ Dug in:</strong> +1 per round a defender holds a tile with 2+ troops, max +3. Taking any casualty resets it. A veteran garrison can repel a larger green force.</li>
-      <li><strong>⚔️ Press the Assault:</strong> after a winning attack you may keep striking from that tile for free (one action launches the whole assault) — but each strike this turn, defenders <strong>rally +1</strong> (overextension). A repel, an emptied stack, or picking another action ends the assault. So a strong army can punch through several tiles, but a deep grind gets riskier the further you push.</li>
+      <li><strong>🪖 Force:</strong> +1 per 4 troops on the stack (both sides), <strong>capped at +2</strong>. Big armies are resilient, not auto-win.</li>
+      <li><strong>🛡️ Dug in:</strong> +1 per round a defender holds a tile with 2+ troops, max +3 (or +2 on Node tiles). Taking any casualty resets it.</li>
+      <li><strong>⚔️ Press the Assault:</strong> after a winning attack you may keep striking for free — but each strike, defenders <strong>rally +2</strong>. Max <strong>3 captures</strong> per chain. A repel, an emptied stack, or picking another action ends the assault.</li>
+      <li><strong>⚖️ Modifier Clamp:</strong> net modifier swing is capped at ±4, so no combination of perks fully removes chance.</li>
     </ul>
     <p style="margin-top:6px;font-size:12px;color:#999;">The shields on a hex show how dug-in it is. Fresh captures start at 0.</p>
     <h3>🛡️ REINFORCE</h3>
-    <p>Costs 2 resources → +2 troops on your tile. Grid faction costs only 1.</p>
+    <p>Costs 2 resources → +2 troops on your tile. Grid faction costs only 1 resource.</p>
     <h3>💵 UNIVERSAL PAID ACTIONS (any faction)</h3>
     <ul>
       <li><strong>✈️ AIRLIFT (3 res):</strong> redeploy 2 troops between ANY two tiles you own — ignores adjacency. Buy position.</li>
-      <li><strong>🏰 ENTRENCH (2 res):</strong> add a dig-in level (+1 defense, max +3) to a garrisoned tile right now. Buy defense — but any casualty still resets it.</li>
+      <li><strong>🏰 ENTRENCH (2 res):</strong> add a dig-in level (+1 defense, max +3 or +2 on Nodes) to a garrisoned tile right now. Buy defense — but any casualty still resets it.</li>
     </ul>
     <p style="font-size:12px;color:#999;">Money now buys <strong>force</strong> (Reinforce), <strong>position</strong> (Airlift), or <strong>defense</strong> (Entrench) — spend on what your plan needs.</p>
     <h3>🚶 MOVE</h3>
     <p>Select your tile (2+ troops) → click adjacent empty or friendly tile. Moves 1 troop.</p>
     <h3>🎭 FACTIONS — ABILITY + PERK</h3>
     <ul>
-      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less & adds +3 troops · OVERCLOCK (1 res) surges +3 troops onto a tile</li>
+      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less · OVERCLOCK (1 res) surges +3 troops onto a tile</li>
       <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (1 res) steals 1 troop from an adjacent enemy</li>
       <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (1 res) buffs a tile + adjacent friendlies</li>
       <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) removes 1 troop from any enemy tile</li>
@@ -1180,12 +1181,12 @@
     </ul>
     <h3>🧬 PASSIVE TRAITS</h3>
     <ul>
-      <li><strong>LAST STAND:</strong> Tiles with only 1 troop get +3 defense — thin garrisons are deadly</li>
+      <li><strong>LAST STAND:</strong> Tiles with 1–2 troops get +3 defense — but deny Scavenger loot to attackers who break through</li>
       <li><strong>SCAVENGER:</strong> Earn +1 resource each time you capture an enemy tile</li>
       <li><strong>HOARDER:</strong> +1 bonus resource per Node</li>
       <li><strong>GHOST STEP:</strong> Move a troop up to 2 tiles, slipping <em>through</em> any tile (even enemy-held) to reach an empty/your tile</li>
-      <li><strong>TACTICIAN:</strong> Roll 2 dice attack, keep highest</li>
-      <li><strong>FORTIFY:</strong> Enemies need +2 to beat your defense roll</li>
+      <li><strong>TACTICIAN:</strong> Roll 3d6 attack, keep best 2 (advantage on the bell curve)</li>
+      <li><strong>FORTIFY:</strong> Fresh tiles: enemies need +2 margin. After a casualty: decays to +1</li>
     </ul>
     <div style="text-align:right; margin-top:16px;">
       <button class="btn btn-secondary" style="font-size:16px; padding:8px 20px;" onclick="closeRules()">CLOSE</button>
@@ -1230,7 +1231,7 @@ const RES_CAP = 14;  // resource stockpile ceiling
 const GRID    = 7;   // board is GRID x GRID tiles
 
 const FACTIONS = {
-  grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'overclock', perk:'Industrial: reinforce −1 cost & +3 troops' },
+  grid:      { name:'THE GRID',   icon:'⚙️',  color:'#f39c12', ability:'overclock', perk:'Industrial: reinforce −1 cost' },
   syndicate: { name:'SYNDICATE',  icon:'💰',  color:'#e74c3c', ability:'bribe',     perk:'Cartel: +1 resource income each round'   },
   commune:   { name:'COMMUNE',    icon:'🌿',  color:'#2ecc71', ability:'rally',     perk:'Grassroots: +1 troop grows each round'   },
   ghost:     { name:'THE GHOST',  icon:'👁️', color:'#9b59b6', ability:'sabotage',  perk:'Phantom: attacks ignore entrenchment'    },
@@ -1243,12 +1244,12 @@ const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'r
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
 
 const TRAITS = [
-  { id:'last_stand', name:'LAST STAND',   desc:'1-troop defenders get +3 defense'   },
+  { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
   { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
   { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles — slip through anything'},
-  { id:'tactician',  name:'TACTICIAN',    desc:'Roll 2 dice attack, keep highest'    },
-  { id:'fortify',    name:'FORTIFY',      desc:'Enemies need +2 to beat your defense'},
+  { id:'tactician',  name:'TACTICIAN',    desc:'Roll 3d6 attack, keep best 2'        },
+  { id:'fortify',    name:'FORTIFY',      desc:'Fresh tiles: +2 def margin. After casualty: +1'},
 ];
 
 const EVENTS = [
@@ -1355,6 +1356,7 @@ let totalWar       = false;  // TOTAL WAR event: attackers +1 this round
 let pendingEvent   = null;
 let gameOver       = false;
 let turnAttacks    = 0;  // attacks made this turn → escalating defender "overextension" bonus
+let assaultCaptures = 0;  // captures in the current assault chain — capped at 3
 let assaultOn      = false;  // a "press the assault" attack chain is in progress (player)
 let mySeats        = [];  // faction keys THIS device controls (hot-seat: all humans; online: your claimed seat)
 
@@ -1400,7 +1402,7 @@ function reinforceCost(fk){
   if (controlsNode(fk,'node_power'))         c -= 1;  // ⚡ POWER node
   return Math.max(1, c);
 }
-function reinforceAmount(fk){ return fk==='grid' ? 3 : 2; }  // ⚙️ GRID
+function reinforceAmount(fk){ return 2; }  // all factions reinforce +2; GRID's perk is the cost discount
 function moveTroopCount(fk){ return controlsNode(fk,'node_transit') ? 2 : 1; }          // 🚇 TRANSIT
 function moveRange(fk){ return G.factions[fk]?.trait==='ghost_step' ? 2 : 1; }  // 👻 GHOST STEP = reach 2
 // Is `dest` a legal move target for fk's troops starting at `src`? (does NOT check dest ownership)
@@ -1582,7 +1584,7 @@ function checkReady() {
 // ============================================================
 function startGame() {
   const seats = G.setup.seats;
-  const order = Object.keys(FACTIONS);  // fixed turn order; START_CORNERS are randomized for fairness
+  const order = shuffle(Object.keys(FACTIONS));  // randomized turn order for fairness
 
   const factions = {};
   order.forEach(k => {
@@ -1994,7 +1996,7 @@ function startRound() {
   totalWar = false;
   // Entrenchment: tiles held with 2+ troops dig in deeper each round
   Object.values(G.tiles).forEach(t => {
-    if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, 3);
+    if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, t.isNode ? 2 : 3);
     else t.heldRounds = 0;
   });
   // Diplomacy upkeep: pacts lapse after 4 rounds (Tyrant deals are durable until betrayed),
@@ -2124,7 +2126,7 @@ function beginTurnFor(fk) {
   // A local human's turn (any human in hot-seat, or my own seat online).
   G.playerFaction = fk;
   G.actionsUsed = 0;
-  turnAttacks = 0; assaultOn = false;
+  turnAttacks = 0; assaultCaptures = 0; assaultOn = false;
   selectedTile = null; currentAction = null;
   myTurnActive = true; isDriver = true;
 
@@ -2283,7 +2285,7 @@ function setAction(action) {
     reinforce: 'REINFORCE: Click YOUR tile to add troops (cost varies by faction/nodes).',
     pact:      "PACT: Click a rival's tile to propose a non-aggression pact (free, no action).",
     airlift:   'AIRLIFT (3 res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.',
-    entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3).',
+    entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
     sabotage:  'SABOTAGE (1 res): Click any ENEMY tile to remove 1 troop.',
     bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
@@ -2391,12 +2393,13 @@ function handleTileClick(id) {
   // ---- ENTRENCH (universal, 2 res): buy a dig-in level on a garrisoned tile ----
   if (currentAction === 'entrench') {
     const cost = 2;
+    const maxDig = tile.isNode ? 2 : 3;  // node tiles cap at +2 to stay contestable
     if (tile.owner !== G.playerFaction)   { setActionLog('Entrench YOUR tiles only.'); return; }
     if (tile.troops < 2)                  { setActionLog('Need 2+ troops to dig in.'); return; }
-    if ((tile.heldRounds||0) >= 3)        { setActionLog('Already at max dig-in (+3).'); return; }
+    if ((tile.heldRounds||0) >= maxDig)   { setActionLog(`Already at max dig-in (+${maxDig}).`); return; }
     if (f.resources < cost)               { setActionLog(`Entrench costs ${cost} resources.`); return; }
     f.resources -= cost;
-    tile.heldRounds = Math.min((tile.heldRounds||0)+1, 3);
+    tile.heldRounds = Math.min((tile.heldRounds||0)+1, maxDig);
     G.actionsUsed++;
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
@@ -2458,19 +2461,22 @@ function handleTileClick(id) {
       }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    if (!assaultOn) { G.actionsUsed++; assaultOn = true; }   // launching the assault costs ONE action
+    if (!assaultOn) { G.actionsUsed++; assaultOn = true; assaultCaptures = 0; }   // launching the assault costs ONE action
+    const captured = G.tiles[id].troops <= 1;  // will this be a capture if we win?
     const won = resolveAttack(G.playerFaction, selectedTile, id, true);
+    if (won && captured) assaultCaptures++;
     renderSidebar();
     if (checkWin()) return;
-    // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +1.
-    if (won && G.tiles[selectedTile] && G.tiles[selectedTile].troops >= 2) {
-      setActionLog(`⚔️ Assault presses on! Next strike, defenders rally +${turnAttacks}. Click another adjacent enemy — or pick another action to halt.`);
+    // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
+    // Hard cap: 3 captures per assault chain.
+    if (won && G.tiles[selectedTile] && G.tiles[selectedTile].troops >= 2 && assaultCaptures < 3) {
+      setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
       renderMap();
       document.getElementById('hex-'+selectedTile)?.classList.add('selected');
       return;
     }
-    // Repelled, source spent, or nothing left — the assault is over.
-    assaultOn = false; selectedTile=null; currentAction=null;
+    // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
+    assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
     renderMap(); renderSidebar(); return;
   }
@@ -2556,9 +2562,14 @@ function clearHighlights() {
 // ============================================================
 // COMBAT
 // ============================================================
-function rollD6(advantaged) {
+function roll2d6(tactician) {
   const r = () => Math.ceil(Math.random()*6);
-  return advantaged ? Math.max(r(),r()) : r();
+  if (tactician) {
+    const d = [r(), r(), r()].sort((a,b)=>b-a);  // 3d6, keep highest 2
+    return { sum: d[0]+d[1], dice: [d[0], d[1]] };
+  }
+  const d = [r(), r()];
+  return { sum: d[0]+d[1], dice: d };
 }
 
 function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
@@ -2567,23 +2578,25 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const af  = G.factions[attackerFk];
   const df  = G.factions[tgt.owner];
 
-  // --- Base dice ---
-  const attDie = rollD6(af.trait==='tactician');
-  const defDie = rollD6(false);
+  // --- Base dice (2d6 bell curve, centered on 7) ---
+  const attRoll = roll2d6(af.trait==='tactician');
+  const defRoll = roll2d6(false);
+  const attDice = attRoll.sum;
+  const defDice = defRoll.sum;
 
   // --- Modifiers ---
-  // 1. Force ratio: every 3 troops on a stack = +1 (raw numbers matter)
-  const attForce = Math.floor(src.troops / 3);
-  const defForce = Math.floor(tgt.troops / 3);
-  // 2. Overextension: each attack you've ALREADY made this turn rallies the defender +1.
-  //    This is the brake on "press the assault" — chains get harder the deeper you push.
-  const overextend = turnAttacks;
+  // 1. Force ratio: every 4 troops = +1, capped at +2 (big stacks are resilient, not auto-win)
+  const attForce = Math.min(2, Math.floor(src.troops / 4));
+  const defForce = Math.min(2, Math.floor(tgt.troops / 4));
+  // 2. Overextension: each prior attack this turn rallies the defender +2.
+  //    Harder brake on press-the-assault chains.
+  const overextend = turnAttacks * 2;
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
-  let entrench = Math.min(tgt.heldRounds || 0, 3);
+  let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
   // 4. Trait modifiers
-  const lastStand = (df?.trait==='last_stand' && tgt.troops===1) ? 3 : 0;
-  const fortify  = df?.trait==='fortify' ? 2 : 0;
+  const lastStand = (df?.trait==='last_stand' && tgt.troops<=2) ? 3 : 0;  // triggers at 1-2 troops
+  const fortify  = df?.trait==='fortify' ? (tgt.heldRounds > 0 ? 2 : 1) : 0;  // +2 fresh, decays to +1 after casualty
   // 5. Node bonuses — 📡 COMMS (+1 atk), 🖧 DATA (+1 def)
   const comms = controlsNode(attackerFk,'node_comms') ? 1 : 0;
   const data  = controlsNode(tgt.owner,'node_data')   ? 1 : 0;
@@ -2595,10 +2608,18 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 8. TOTAL WAR event: every attacker swings +1 this round
   const war = totalWar ? 1 : 0;
 
-  const attTotal = attDie + attForce + comms + coalition + grudgeA + war;
-  const defTotal = defDie + defForce + entrench + lastStand + data + grudgeD + overextend;
+  // Raw modifier totals (before clamping)
+  let attMods = attForce + comms + coalition + grudgeA + war;
+  let defMods = defForce + entrench + lastStand + data + grudgeD + overextend;
+  // Clamp net modifier swing to ±4 — no combination of perks fully removes chance
+  const modSwing = attMods - defMods;
+  if (modSwing > 4)       { attMods -= (modSwing - 4); }
+  else if (modSwing < -4) { defMods -= (-4 - modSwing); }
 
-  // Attacker wins ties; fortify makes them need to clear by a margin
+  const attTotal = attDice + attMods;
+  const defTotal = defDice + defMods;
+
+  // Attacker wins ties; fortify adds a margin requirement
   const attWins = attTotal >= defTotal + fortify;
 
   turnAttacks++;  // this attack now counts toward overextension on the NEXT strike
@@ -2607,8 +2628,8 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
-      { die: attDie, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
-      { die: defDie, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
+      { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
+      { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
   }
@@ -2621,17 +2642,17 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       tgt.troops   = 1;
       tgt.heldRounds = 0;   // freshly taken — not dug in yet
       src.troops   = Math.max(1, src.troops-1);
-      // SCAVENGER trait: loot +1 resource on capture
-      if (af.trait==='scavenger') { af.resources = Math.min((af.resources||0)+1, RES_CAP); }
-      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${af.trait==='scavenger'?' 💰+1 res':''}`);
+      // SCAVENGER trait: loot +1 resource on capture (denied by LAST STAND defenders)
+      const lootDenied = df?.trait==='last_stand';
+      if (af.trait==='scavenger' && !lootDenied) { af.resources = Math.min((af.resources||0)+1, RES_CAP); }
+      const lootMsg = af.trait==='scavenger' ? (lootDenied ? ' 🚫 loot denied' : ' 💰+1 res') : '';
+      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${lootMsg}`);
       const defLeft = Object.values(G.tiles).filter(t=>t.owner===prev).length;
       if (defLeft===0) {
         killFaction(prev);
-        // Bounty: wiping a rival turns their final tile into a Node you own (encourages PvP).
-        if (!tgt.isNode) {
-          tgt.isNode = true; tgt.nodeId = 'node_spoils'; tgt.name = 'SPOILS'; tgt.short = '☠ SPOILS';
-          addLog(`🏆 ${af.icon} claimed the SPOILS — ${tgt.name} is now a Node!`);
-        }
+        // Bounty: wiping a rival grants +3 resources (encourages PvP without breaking node count).
+        af.resources = Math.min((af.resources||0)+3, RES_CAP);
+        addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +3 resources bounty.`);
       }
     } else {
       tgt.heldRounds = 0;   // taking casualties breaks entrenchment
@@ -2653,6 +2674,7 @@ function modParts(arr) {
 
 function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+  const diceStr = (arr) => arr.map(d => faces[d-1]).join('');
   const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
@@ -2670,11 +2692,11 @@ function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   el.innerHTML = `
     <div class="combat-side">
       <span class="combat-label">${attLabel}</span>
-      <span class="roll-line">${faces[att.die-1]} ${attMods} <b>= ${att.total}</b></span>
+      <span class="roll-line">${diceStr(att.dice)} ${attMods} <b>= ${att.total}</b></span>
     </div>
     <div class="combat-side">
       <span class="combat-label">${defLabel}</span>
-      <span class="roll-line">${faces[def.die-1]} ${defMods} <b>= ${def.total}</b></span>
+      <span class="roll-line">${diceStr(def.dice)} ${defMods} <b>= ${def.total}</b></span>
     </div>
     <div class="result-line ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
   `;
@@ -2798,8 +2820,8 @@ function runAITurn(fk) {
         const canBetray = def.isNode && atk.troops >= def.troops + 2;
         if (pact && !canBetray) continue;
         // Prefer: nodes, then weaker targets, then where we have a troop edge
-        const atkPower = Math.floor(atk.troops/3);
-        const defPower = Math.floor(def.troops/3) + Math.min(def.heldRounds||0,3) + turnAttacks;  // overextension
+        const atkPower = Math.min(2, Math.floor(atk.troops/4));
+        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + turnAttacks*2;  // overextension
         const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
         const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
         if (!best || score > best.score) best = {atk, def, score, betray:pact};
@@ -2810,8 +2832,8 @@ function runAITurn(fk) {
 
   // Take actions ONE AT A TIME, paced so each combat result is shown on its own. A winning
   // attack "presses the assault" (doesn't spend an action) until repelled, the targets run dry
-  // (overextension makes nothing favorable), or an 8-attack safety cap — mirroring the player.
-  let actsLeft = 3, aiAttacks = 0;
+  // (overextension makes nothing favorable), or a 3-capture safety cap — mirroring the player.
+  let actsLeft = 3, aiCaptures = 0;
   const step = () => {
     if (gameOver) return;
     if (actsLeft <= 0) { finishAITurn(fk); return; }
@@ -2820,8 +2842,8 @@ function runAITurn(fk) {
     if (checkWin()) return;
     if (!result) { finishAITurn(fk); return; }
     const combat = (result === 'won' || result === 'repelled');
-    if (combat) aiAttacks++;
-    if (result !== 'won' || aiAttacks >= 8) actsLeft--;   // wins are free; repels/other/cap spend an action
+    if (result === 'won') aiCaptures++;
+    if (result !== 'won' || aiCaptures >= 3) { actsLeft--; aiCaptures = 0; }   // wins chain; 3-capture cap or repel spends action
     setTimeout(step, combat ? 1700 : 450);
   };
   setTimeout(step, 250);
@@ -2840,14 +2862,70 @@ function finishAITurn(fk) {
 function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   const best = findBestAttack();
   const attackable = best && best.atk.troops >= 2 && !signalJamActive;
+  const myNodes = nodesOf(fk);
+
+  // 0. DEFEND LEAD: when holding 2+ nodes, prioritize reinforcing/entrenching them over expansion.
+  if (myNodes.length >= 2) {
+    // Entrench an under-defended node first
+    const weakNode = myNodes
+      .filter(t => (t.heldRounds||0) < (t.isNode?2:3) && t.troops >= 2 && enemyTiles().some(e=>adjacent(t,e)))
+      .sort((a,b)=>(a.heldRounds||0)-(b.heldRounds||0))[0];
+    if (weakNode && f.resources >= 2) {
+      f.resources -= 2;
+      weakNode.heldRounds = Math.min((weakNode.heldRounds||0)+1, weakNode.isNode?2:3);
+      addLog(`🏰 ${f.icon} ${f.name} entrenched ${weakNode.name} (+${weakNode.heldRounds})`);
+      refreshHex(weakNode.id);
+      return true;
+    }
+    // Reinforce the weakest node
+    const thinNode = myNodes.filter(t => t.troops < 4).sort((a,b)=>a.troops-b.troops)[0];
+    if (thinNode && f.resources >= reinforceCost(fk)) {
+      thinNode.troops += reinforceAmount(fk); f.resources -= reinforceCost(fk);
+      addLog(`${f.icon} ${f.name} reinforced ${thinNode.name}`);
+      refreshHex(thinNode.id);
+      return true;
+    }
+  }
 
   // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
   if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
     return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
   }
+
+  // 1b. AIRLIFT to concentrate force before a node assault.
+  if (f.resources >= 3 && myTiles().length >= 2) {
+    const nodeTarget = enemyTiles().find(t => t.isNode && myTiles().some(m => adjacent(m,t) && m.troops < t.troops));
+    if (nodeTarget) {
+      const adjTile = myTiles().find(m => adjacent(m, nodeTarget) && m.troops < nodeTarget.troops);
+      const donor = myTiles().filter(t => t.id !== adjTile.id && t.troops >= 3).sort((a,b)=>b.troops-a.troops)[0];
+      if (adjTile && donor) {
+        f.resources -= 3; donor.troops -= 2; adjTile.troops += 2;
+        addLog(`✈️ ${f.icon} ${f.name} airlifted to ${adjTile.name}`);
+        refreshHex(donor.id); refreshHex(adjTile.id);
+        return true;
+      }
+    }
+  }
+
   // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
   if (aiNodePush(fk)) return true;
+
+  // 2b. RETREAT: pull a thin stack (1-2 troops) away from a larger adjacent enemy instead of feeding it.
+  const threatened = myTiles().filter(t => t.troops <= 2 && !t.isNode &&
+    enemyTiles().some(e => adjacent(t,e) && e.troops >= t.troops + 2));
+  if (threatened.length) {
+    const victim = threatened[0];
+    const safe = myTiles().find(t => t.id !== victim.id && adjacent(t, victim));
+    if (safe) {
+      safe.troops += victim.troops;
+      victim.troops = 0; victim.owner = null; victim.heldRounds = 0;
+      addLog(`🏃 ${f.icon} ${f.name} retreated from ${victim.name}`);
+      refreshHex(victim.id); refreshHex(safe.id);
+      return true;
+    }
+  }
+
   // 3. Take any other favorable attack.
   if (attackable && best.atk.troops > best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
@@ -2857,12 +2935,13 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   if (aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
   // 4b. Entrench a well-stacked frontline Node that isn't yet maxed — buy defense.
   if (f.resources >= 2) {
+    const maxDig = (t) => t.isNode ? 2 : 3;
     const node = nodesOf(fk)
-      .filter(t => t.troops >= 3 && (t.heldRounds||0) < 3 && enemyTiles().some(e=>adjacent(t,e)))
+      .filter(t => t.troops >= 3 && (t.heldRounds||0) < maxDig(t) && enemyTiles().some(e=>adjacent(t,e)))
       .sort((a,b)=>(a.heldRounds||0)-(b.heldRounds||0))[0];
     if (node) {
       f.resources -= 2;
-      node.heldRounds = Math.min((node.heldRounds||0)+1, 3);
+      node.heldRounds = Math.min((node.heldRounds||0)+1, maxDig(node));
       addLog(`🏰 ${f.icon} ${f.name} entrenched ${node.name} (+${node.heldRounds})`);
       refreshHex(node.id);
       return true;
@@ -3472,7 +3551,7 @@ function hostStart() {
 }
 
 function buildOnlineGame(seats, tyrant) {
-  const order = Object.keys(FACTIONS);
+  const order = shuffle(Object.keys(FACTIONS));
   const factions = {};
   order.forEach(k => {
     const s = seats[k];
