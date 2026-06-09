@@ -1179,7 +1179,7 @@
     <h3>🧬 PASSIVE TRAITS</h3>
     <ul>
       <li><strong>LAST STAND:</strong> Tiles with only 1 troop get +3 defense — thin garrisons are deadly</li>
-      <li><strong>SCAVENGER:</strong> Earn +2 resources each time you capture an enemy tile</li>
+      <li><strong>SCAVENGER:</strong> Earn +1 resource each time you capture an enemy tile</li>
       <li><strong>HOARDER:</strong> +1 bonus resource per Node</li>
       <li><strong>GHOST STEP:</strong> Move a troop up to 2 tiles, slipping <em>through</em> any tile (even enemy-held) to reach an empty/your tile</li>
       <li><strong>TACTICIAN:</strong> Roll 2 dice attack, keep highest</li>
@@ -1242,7 +1242,7 @@ function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DE
 
 const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-troop defenders get +3 defense'   },
-  { id:'scavenger',  name:'SCAVENGER',    desc:'+2 resources per tile captured'      },
+  { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
   { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles — slip through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 2 dice attack, keep highest'    },
@@ -2606,9 +2606,9 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       tgt.troops   = 1;
       tgt.heldRounds = 0;   // freshly taken — not dug in yet
       src.troops   = Math.max(1, src.troops-1);
-      // SCAVENGER trait: loot +2 resources on capture
-      if (af.trait==='scavenger') { af.resources = Math.min((af.resources||0)+2, RES_CAP); }
-      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${af.trait==='scavenger'?' 💰+2 res':''}`);
+      // SCAVENGER trait: loot +1 resource on capture
+      if (af.trait==='scavenger') { af.resources = Math.min((af.resources||0)+1, RES_CAP); }
+      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${af.trait==='scavenger'?' 💰+1 res':''}`);
       const defLeft = Object.values(G.tiles).filter(t=>t.owner===prev).length;
       if (defLeft===0) {
         killFaction(prev);
