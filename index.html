@@ -2052,6 +2052,8 @@ function doNextTurn() {
 
   const fk = G.turnOrder[G.currentTurnIdx];
   if (online) G.live = true;   // turns are now live — remote clients may take theirs
+  G.actionsUsed = 0;       // reset the fresh turn's action budget in the SYNCED state, so remote
+                           // clients don't inherit the previous player's spent actions (online race)
   applyIncome(fk);
   syncPush();              // broadcast income + whose turn (no-op offline)
   beginTurnFor(fk);
