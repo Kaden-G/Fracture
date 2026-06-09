@@ -1206,12 +1206,20 @@
 
 <script>
 // Global error catcher - surfaces silent JS errors in action log
-window.onerror = function(msg, src, line) {
+window.lastError = null;
+window.onerror = function(msg, src, line, col, err) {
+  window.lastError = { msg, src, line, col, stack: err && err.stack };
   const log = document.getElementById('action-log');
-  if (log) log.textContent = '⚠️ JS ERROR: ' + msg + ' (line ' + line + ')';
-  console.error(msg, src, line);
+  if (log) log.textContent = '⚠️ JS ERROR: ' + msg + ' (line ' + line + ':' + col + ')';
+  console.error('JS ERROR:', msg, 'at', src + ':' + line + ':' + col, err && err.stack);
   return false;
 };
+window.addEventListener('unhandledrejection', function(e) {
+  window.lastError = { msg: 'unhandled promise rejection', reason: e.reason, stack: e.reason && e.reason.stack };
+  const log = document.getElementById('action-log');
+  if (log) log.textContent = '⚠️ ASYNC ERROR: ' + (e.reason && e.reason.message || e.reason);
+  console.error('Unhandled rejection:', e.reason);
+});
 
 // ============================================================
 // GAME DATA
