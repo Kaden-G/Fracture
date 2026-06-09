@@ -253,7 +253,7 @@
   /* ===== GAME SCREEN ===== */
   #game-screen {
     display: grid;
-    grid-template-columns: 1fr 450px;
+    grid-template-columns: 1fr 500px;
     grid-template-rows: auto 1fr auto auto;  /* header | board+sidebar | event feed | actions */
     min-height: 100vh;
     max-height: 100vh;
@@ -319,12 +319,12 @@
   }
 
   .hex-col { display: flex; flex-direction: column; }
-  .hex-col:not(:first-child) { margin-left: -23px; }  /* overlap columns by W/4 */
-  .hex-col.down { margin-top: 39px; }                 /* odd columns shifted down H/2 */
+  .hex-col:not(:first-child) { margin-left: -28px; }  /* overlap columns by W/4 */
+  .hex-col.down { margin-top: 48px; }                 /* odd columns shifted down H/2 */
 
   .hex {
-    width: 90px;
-    height: 78px;
+    width: 112px;
+    height: 97px;
     position: relative;
     cursor: pointer;
     margin: 0;
@@ -342,7 +342,7 @@
     left: 50%;
     transform: translate(-50%,-50%);
     font-family: 'Bangers', cursive;
-    font-size: 11px;
+    font-size: 13px;
     letter-spacing: 0.3px;
     text-align: center;
     pointer-events: none;
@@ -355,14 +355,14 @@
 
   .hex-troops {
     position: absolute;
-    bottom: 12px;
-    right: 20px;
+    bottom: 15px;
+    right: 25px;
     background: var(--ink);
     color: var(--node-glow);
     font-family: 'Bangers', cursive;
-    font-size: 14px;
-    width: 22px;
-    height: 22px;
+    font-size: 17px;
+    width: 27px;
+    height: 27px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -399,10 +399,10 @@
 
   .hex-region {
     position: absolute;
-    top: 6px;
-    left: 22px;
+    top: 8px;
+    left: 27px;
     font-family: 'Bangers', cursive;
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1;
     pointer-events: none;
     z-index: 3;
@@ -430,7 +430,7 @@
 
   .sidebar-section h4 {
     font-family: 'Bangers', cursive;
-    font-size: 20px;
+    font-size: 23px;
     letter-spacing: 2px;
     margin-bottom: 10px;
     color: var(--node-glow);
@@ -440,10 +440,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 9px 11px;
     border: 1px solid #2a2a3e;
     background: #0d1117;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
     margin-bottom: 5px;
     color: var(--card-text);
@@ -458,7 +458,7 @@
   }
 
   .faction-row-sub {
-    font-size: 13px;
+    font-size: 14px;
     color: #999;
     font-weight: 600;
   }
@@ -467,9 +467,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 7px 10px;
+    padding: 8px 11px;
     border: 1px solid #2a2a3e;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     background: #0d1117;
     margin-bottom: 4px;
@@ -479,9 +479,9 @@
   .res-chip {
     background: #0d1117;
     border: 2px solid #2a2a3e;
-    padding: 5px 11px;
+    padding: 6px 13px;
     font-family: 'Bangers', cursive;
-    font-size: 18px;
+    font-size: 20px;
     letter-spacing: 1px;
     color: var(--card-text);
     margin: 3px;
@@ -534,7 +534,7 @@
   }
   .log-chip:last-child { color: #fff; font-weight: 700; }
 
-  .quick-ref { font-size: 13px; line-height: 1.55; color: #c9d1d9; }
+  .quick-ref { font-size: 14px; line-height: 1.6; color: #c9d1d9; }
   .quick-ref > div { margin-bottom: 6px; }
   .quick-ref strong { color: var(--node-glow); font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
   .quick-ref b { color: #fff; }
@@ -1305,6 +1305,7 @@ let isDriver       = true;    // may THIS client advance the engine (run AI/even
 let myTurnActive   = false;   // is it currently a local human's turn we've begun?
 let applyingRemote = false;   // suppress pushes while loading a remote snapshot
 let onlineStarting = false;   // host: round 1 in progress, flip room to started after first turn
+let lastShownEventN = 0;      // highest round-event card this client has already displayed
 let roomCode       = null;
 let roomRef        = null;    // Firebase ref to /rooms/{CODE}
 let stateRef       = null;    // Firebase ref to /rooms/{CODE}/state
@@ -1872,15 +1873,19 @@ function startRound() {
   document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
 
   const ev = EVENTS[Math.floor(Math.random()*EVENTS.length)];
+  const reg = ev.region ? nextRegion() : null;   // regional events draw from the even-distribution bag
+  G.eventRegion = reg;
+  // Record the event so EVERY client can display the card (not just the driver).
+  G.eventCard = { type: ev.type, title: ev.title, body: ev.body, reg, n: (G.eventN = (G.eventN || 0) + 1) };
+  lastShownEventN = G.eventCard.n;   // the driver shows its own card below; don't re-show on echo
   if (ev.choices) {
-    G.eventRegion = null;
+    syncPush();   // broadcast the event card (no-op offline)
     showChoiceEvent(ev, () => { renderMap(); renderSidebar(); doNextTurn(); });
   } else {
-    const reg = ev.region ? nextRegion() : null;   // regional events draw from the even-distribution bag
-    G.eventRegion = reg;
     ev.apply(reg);
     renderMap();
     renderSidebar();
+    syncPush();   // broadcast applied effect + event card
     showEventCard(ev, () => doNextTurn(), reg);
   }
 }
@@ -2763,6 +2768,12 @@ function showEventCard(ev, cb, reg) {
   pendingEvent = cb;
 }
 
+// Informational copy of the round's event card for non-driver clients online (closes, no engine effect).
+function showEventCardInfo(card) {
+  if (document.getElementById('event-overlay').classList.contains('show')) return; // already showing one
+  showEventCard({ type: card.type, title: card.title, body: card.body }, function(){}, card.reg);
+}
+
 // Choice event: each living faction decides for itself — you via buttons, AI via aiChoose
 function showChoiceEvent(ev, cb) {
   document.getElementById('event-type').textContent  = 'CHOICE EVENT';
@@ -2923,6 +2934,12 @@ function onRemoteState(s) {
 
   ensureGameScreen();
   renderMap(); renderSidebar();
+
+  // Show this round's event card here too, so every player sees it (not just the driver).
+  if (G.eventCard && G.eventCard.n > lastShownEventN) {
+    lastShownEventN = G.eventCard.n;
+    showEventCardInfo(G.eventCard);
+  }
 
   if (gameOver) { if (G.winner) renderWin(G.winner); return; }
 
