@@ -2134,7 +2134,8 @@ function tyrantInteract(fk) {
   }
   // 2. Otherwise the Tyrant may offer a secret non-aggression pact (re-offers every couple rounds).
   if (tyrantAlive() && !hasPact(TYRANT_KEY, fk)) {
-    const last = (G.tyrantLastOffer && G.tyrantLastOffer[fk]) || -99;
+    if (!G.tyrantLastOffer) G.tyrantLastOffer = {};   // Firebase strips empty objects; rebuild defensively
+    const last = G.tyrantLastOffer[fk] || -99;
     if (G.round - last >= 2) {
       G.tyrantLastOffer[fk] = G.round;
       const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nOK = accept   ·   Cancel = refuse`);
@@ -3073,9 +3074,10 @@ function loadRemoteState(s) {
   const sj = !!s._signalJam, tw = !!s._totalWar, go = !!s._gameOver;
   const clean = Object.assign({}, s); delete clean._signalJam; delete clean._totalWar; delete clean._gameOver;
   // Firebase strips empty objects/arrays — restore the containers the engine assumes exist.
-  clean.pacts   = clean.pacts   || {};
-  clean.grudges = clean.grudges || {};
-  clean.log     = clean.log     || [];
+  clean.pacts          = clean.pacts          || {};
+  clean.grudges        = clean.grudges        || {};
+  clean.log            = clean.log            || [];
+  clean.tyrantLastOffer = clean.tyrantLastOffer || {};
   G = clean;
   signalJamActive = sj; totalWar = tw; gameOver = go;
   if (mySeats.length) G.playerFaction = mySeats[0];  // always view through my own seat
