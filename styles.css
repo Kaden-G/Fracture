@@ -299,13 +299,22 @@
     top: 50%;
     transform: translate(-50%, -50%);
     transform-origin: center center;
-    /* Cardinal-region backdrop: painted map with N/S/E/W biomes */
+    /* Cardinal-region backdrop: painted map with N/S/E/W biomes (faint so hexes dominate) */
     background: url('assets/maps_regions.png') center/cover no-repeat;
     border-radius: 10px;
     padding: 18px;             /* breathing room so the image peeks around the hex edges */
   }
+  #hex-grid::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(13, 17, 23, 0.55);   /* dark overlay dims the map image */
+    border-radius: 10px;
+    pointer-events: none;
+    z-index: 0;
+  }
 
-  .hex-col { display: flex; flex-direction: column; }
+  .hex-col { display: flex; flex-direction: column; position: relative; z-index: 1; }
   .hex-col:not(:first-child) { margin-left: -28px; }  /* overlap columns by W/4 */
   .hex-col.down { margin-top: 48px; }                 /* odd columns shifted down H/2 */
 
