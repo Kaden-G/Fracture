@@ -578,6 +578,42 @@ export function reduce(inputState, action) {
       break;
     }
 
+    // ---- AI_RETREAT: consolidate thin stack into adjacent friendly tile ----
+    case 'AI_RETREAT': {
+      const fk = state.turnOrder[state.currentTurnIdx];
+      const victim = state.tiles[action.src];
+      const safe = state.tiles[action.dst];
+      safe.troops += victim.troops;
+      victim.troops = 0;
+      victim.owner = null;
+      victim.heldRounds = 0;
+      log.push(`🏃 ${state.factions[fk].icon} ${state.factions[fk].name} retreated from ${victim.name}`);
+      effects.push({kind:'refresh', tiles:[action.src, action.dst]});
+      break;
+    }
+
+    // ---- TYRANT_SPREAD: metastasize into adjacent empty tiles ----
+    case 'TYRANT_SPREAD': {
+      const fk = TYRANT_KEY;
+      const tiles = Object.values(state.tiles);
+      const seeds = tiles.filter(t => t.owner === fk && t.troops >= 2);
+      let spread = 0;
+      for (const s of seeds) {
+        if (spread >= 4) break;
+        const empty = tiles.find(t => !t.owner && adjacent(s, t));
+        if (empty) {
+          s.troops--;
+          empty.owner = fk;
+          empty.troops = 1;
+          empty.heldRounds = 0;
+          effects.push({kind:'refresh', tiles:[s.id, empty.id]});
+          spread++;
+        }
+      }
+      if (spread) log.push(`🦠 THE TYRANT spreads into ${spread} new tile${spread>1?'s':''}`);
+      break;
+    }
+
     // ---- END_TURN ----
     case 'END_TURN': {
       state.assaultOn = false;
