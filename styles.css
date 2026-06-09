@@ -302,7 +302,7 @@
     /* Cardinal-region backdrop: painted map with N/S/E/W biomes (faint so hexes dominate) */
     background-image:
       linear-gradient(rgba(13, 17, 23, 0.6), rgba(13, 17, 23, 0.6)),
-      url('assets/maps_regions.png');
+      url('assets/map_regions.png');
     background-size: cover, cover;
     background-position: center, center;
     background-repeat: no-repeat, no-repeat;
