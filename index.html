@@ -2112,6 +2112,18 @@ function beginTurnFor(fk) {
     renderMap(); renderSidebar();
     setActionLog(`${f.name}: pick an action, then click a tile. 2 actions. Res: ${f.resources}`);
     if (tyrantOn()) tyrantInteract(fk);   // secret deal offer / harbor request (private to this player)
+    // Pending pact proposal from another human player?
+    if (G.pactProposal && G.pactProposal.to === fk) {
+      const from = G.pactProposal.from;
+      const fromF = G.factions[from];
+      if (fromF && !fromF.eliminated && !hasPact(from, fk)) {
+        const accepted = confirm(`🤝 ${fromF.name} proposes a non-aggression pact!\n\nWhile it holds, neither of you attacks the other.\nOK = accept   ·   Cancel = refuse`);
+        if (accepted) { formPact(from, fk); addLog(`🤝 PACT: ${fromF.name} ↔ ${f.name}`); }
+        else          { addLog(`✋ ${f.name} refused a pact from ${fromF.name}`); }
+      }
+      G.pactProposal = null;
+      syncPush(); renderSidebar();
+    }
   };
 
   // Hot-seat with several humans on one device: gate behind a pass-the-device screen.
@@ -2128,7 +2140,7 @@ function tyrantInteract(fk) {
     if (give) {
       const t = tilesOf(fk).sort((a,b)=>a.troops-b.troops)[0];
       if (t) { t.owner = TYRANT_KEY; t.troops = Math.max(1, t.troops); t.heldRounds = 0; G.tyrantHarbor = 0;
-        addLog(`🦠 ${G.factions[fk].name} HARBORED the Tyrant — it rises again!`); refreshHex(t.id); renderSidebar(); }
+        addLog(`🦠 ${G.factions[fk].name} HARBORED the Tyrant — it rises again!`); refreshHex(t.id); renderSidebar(); syncPush(); }
     }
     return;
   }
@@ -2139,7 +2151,7 @@ function tyrantInteract(fk) {
     if (G.round - last >= 2) {
       G.tyrantLastOffer[fk] = G.round;
       const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nOK = accept   ·   Cancel = refuse`);
-      if (ok) { formPact(TYRANT_KEY, fk); addLog('🦠 A secret pact takes hold in the shadows…'); renderSidebar(); }
+      if (ok) { formPact(TYRANT_KEY, fk); addLog('🦠 A secret pact takes hold in the shadows…'); renderSidebar(); syncPush(); }
     }
   }
 }
@@ -2264,13 +2276,36 @@ function handleTileClick(id) {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Click an ENEMY faction tile to propose a pact.'); return; }
     const other = tile.owner;
     if (hasPact(G.playerFaction, other)) { setActionLog(`You already have a pact with ${G.factions[other].name}.`); return; }
-    if (aiConsiderPact(other, G.playerFaction)) {
-      formPact(G.playerFaction, other);
-      addLog(other===TYRANT_KEY ? '🦠 A secret pact takes hold in the shadows…' : `🤝 PACT: YOU ↔ ${G.factions[other].name}`);
-      setActionLog(`${G.factions[other].name} ACCEPTED your non-aggression pact!`);
-    } else {
-      addLog(other===TYRANT_KEY ? '🦠 The Tyrant rebuffs your overture…' : `✋ ${G.factions[other].name} refused a pact`);
-      setActionLog(`${G.factions[other].name} REFUSED — they don't need you yet.`);
+    // AI opponent: AI decides instantly
+    if (G.factions[other].isAI) {
+      if (aiConsiderPact(other, G.playerFaction)) {
+        formPact(G.playerFaction, other);
+        addLog(other===TYRANT_KEY ? '🦠 A secret pact takes hold in the shadows…' : `🤝 PACT: YOU ↔ ${G.factions[other].name}`);
+        setActionLog(`${G.factions[other].name} ACCEPTED your non-aggression pact!`);
+      } else {
+        addLog(other===TYRANT_KEY ? '🦠 The Tyrant rebuffs your overture…' : `✋ ${G.factions[other].name} refused a pact`);
+        setActionLog(`${G.factions[other].name} REFUSED — they don't need you yet.`);
+      }
+    }
+    // Human opponent, hot-seat: ask them directly
+    else if (!online) {
+      const accepted = confirm(`🤝 ${G.factions[G.playerFaction].name} proposes a non-aggression pact with ${G.factions[other].name}.\n\nDoes ${G.factions[other].name} accept?\nOK = accept   ·   Cancel = refuse`);
+      if (accepted) {
+        formPact(G.playerFaction, other);
+        addLog(`🤝 PACT: ${G.factions[G.playerFaction].name} ↔ ${G.factions[other].name}`);
+        setActionLog(`${G.factions[other].name} ACCEPTED your pact!`);
+      } else {
+        addLog(`✋ ${G.factions[other].name} refused a pact with ${G.factions[G.playerFaction].name}`);
+        setActionLog(`${G.factions[other].name} REFUSED your pact.`);
+      }
+    }
+    // Human opponent, online: queue proposal for their turn
+    else {
+      if (G.pactProposal) { setActionLog('A pact proposal is already pending — wait for their response.'); renderSidebar(); return; }
+      G.pactProposal = { from: G.playerFaction, to: other };
+      addLog(`📨 You proposed a pact to ${G.factions[other].name} — they'll decide on their turn.`);
+      setActionLog(`Pact proposed to ${G.factions[other].name}! They'll see it on their turn.`);
+      syncPush();
     }
     renderSidebar(); return;
   }
