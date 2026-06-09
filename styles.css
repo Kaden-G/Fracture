@@ -299,14 +299,10 @@
     top: 50%;
     transform: translate(-50%, -50%);
     transform-origin: center center;
-    /* Cardinal-region backdrop: 4 colored wedges meeting at the board's center
-       (N=blue top, E=green right, S=red bottom, W=yellow left). */
-    background: conic-gradient(from -45deg,
-      rgba(93,173,226,0.55) 0deg 90deg,
-      rgba(46,204,113,0.55) 90deg 180deg,
-      rgba(231,76,60,0.55)  180deg 270deg,
-      rgba(241,196,15,0.55) 270deg 360deg);
+    /* Cardinal-region backdrop: painted map with N/S/E/W biomes */
+    background: url('assets/maps_regions.png') center/cover no-repeat;
     border-radius: 10px;
+    padding: 18px;             /* breathing room so the image peeks around the hex edges */
   }
 
   .hex-col { display: flex; flex-direction: column; }
