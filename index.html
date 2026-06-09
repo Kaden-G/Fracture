@@ -1134,9 +1134,9 @@
     <h3>🧬 PASSIVE TRAITS</h3>
     <ul>
       <li><strong>IRON WILL:</strong> +1 when defending</li>
-      <li><strong>SWIFT STRIKE:</strong> Can move through to non-adjacent tiles</li>
+      <li><strong>SWIFT STRIKE:</strong> Move a troop up to 2 tiles — path must be empty or yours (not through enemies)</li>
       <li><strong>HOARDER:</strong> +1 bonus resource per Node</li>
-      <li><strong>GHOST STEP:</strong> Move through occupied tiles</li>
+      <li><strong>GHOST STEP:</strong> Move a troop up to 2 tiles, slipping <em>through</em> any tile (even enemy-held) to reach an empty/your tile</li>
       <li><strong>TACTICIAN:</strong> Roll 2 dice attack, keep highest</li>
       <li><strong>FORTIFY:</strong> Enemies need +2 to beat your defense roll</li>
     </ul>
@@ -1189,9 +1189,9 @@ function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DE
 
 const TRAITS = [
   { id:'iron',       name:'IRON WILL',    desc:'+1 troop when defending'             },
-  { id:'swift',      name:'SWIFT STRIKE', desc:'Move up to 2 tiles per turn'         },
+  { id:'swift',      name:'SWIFT STRIKE', desc:'Move up to 2 tiles (clear path)'     },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
-  { id:'ghost_step', name:'GHOST STEP',   desc:'Move through occupied tiles'         },
+  { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles — slip through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 2 dice attack, keep highest'    },
   { id:'fortify',    name:'FORTIFY',      desc:'Enemies need +2 to beat your defense'},
 ];
@@ -1347,6 +1347,19 @@ function reinforceCost(fk){
 }
 function reinforceAmount(fk){ return G.factions[fk].ability==='reinforce' ? 3 : 2; }  // ⚙️ GRID
 function moveTroopCount(fk){ return controlsNode(fk,'node_transit') ? 2 : 1; }          // 🚇 TRANSIT
+function moveRange(fk){ const t=G.factions[fk]?.trait; return (t==='swift'||t==='ghost_step') ? 2 : 1; }  // 🏃 SWIFT / 👻 GHOST = reach 2
+// Is `dest` a legal move target for fk's troops starting at `src`? (does NOT check dest ownership)
+function moveReachable(fk, src, dest){
+  if (!src || !dest || src.id===dest.id) return false;
+  if (adjacent(src,dest)) return true;                       // 1 step — every faction
+  const t=G.factions[fk]?.trait;
+  if (t!=='swift' && t!=='ghost_step') return false;         // only SWIFT/GHOST reach 2
+  // 2 steps: need an intermediate tile M adjacent to both src and dest
+  return Object.values(G.tiles).some(M =>
+    M.id!==src.id && M.id!==dest.id && adjacent(src,M) && adjacent(M,dest) &&
+    (t==='ghost_step' ? true : (!M.owner || M.owner===fk))   // 🏃 SWIFT: path must be empty/yours; 👻 GHOST: any tile
+  );
+}
 
 // AI helper for choice events: 1 => short on bodies, prefers troops over cash
 function aiTroopHunger(fk){
@@ -2222,13 +2235,17 @@ function handleTileClick(id) {
         selectedTile = id;
         renderMap();
         document.getElementById('hex-'+id)?.classList.add('selected');
-        setActionLog(`Moving FROM ${tile.name}. Click an adjacent tile.`);
+        setActionLog(`Moving FROM ${tile.name}. Click a tile up to ${moveRange(G.playerFaction)} away.`);
       } else { setActionLog('Select YOUR tile with 2+ troops.'); }
       return;
     }
     const src = G.tiles[selectedTile];
-    if (!adjacent(src,tile))           { setActionLog('Not adjacent! Try again.'); selectedTile=null; renderMap(); return; }
     if (tile.owner && tile.owner!==G.playerFaction) { setActionLog('Occupied by enemy — use ATTACK instead.'); return; }
+    if (!moveReachable(G.playerFaction, src, tile)) {
+      const t=G.factions[G.playerFaction].trait;
+      setActionLog((t==='swift'||t==='ghost_step') ? 'Out of range — max 2 tiles, path must be passable.' : 'Not adjacent! Try again.');
+      selectedTile=null; renderMap(); return;
+    }
     const moveN = Math.min(moveTroopCount(G.playerFaction), src.troops - 1);  // 🚇 TRANSIT moves 2
     src.troops -= moveN;
     if (src.troops <= 0) { src.owner = null; src.troops = 0; }
