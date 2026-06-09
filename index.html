@@ -1149,7 +1149,7 @@
     <p>Select your tile (2+ troops) → click adjacent empty or friendly tile. Moves 1 troop.</p>
     <h3>🎭 FACTIONS — ABILITY + PERK</h3>
     <ul>
-      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less & adds +3 troops · OVERCLOCK (1 res) surges +5 troops onto a tile</li>
+      <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less & adds +3 troops · OVERCLOCK (1 res) surges +3 troops onto a tile</li>
       <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (1 res) steals 1 troop from an adjacent enemy</li>
       <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (1 res) buffs a tile + adjacent friendlies</li>
       <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) removes 1 troop from any enemy tile</li>
@@ -2287,7 +2287,7 @@ function setAction(action) {
     sabotage:  'SABOTAGE (1 res): Click any ENEMY tile to remove 1 troop.',
     bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
-    overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +5 troops (industrial surge).',
+    overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
   };
   setActionLog(hints[action] || 'Pick a tile.');
 }
@@ -2540,9 +2540,9 @@ function handleTileClick(id) {
     if (tile.owner !== G.playerFaction) { setActionLog('Overclock YOUR tiles only.'); return; }
     if (f.resources < 1) { setActionLog('Overclock costs 1 resource.'); return; }
     f.resources -= 1;
-    tile.troops += 5;
+    tile.troops += 3;
     G.actionsUsed++;
-    addLog(`⚙️ Overclock! +5 troops on ${tile.name}`);
+    addLog(`⚙️ Overclock! +3 troops on ${tile.name}`);
     setActionLog(`Overclocked! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
@@ -2926,13 +2926,13 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       return true;
     }
   }
-  // OVERCLOCK (GRID): industrial surge — +5 troops on a key tile
+  // OVERCLOCK (GRID): industrial surge — +3 troops on a key tile
   if (f.ability==='overclock' && f.resources>=1) {
     const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
     const target = (priority.length ? priority : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
     if (target) {
-      f.resources-=1; target.troops+=5;
-      addLog(`⚙️ ${f.name} overclocked ${target.name} (+5 troops)`);
+      f.resources-=1; target.troops+=3;
+      addLog(`⚙️ ${f.name} overclocked ${target.name} (+3 troops)`);
       refreshHex(target.id);
       return true;
     }
