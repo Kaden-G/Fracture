@@ -10,6 +10,7 @@ import {
   RES_CAP, FACTIONS, TYRANT_KEY, TRAITS,
   factionDef, adjacent, mkFaction,
   tilesOf, countNodes, reinforceCost,
+  hasPact, pairKey,
 } from '../src/state.js';
 import { makeRng, roll2d6, nextInt } from '../src/rng.js';
 
@@ -327,5 +328,59 @@ describe('Immutability', () => {
     const original = JSON.stringify(state);
     reduce(state, { type: 'BEGIN_TURN', faction: 'grid' });
     assert.equal(JSON.stringify(state), original, 'input state should not be mutated');
+  });
+});
+
+// ============================================================
+// RENOUNCE (Part 1)
+// ============================================================
+describe('Renounce', () => {
+  function pactedState() {
+    const state = makeTestState();
+    // Begin grid's turn, then form a pact between grid and commune
+    const { state: s1 } = reduce(state, { type: 'BEGIN_TURN', faction: 'grid' });
+    const { state: s2 } = reduce(s1, { type: 'PACT', from: 'grid', to: 'commune' });
+    return s2;
+  }
+
+  it('renounce removes a pact with no grudge', () => {
+    const state = pactedState();
+    assert.ok(hasPact(state, 'grid', 'commune'), 'pact should exist before renounce');
+    const { state: next } = reduce(state, { type: 'RENOUNCE', from: 'grid', target: 'commune' });
+    assert.ok(!hasPact(next, 'grid', 'commune'), 'pact should be removed after renounce');
+    // No grudge
+    const grudgeKey = 'commune>grid';
+    assert.ok(!next.grudges[grudgeKey] || next.grudges[grudgeKey] < next.round, 'no grudge after renounce');
+  });
+
+  it('renounce sets renouncedThisTurn', () => {
+    const state = pactedState();
+    const { state: next } = reduce(state, { type: 'RENOUNCE', from: 'grid', target: 'commune' });
+    assert.ok(next.renouncedThisTurn && next.renouncedThisTurn['commune'], 'renouncedThisTurn should be set');
+  });
+
+  it('BEGIN_TURN clears renouncedThisTurn', () => {
+    const state = pactedState();
+    const { state: s1 } = reduce(state, { type: 'RENOUNCE', from: 'grid', target: 'commune' });
+    assert.ok(s1.renouncedThisTurn['commune'], 'should be set after renounce');
+    const { state: s2 } = reduce(s1, { type: 'BEGIN_TURN', faction: 'syndicate' });
+    assert.deepEqual(s2.renouncedThisTurn, {}, 'renouncedThisTurn should clear on new turn');
+  });
+
+  it('betray still applies a grudge', () => {
+    const state = pactedState();
+    assert.ok(hasPact(state, 'grid', 'commune'), 'pact should exist');
+    const { state: next } = reduce(state, { type: 'BREAK_PACT', betrayer: 'grid', victim: 'commune' });
+    assert.ok(!hasPact(next, 'grid', 'commune'), 'pact removed');
+    const grudgeKey = 'commune>grid';
+    assert.ok(next.grudges[grudgeKey] >= next.round, 'grudge should exist after betrayal');
+  });
+
+  it('renounce on non-existent pact is a no-op', () => {
+    const state = makeTestState();
+    const { state: s1 } = reduce(state, { type: 'BEGIN_TURN', faction: 'grid' });
+    const { state: next } = reduce(s1, { type: 'RENOUNCE', from: 'grid', target: 'commune' });
+    assert.ok(!hasPact(next, 'grid', 'commune'), 'no pact to renounce');
+    assert.ok(!next.renouncedThisTurn || !next.renouncedThisTurn['commune'], 'renouncedThisTurn not set for no-op');
   });
 });

@@ -405,6 +405,7 @@ export function reduce(inputState, action) {
       state.turnAttacks = 0;
       state.assaultCaptures = 0;
       state.assaultOn = false;
+      state.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
       applyIncome(state, fk, log, effects);
       break;
     }
@@ -510,6 +511,19 @@ export function reduce(inputState, action) {
     case 'PACT': {
       formPact(state, action.from, action.to);
       log.push('🤝 A non-aggression pact was formed.');
+      break;
+    }
+
+    // ---- RENOUNCE (Part 1): peaceful pact exit, no grudge ----
+    case 'RENOUNCE': {
+      const rFrom = action.from;
+      const rTo   = action.target;
+      if (hasPact(state, rFrom, rTo)) {
+        delete state.pacts[pairKey(rFrom, rTo)];
+        if (!state.renouncedThisTurn) state.renouncedThisTurn = {};
+        state.renouncedThisTurn[rTo] = true;
+        log.push('📜 A non-aggression pact was withdrawn.');
+      }
       break;
     }
 

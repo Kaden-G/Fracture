@@ -945,6 +945,7 @@ function beginTurnFor(fk) {
   G.playerFaction = fk;
   G.actionsUsed = 0;
   turnAttacks = 0; assaultCaptures = 0; assaultOn = false;
+  G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
   selectedTile = null; currentAction = null;
   myTurnActive = true; isDriver = true;
 
@@ -1062,7 +1063,7 @@ function endRound() {
 // PLAYER ACTIONS
 // ============================================================
 function enablePlayerActions(fk) {
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench'].forEach(id => {
     const el = document.getElementById(id);
     el.disabled = false; el.classList.remove('active-action');
   });
@@ -1078,7 +1079,7 @@ function enablePlayerActions(fk) {
 }
 
 function disablePlayerActions() {
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.disabled = true; el.classList.remove('active-action'); }
   });
@@ -1092,7 +1093,7 @@ function setAction(action) {
   selectedTile  = null;
   clearHighlights();
   renderMap();
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
     document.getElementById(id)?.classList.remove('active-action');
   });
   document.getElementById('btn-'+action)?.classList.add('active-action');
@@ -1102,6 +1103,7 @@ function setAction(action) {
     attack:    'ATTACK: Click YOUR tile (2+ troops), then an adjacent ENEMY tile.',
     reinforce: 'REINFORCE: Click YOUR tile to add troops (cost varies by faction/nodes).',
     pact:      "PACT: Click a rival's tile to propose a non-aggression pact (free, no action).",
+    renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
     airlift:   'AIRLIFT (3 res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.',
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
     sabotage:  'SABOTAGE (1 res): Click any ENEMY tile to remove 2 troops.',
@@ -1132,6 +1134,7 @@ function handleTileClick(id) {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Click an ENEMY faction tile to propose a pact.'); return; }
     const other = tile.owner;
     if (hasPact(G.playerFaction, other)) { setActionLog(`You already have a pact with ${G.factions[other].name}.`); return; }
+    if ((G.renouncedThisTurn||{})[other]) { setActionLog(`Can't re-propose to ${G.factions[other].name} — you renounced this turn.`); return; }
     // AI opponent: AI decides instantly
     if (G.factions[other].isAI) {
       if (aiConsiderPact(other, G.playerFaction)) {
@@ -1163,6 +1166,21 @@ function handleTileClick(id) {
       setActionLog(`Pact proposed to ${G.factions[other].name}! They'll see it on their turn.`);
       syncPush();
     }
+    renderSidebar(); return;
+  }
+
+  // ---- RENOUNCE (Part 1: peaceful pact exit, free, no grudge) ----
+  if (currentAction === 'renounce') {
+    currentAction = null;
+    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+    if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Click a tile owned by a faction you have a pact with.'); return; }
+    const other = tile.owner;
+    if (!hasPact(G.playerFaction, other)) { setActionLog(`You don't have a pact with ${G.factions[other].name}.`); return; }
+    delete G.pacts[pairKey(G.playerFaction, other)];
+    if (!G.renouncedThisTurn) G.renouncedThisTurn = {};
+    G.renouncedThisTurn[other] = true;
+    addLog('📜 A non-aggression pact was withdrawn.');
+    setActionLog(`You withdrew from the pact with ${G.factions[other].name}. No grudge.`);
     renderSidebar(); return;
   }
 
@@ -1274,6 +1292,7 @@ function handleTileClick(id) {
     if (!adjacent(src,tile))          { setActionLog('Not adjacent — pick an enemy next to your assault tile.'); return; }
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
+    if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
     if (hasPact(G.playerFaction, tile.owner)) {
       if (!confirm(`You have a pact with ${G.factions[tile.owner].name}. Break it and attack? They'll hold a grudge (+2 vs you for 2 rounds).`)) {
         setActionLog('Attack cancelled — pact held.'); return;
@@ -1303,6 +1322,7 @@ function handleTileClick(id) {
   // ---- SABOTAGE ----
   if (currentAction === 'sabotage') {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
+    if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
     if (f.resources < 1) { setActionLog('Sabotage costs 1 resource.'); return; }
     if (hasPact(G.playerFaction, tile.owner)) {
       if (!confirm(`Sabotaging ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Sabotage cancelled — pact held.'); return; }
@@ -1330,6 +1350,7 @@ function handleTileClick(id) {
     if (f.resources < 1) { setActionLog('Bribe costs 1 resource.'); return; }
     const myT = Object.values(G.tiles).filter(t=>t.owner===G.playerFaction);
     if (!myT.some(mt=>adjacent(mt,tile))) { setActionLog('Must be adjacent to YOUR territory.'); return; }
+    if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
     if (hasPact(G.playerFaction, tile.owner)) {
       if (!confirm(`Bribing ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Bribe cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
@@ -1631,6 +1652,7 @@ function tyrantSpread(fk) {
 function runAITurn(fk) {
   if (gameOver) return;
   turnAttacks = 0;
+  G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
   const f = G.factions[fk];
   if (f.eliminated) { G.currentTurnIdx++; setTimeout(doNextTurn,200); return; }
 
