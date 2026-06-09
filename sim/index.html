@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FRACTURE — Simulation Harness</title>
+<style>
+  body { font-family: 'Courier New', monospace; background: #0d1117; color: #e6edf3; padding: 20px; }
+  h1 { color: #f1c40f; margin-bottom: 8px; }
+  .controls { margin: 16px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  label { font-size: 13px; color: #8b949e; }
+  input { font-family: inherit; font-size: 14px; padding: 6px 10px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; width: 80px; }
+  button { font-family: inherit; font-size: 14px; padding: 8px 20px; background: #f1c40f; color: #0d1117; border: none; cursor: pointer; font-weight: bold; }
+  button:hover { background: #f39c12; }
+  button:disabled { opacity: 0.4; cursor: wait; }
+  #output { white-space: pre-wrap; font-size: 13px; line-height: 1.5; background: #161b22; padding: 16px; border: 1px solid #30363d; margin-top: 16px; max-height: 70vh; overflow-y: auto; }
+  .stat-row { display: flex; gap: 8px; }
+  .stat-label { min-width: 140px; color: #8b949e; }
+  .stat-bar { background: #30363d; height: 18px; position: relative; flex: 1; max-width: 300px; }
+  .stat-fill { height: 100%; position: absolute; left: 0; top: 0; }
+  .stat-pct { font-size: 12px; position: absolute; right: 4px; top: 1px; color: #e6edf3; }
+</style>
+</head>
+<body>
+<h1>⚡ FRACTURE SIMULATION HARNESS</h1>
+<p style="color:#8b949e;">AI-vs-AI headless games using the pure engine + AI modules.</p>
+<div class="controls">
+  <div><label>Games:</label><br><input id="numGames" type="number" value="100" min="1" max="10000"></div>
+  <div><label>Base seed:</label><br><input id="baseSeed" type="number" value="1" min="0"></div>
+  <div style="align-self:flex-end;"><button id="runBtn" onclick="runSim()">▶ RUN SIMULATION</button></div>
+  <div style="align-self:flex-end;"><button onclick="if(window._lastSimOutput){navigator.clipboard.writeText(window._lastSimOutput);this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 COPY OUTPUT',1500)}">📋 COPY OUTPUT</button></div>
+</div>
+<div id="output">Ready. Click RUN to start.</div>
+
+<script type="module">
+import { runBatch } from './simulate.js';
+
+window.runSim = async function() {
+  const numGames = parseInt(document.getElementById('numGames').value) || 100;
+  const baseSeed = parseInt(document.getElementById('baseSeed').value) || 1;
+  const out = document.getElementById('output');
+  const btn = document.getElementById('runBtn');
+
+  btn.disabled = true;
+  out.textContent = `Running ${numGames} games (seed: ${baseSeed})...\n`;
+
+  // Yield to the UI before crunching
+  await new Promise(r => setTimeout(r, 50));
+
+  const t0 = performance.now();
+  let stats;
+  try {
+    stats = runBatch(numGames, baseSeed);
+  } catch (e) {
+    out.textContent += `\n❌ ERROR: ${e.message}\n${e.stack}`;
+    btn.disabled = false;
+    return;
+  }
+  const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+
+  let text = `Completed ${numGames} games in ${elapsed}s\n\n`;
+
+  text += '═══ WIN RATES BY FACTION ═══\n';
+  const factionColors = { grid: '#f39c12', syndicate: '#e74c3c', commune: '#2ecc71', ghost: '#9b59b6' };
+  for (const [fk, n] of Object.entries(stats.winCounts).sort((a,b) => b[1] - a[1])) {
+    const pct = (n / numGames * 100).toFixed(1);
+    const bar = '█'.repeat(Math.round(pct / 2)) + '░'.repeat(50 - Math.round(pct / 2));
+    text += `  ${fk.padEnd(12)} ${n.toString().padStart(4)}  ${bar} ${pct}%\n`;
+  }
+
+  text += '\n═══ WIN CONDITIONS ═══\n';
+  for (const [c, n] of Object.entries(stats.condCounts).sort((a,b) => b[1] - a[1])) {
+    const pct = (n / numGames * 100).toFixed(1);
+    text += `  ${c.padEnd(20)} ${n.toString().padStart(4)}  (${pct}%)\n`;
+  }
+
+  text += '\n═══ WINNING TRAITS ═══\n';
+  for (const [t, n] of Object.entries(stats.traitWins).sort((a,b) => b[1] - a[1])) {
+    const pct = (n / numGames * 100).toFixed(1);
+    text += `  ${t.padEnd(14)} ${n.toString().padStart(4)}  (${pct}%)\n`;
+  }
+
+  text += `\nAvg rounds: ${stats.avgRound}  |  Median: ${stats.medianRound}  |  Early (<R8): ${stats.earlyEndings}`;
+  if (stats.errors) text += `  |  Errors: ${stats.errors}`;
+  text += '\n';
+
+  // Per-faction win-condition breakdown
+  text += '\n═══ WIN CONDITIONS BY FACTION ═══\n';
+  const allConds = [...new Set(stats.results.map(r => r.condition))].sort();
+  const fks = Object.keys(stats.winCounts).sort((a,b) => (stats.winCounts[b]||0) - (stats.winCounts[a]||0));
+  text += '  ' + 'faction'.padEnd(14);
+  allConds.forEach(c => text += c.padStart(14));
+  text += '       total\n';
+  for (const fk of fks) {
+    text += '  ' + fk.padEnd(14);
+    const bd = stats.factionCondBreakdown[fk] || {};
+    allConds.forEach(c => text += (bd[c] || 0).toString().padStart(14));
+    text += (stats.winCounts[fk] || 0).toString().padStart(12) + '\n';
+  }
+
+  // Sample a few game details
+  text += '\n═══ SAMPLE GAMES ═══\n';
+  const samples = stats.results.slice(0, Math.min(5, stats.results.length));
+  for (const g of samples) {
+    text += `  Seed ${g.seed}: ${g.winnerFk || '?'} wins by ${g.condition} (R${g.round})`;
+    if (g.winnerFk && g.factions[g.winnerFk]) text += ` [trait: ${g.factions[g.winnerFk].trait}]`;
+    text += '\n';
+  }
+
+  out.textContent = text;
+  btn.disabled = false;
+
+  // Store for clipboard
+  window._lastSimOutput = text;
+};
+</script>
+</body>
+</html>

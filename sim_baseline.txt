@@ -1,0 +1,38 @@
+FRACTURE SIM BASELINE — N=1000, seed=1
+========================================
+
+WIN RATES BY FACTION
+  commune       375  (37.5%)
+  grid          298  (29.8%)
+  syndicate     257  (25.7%)
+  ghost          70  ( 7.0%)
+
+WIN CONDITIONS
+  NODE DOMINANCE        728  (72.8%)
+  TIMED OUT             269  (26.9%)
+  LAST STANDING           3  (0.3%)
+
+WINNING TRAITS
+  last_stand      212  (21.2%)
+  tactician       192  (19.2%)
+  fortify         176  (17.6%)
+  ghost_step      154  (15.4%)
+  hoard           145  (14.5%)
+  scavenger       121  (12.1%)
+
+Avg rounds: 20.7  |  Median: 20  |  Early (<R8): 29
+
+WIN CONDITIONS BY FACTION
+  faction       NODE DOMINANCE  TIMED OUT  LAST STANDING  total
+  commune              328          47           0          375
+  grid                 183         115           0          298
+  syndicate            167          87           3          257
+  ghost                 50          20           0           70
+
+Notes:
+- Ghost is the clear outlier at 7% — needs ~3x improvement
+- Interesting: ghost wins ARE mostly node-dom (71% of its wins),
+  it just rarely wins at all. The problem is tempo, not strategy.
+- Commune is high at 37.5% but spec says don't touch it.
+- Traits are actually more balanced than spec expected:
+  fortify at 17.6% (not 9%), last_stand at 21.2% (not 23%).
