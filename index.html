@@ -1178,8 +1178,8 @@
     </ul>
     <h3>🧬 PASSIVE TRAITS</h3>
     <ul>
-      <li><strong>IRON WILL:</strong> +1 when defending</li>
-      <li><strong>SWIFT STRIKE:</strong> Move a troop up to 2 tiles — path must be empty or yours (not through enemies)</li>
+      <li><strong>LAST STAND:</strong> Tiles with only 1 troop get +3 defense — thin garrisons are deadly</li>
+      <li><strong>SCAVENGER:</strong> Earn +2 resources each time you capture an enemy tile</li>
       <li><strong>HOARDER:</strong> +1 bonus resource per Node</li>
       <li><strong>GHOST STEP:</strong> Move a troop up to 2 tiles, slipping <em>through</em> any tile (even enemy-held) to reach an empty/your tile</li>
       <li><strong>TACTICIAN:</strong> Roll 2 dice attack, keep highest</li>
@@ -1241,8 +1241,8 @@ const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'r
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
 
 const TRAITS = [
-  { id:'iron',       name:'IRON WILL',    desc:'+1 troop when defending'             },
-  { id:'swift',      name:'SWIFT STRIKE', desc:'Move up to 2 tiles (clear path)'     },
+  { id:'last_stand', name:'LAST STAND',   desc:'1-troop defenders get +3 defense'   },
+  { id:'scavenger',  name:'SCAVENGER',    desc:'+2 resources per tile captured'      },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
   { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles — slip through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 2 dice attack, keep highest'    },
@@ -1400,18 +1400,17 @@ function reinforceCost(fk){
 }
 function reinforceAmount(fk){ return G.factions[fk].ability==='reinforce' ? 3 : 2; }  // ⚙️ GRID
 function moveTroopCount(fk){ return controlsNode(fk,'node_transit') ? 2 : 1; }          // 🚇 TRANSIT
-function moveRange(fk){ const t=G.factions[fk]?.trait; return (t==='swift'||t==='ghost_step') ? 2 : 1; }  // 🏃 SWIFT / 👻 GHOST = reach 2
+function moveRange(fk){ return G.factions[fk]?.trait==='ghost_step' ? 2 : 1; }  // 👻 GHOST STEP = reach 2
 // Is `dest` a legal move target for fk's troops starting at `src`? (does NOT check dest ownership)
 function moveReachable(fk, src, dest){
   if (!src || !dest || src.id===dest.id) return false;
   if (adjacent(src,dest)) return true;                       // 1 step — every faction
   const t=G.factions[fk]?.trait;
-  if (t!=='swift' && t!=='ghost_step') return false;         // only SWIFT/GHOST reach 2
+  if (t!=='ghost_step') return false;                        // only GHOST STEP reaches 2
   // 2 steps: need an intermediate tile M adjacent to both src and dest
   return Object.values(G.tiles).some(M =>
-    M.id!==src.id && M.id!==dest.id && adjacent(src,M) && adjacent(M,dest) &&
-    (t==='ghost_step' ? true : (!M.owner || M.owner===fk))   // 🏃 SWIFT: path must be empty/yours; 👻 GHOST: any tile
-  );
+    M.id!==src.id && M.id!==dest.id && adjacent(src,M) && adjacent(M,dest)
+  );  // 👻 GHOST STEP: slip through any tile
 }
 
 // AI helper for choice events: 1 => short on bodies, prefers troops over cash
@@ -2418,7 +2417,7 @@ function handleTileClick(id) {
     if (tile.owner && tile.owner!==G.playerFaction) { setActionLog('Occupied by enemy — use ATTACK instead.'); return; }
     if (!moveReachable(G.playerFaction, src, tile)) {
       const t=G.factions[G.playerFaction].trait;
-      setActionLog((t==='swift'||t==='ghost_step') ? 'Out of range — max 2 tiles, path must be passable.' : 'Not adjacent! Try again.');
+      setActionLog(t==='ghost_step' ? 'Out of range — max 2 tiles.' : 'Not adjacent! Try again.');
       selectedTile=null; renderMap(); return;
     }
     const moveN = Math.min(moveTroopCount(G.playerFaction), src.troops - 1);  // 🚇 TRANSIT moves 2
@@ -2568,7 +2567,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   let entrench = Math.min(tgt.heldRounds || 0, 3);
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
   // 4. Trait modifiers
-  const ironWill = df?.trait==='iron' ? 1 : 0;
+  const lastStand = (df?.trait==='last_stand' && tgt.troops===1) ? 3 : 0;
   const fortify  = df?.trait==='fortify' ? 2 : 0;
   // 5. Node bonuses — 📡 COMMS (+1 atk), 🖧 DATA (+1 def)
   const comms = controlsNode(attackerFk,'node_comms') ? 1 : 0;
@@ -2582,7 +2581,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const war = totalWar ? 1 : 0;
 
   const attTotal = attDie + attForce + comms + coalition + grudgeA + war;
-  const defTotal = defDie + defForce + entrench + ironWill + data + grudgeD + overextend;
+  const defTotal = defDie + defForce + entrench + lastStand + data + grudgeD + overextend;
 
   // Attacker wins ties; fortify makes them need to clear by a margin
   const attWins = attTotal >= defTotal + fortify;
@@ -2594,7 +2593,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
       { die: attDie, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
-      { die: defDie, force: defForce, entrench, iron: ironWill, fortify, data, grudge: grudgeD, overextend, total: defTotal },
+      { die: defDie, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
   }
@@ -2607,7 +2606,9 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       tgt.troops   = 1;
       tgt.heldRounds = 0;   // freshly taken — not dug in yet
       src.troops   = Math.max(1, src.troops-1);
-      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]`);
+      // SCAVENGER trait: loot +2 resources on capture
+      if (af.trait==='scavenger') { af.resources = Math.min((af.resources||0)+2, RES_CAP); }
+      addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${af.trait==='scavenger'?' 💰+2 res':''}`);
       const defLeft = Object.values(G.tiles).filter(t=>t.owner===prev).length;
       if (defLeft===0) {
         killFaction(prev);
@@ -2638,7 +2639,7 @@ function modParts(arr) {
 function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
   const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
-  const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.iron,label:'iron'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
+  const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
   // Color + headline from the LOCAL player's point of view (green = good for you).
