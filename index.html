@@ -1052,7 +1052,7 @@
       <h4>📖 QUICK REFERENCE</h4>
       <div class="quick-ref">
         <div><strong>GOAL:</strong> Hold <b>3 of 5</b> ★ Nodes <b>for 2 rounds</b> — or eliminate every rival.</div>
-        <div><strong>EACH TURN:</strong> 2 actions — Move, Attack, Reinforce, Airlift, Entrench, Pact, + your ability.</div>
+        <div><strong>EACH TURN:</strong> 3 actions — Move, Attack, Reinforce, Airlift, Entrench, Pact, + your ability.</div>
         <div><strong>SPEND ON:</strong> troops (Reinforce), position (Airlift 3), or defense (Entrench 2).</div>
         <div><strong>COMBAT:</strong> d6 + Force (+1 per 3 troops) &nbsp;vs&nbsp; d6 + Dug-in + Force. <b>Attacker wins ties.</b></div>
         <div><strong>PRESS THE ASSAULT:</strong> a win lets you keep attacking that turn for free — but each strike, defenders rally <b>+1</b>. Grind until repelled.</div>
@@ -1124,7 +1124,7 @@
     <ul>
       <li><strong>EVENT:</strong> A chaos card fires — affects ALL factions equally (AI and human)</li>
       <li><strong>INCOME:</strong> Earn 2 base + 1 per Node you control</li>
-      <li><strong>2 ACTIONS:</strong> Move, Attack, Reinforce, or Special Ability</li>
+      <li><strong>3 ACTIONS:</strong> Move, Attack, Reinforce, or Special Ability</li>
     </ul>
     <h3>⚔️ COMBAT</h3>
     <p>Click ATTACK → your tile → adjacent enemy tile. Both roll a d6, then add modifiers. Attacker wins ties. Loser drops 1 troop; defender at 0 → captured.</p>
@@ -1932,7 +1932,7 @@ function renderPlayerStats() {
   const tiles = Object.values(G.tiles).filter(t=>t.owner===fk);
   const nodes = tiles.filter(t=>t.isNode).length;
   const myTurn = (typeof activeFk==='function') && activeFk()===fk && !f.isAI;
-  const actsLeft = Math.max(0, 2 - (G.actionsUsed||0));
+  const actsLeft = Math.max(0, 3 - (G.actionsUsed||0));
 
   // Pacts visible to me (Tyrant deals stay secret unless I'm in them).
   const partners = [];
@@ -1948,7 +1948,7 @@ function renderPlayerStats() {
     : `<span class="ps-chip" style="opacity:0.6">🤝 no pacts</span>`;
 
   const actsChip = myTurn
-    ? `<span class="ps-chip ps-acts ${actsLeft===0?'spent':''}" title="Actions left this turn">⚡ Actions <b>${actsLeft}</b>/2</span>`
+    ? `<span class="ps-chip ps-acts ${actsLeft===0?'spent':''}" title="Actions left this turn">⚡ Actions <b>${actsLeft}</b>/3</span>`
     : `<span class="ps-wait">⏳ ${f.isAI?'(AI seat)':'waiting for your turn'}</span>`;
 
   el.innerHTML = `
@@ -2134,7 +2134,7 @@ function beginTurnFor(fk) {
     document.getElementById('phase-label').textContent = `ROUND ${G.round} · ${f.name}`;
     enablePlayerActions(fk);
     renderMap(); renderSidebar();
-    setActionLog(`${f.name}: pick an action, then click a tile. 2 actions. Res: ${f.resources}`);
+    setActionLog(`${f.name}: pick an action, then click a tile. 3 actions. Res: ${f.resources}`);
     if (tyrantOn()) tyrantInteract(fk);   // secret deal offer / harbor request (private to this player)
     // Pending pact proposal from another human player?
     if (G.pactProposal && G.pactProposal.to === fk) {
@@ -2344,7 +2344,7 @@ function handleTileClick(id) {
     renderSidebar(); return;
   }
 
-  if (G.actionsUsed >= 2) { setActionLog('No actions left — hit END TURN.'); return; }
+  if (G.actionsUsed >= 3) { setActionLog('No actions left — hit END TURN.'); return; }
 
   // ---- REINFORCE ----
   if (currentAction === 'reinforce') {
@@ -2354,7 +2354,7 @@ function handleTileClick(id) {
     if (f.resources < cost) { setActionLog(`Need ${cost} resources.`); return; }
     f.resources -= cost; tile.troops += amt; G.actionsUsed++;
     addLog(`You reinforced ${tile.name} (+${amt} troops)`);
-    setActionLog(`Reinforced! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    setActionLog(`Reinforced! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
 
@@ -2381,7 +2381,7 @@ function handleTileClick(id) {
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
     addLog(`✈️ You airlifted 2 troops: ${src.name} → ${tile.name}`);
-    setActionLog(`Airlifted! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    setActionLog(`Airlifted! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(selectedTile); refreshHex(id);
     selectedTile=null; renderSidebar(); return;
   }
@@ -2399,7 +2399,7 @@ function handleTileClick(id) {
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
     addLog(`🏰 You entrenched ${tile.name} (dug in +${tile.heldRounds})`);
-    setActionLog(`Entrenched +${tile.heldRounds}! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    setActionLog(`Entrenched +${tile.heldRounds}! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
 
@@ -2429,7 +2429,7 @@ function handleTileClick(id) {
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
     addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${src.name} → ${tile.name}`);
-    setActionLog(`Moved! ${2-G.actionsUsed} action(s) left.`);
+    setActionLog(`Moved! ${3-G.actionsUsed} action(s) left.`);
     refreshHex(selectedTile); refreshHex(id);
     selectedTile=null; renderSidebar(); return;
   }
@@ -2490,7 +2490,7 @@ function handleTileClick(id) {
     G.actionsUsed++;
     const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
     addLog(`👁️ You sabotaged ${tile.name} — ${sabLeft}!`);
-    setActionLog(`Sabotage hit! ${sabLeft}. ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    setActionLog(`Sabotage hit! ${sabLeft}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); flashHex(id); renderSidebar(); checkWin();
     syncPush();   // broadcast so online opponents see the troop drop immediately
     return;
@@ -2515,7 +2515,7 @@ function handleTileClick(id) {
     }
     G.actionsUsed++;
     addLog(`💰 You bribed ${tile.name}!`);
-    setActionLog(`Bribed! ${2-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    setActionLog(`Bribed! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); checkWin(); return;
   }
 
@@ -2529,7 +2529,7 @@ function handleTileClick(id) {
     adj.forEach(t=>{ t.troops++; refreshHex(t.id); });
     G.actionsUsed++;
     addLog(`🌿 Rally! +1 to ${tile.name} + ${adj.length} adjacent tiles`);
-    setActionLog(`Rallied ${adj.length+1} tiles! ${2-G.actionsUsed} action(s) left.`);
+    setActionLog(`Rallied ${adj.length+1} tiles! ${3-G.actionsUsed} action(s) left.`);
     refreshHex(id); renderSidebar(); return;
   }
 }
@@ -2795,7 +2795,7 @@ function runAITurn(fk) {
   // Take actions ONE AT A TIME, paced so each combat result is shown on its own. A winning
   // attack "presses the assault" (doesn't spend an action) until repelled, the targets run dry
   // (overextension makes nothing favorable), or an 8-attack safety cap — mirroring the player.
-  let actsLeft = 2, aiAttacks = 0;
+  let actsLeft = 3, aiAttacks = 0;
   const step = () => {
     if (gameOver) return;
     if (actsLeft <= 0) { finishAITurn(fk); return; }
