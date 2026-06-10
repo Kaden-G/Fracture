@@ -440,6 +440,9 @@ function switchScreen(id) {
     s.classList.remove('active');
     s.style.display = '';
   });
+  // Also ensure win-screen overlay is hidden (it uses inline display)
+  const winEl = document.getElementById('win-screen');
+  if (winEl) winEl.style.display = '';
   document.getElementById(id).classList.add('active');
 }
 
@@ -1500,55 +1503,9 @@ function handleTileClick(id) {
       setActionLog(`You withdrew from the pact with ${G.factions[other].name}. No grudge.`);
       renderSidebar(); return;
     }
-    // Tyrant renounce — confirm: this triggers renounce-kill
-    if (!confirm('⚠️ Renouncing the Tyrant will:\n• The Tyrant lashes out (withdrawal hit)\n• The Tyrant dies — its tiles go neutral\n• Eliminated factions resurrect with a grudge against you\n\nProceed?')) {
-      setActionLog('Renounce cancelled.'); return;
-    }
-    delete G.pacts[pairKey(G.playerFaction, other)];
-    if (!G.renouncedThisTurn) G.renouncedThisTurn = {};
-    G.renouncedThisTurn[other] = true;
-    const renouncer = G.playerFaction === TYRANT_KEY ? other : G.playerFaction;
-    G.factions[renouncer].boon = null;
-    // 1. Withdrawal hit
-    const rTiles = tilesOf(renouncer).sort((a,b) => a.troops - b.troops);
-    for (let i = 0; i < Math.min(2, rTiles.length); i++) {
-      const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
-      rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
-      refreshHex(rTiles[i].id);
-    }
-    addLog(`🦠💥 The Tyrant lashes out at ${G.factions[renouncer].name} — withdrawal hit!`);
-    // 2. Tyrant dies — tiles go neutral
-    tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
-    G.factions[TYRANT_KEY].eliminated = true;
-    // Break all remaining Tyrant pacts
-    for (const pk of Object.keys(G.pacts || {})) {
-      const [pa, pb] = pk.split('|');
-      if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
-        const ally = pa === TYRANT_KEY ? pb : pa;
-        if (G.factions[ally]) G.factions[ally].boon = null;
-        delete G.pacts[pk];
-      }
-    }
-    addLog('💀 THE TYRANT is destroyed — its domain collapses to nothing!');
-    // 3. Resurrect eliminated factions with grudge against renouncer
-    for (const [ek, ef] of Object.entries(G.factions)) {
-      if (!ef.eliminated || ek === TYRANT_KEY || ek === renouncer) continue;
-      const neutrals = Object.values(G.tiles).filter(t => !t.owner);
-      if (neutrals.length === 0) continue;
-      ef.eliminated = false;
-      ef.corruption = 0;
-      ef.resources = 3;
-      const count = Math.min(2, neutrals.length);
-      for (let i = 0; i < count; i++) {
-        neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
-        refreshHex(neutrals[i].id);
-      }
-      G.grudges[ek + '>' + renouncer] = G.round + 3;
-      addLog(`👻 ${ef.name} rises from the ashes — and bears a grudge against ${G.factions[renouncer].name}!`);
-    }
-    G.factions[renouncer].corruption = 0;
-    setActionLog('The Tyrant is destroyed! Eliminated factions rise again.');
-    renderMap(); renderSidebar(); syncPush(); return;
+    // Tyrant pact cannot be freely renounced — only via the forced prompt near victory
+    setActionLog('You are bound to the Tyrant. The only way out is through the Reckoning — or the choice that comes when victory is near.');
+    return;
   }
 
   if (G.actionsUsed >= 3) { setActionLog('No actions left — hit END TURN.'); return; }
@@ -2570,11 +2527,18 @@ function showWin(fk, condition, detail) {
 function renderWin(w) {
   const f = G.factions[w.fk];
   const humanWon = !f.isAI;  // a human seat took it
+  // Flood the board with the winner's color (idempotent)
+  for (const t of Object.values(G.tiles)) {
+    t.owner = w.fk; t.troops = 0; t.heldRounds = 0;
+  }
+  renderMap();
   document.getElementById('win-title').textContent   = humanWon ? '⚡ VICTORY!' : '💀 AI WINS';
   document.getElementById('win-title').style.color   = humanWon ? 'var(--node-glow)' : 'var(--syndicate)';
   document.getElementById('win-subtitle').textContent = `${f.icon} ${f.name} — ${w.condition}`;
   document.getElementById('win-detail').textContent   = w.detail + ` (Round ${w.round})`;
-  switchScreen('win-screen');
+  // Show win overlay on top of the flooded game board
+  document.getElementById('win-screen').classList.add('active');
+  document.getElementById('win-screen').style.display = 'flex';
   document.getElementById('rules-btn').style.display = 'none';
 }
 
