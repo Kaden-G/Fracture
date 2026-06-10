@@ -299,8 +299,54 @@ function killFaction(fk){
     addLog(`🦠 THE TYRANT is cornered — harbored by allies. Feed it a tile within 3 rounds or it dies.`);
     return;
   }
+  // Part 2 Step 6: Reckoning — when the Tyrant is eliminated, trigger a duel
+  if (fk === TYRANT_KEY && tyrantOn()) {
+    const eliminator = G.playerFaction;  // the faction that dealt the killing blow
+    const tyrantWins = runReckoning(eliminator);
+    if (tyrantWins) {
+      // Tyrant resurrects on a random empty tile
+      const empty = Object.values(G.tiles).filter(t => !t.owner);
+      if (empty.length > 0) {
+        const t = empty[Math.floor(Math.random() * empty.length)];
+        t.owner = TYRANT_KEY; t.troops = 3; t.heldRounds = 0;
+        addLog('🦠 THE TYRANT rises from the ashes!');
+        refreshHex(t.id);
+      }
+      return;
+    }
+    // Conspirator wins: Tyrant dies permanently, conspirator purges corruption
+    G.factions[eliminator].corruption = 0;
+    addLog(`💀 The Reckoning is over — ${G.factions[eliminator].name} vanquished the Tyrant!`);
+  }
   G.factions[fk].eliminated = true;
   addLog(`💀 ${G.factions[fk].name} ELIMINATED!`);
+}
+
+// Part 2 Step 6: Reckoning duel — best-of-3 dice rounds, Tyrant wins ties
+function runReckoning(conspirator) {
+  const tEssence = Math.max(1, tilesOf(TYRANT_KEY).length) + 3;  // Tyrant base essence
+  const cEssence = Math.max(1, tilesOf(conspirator).length) + (G.factions[conspirator].corruption || 0);
+  let tWins = 0, cWins = 0;
+  const rounds = [];
+
+  for (let r = 0; r < 3 && tWins < 2 && cWins < 2; r++) {
+    const tRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + tEssence;
+    const cRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + cEssence;
+    if (tRoll >= cRoll) { tWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Tyrant wins`); }
+    else               { cWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Conspirator wins`); }
+  }
+
+  const winner = tWins >= 2 ? 'Tyrant' : G.factions[conspirator].name;
+  const msg = `⚔️ THE RECKONING ⚔️\n\n${G.factions[conspirator].name} challenges the Tyrant!\nTyrant Essence: ${tEssence}  |  Conspirator Essence: ${cEssence}\n\n${rounds.join('\n')}\n\n${winner} wins the Reckoning!`;
+  
+  addLog(`⚔️ RECKONING: ${winner} prevails! (${tWins}-${cWins})`);
+  
+  // Show to human if involved
+  if (!G.factions[conspirator].isAI) {
+    alert(msg);
+  }
+
+  return tWins >= 2;
 }
 
 // ============================================================

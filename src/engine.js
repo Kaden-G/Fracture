@@ -52,9 +52,46 @@ function killFaction(state, fk, log) {
       log.push('🦠 THE TYRANT is cornered — harbored by allies. Feed it a tile within 3 rounds or it dies.');
       return;
     }
+    // Part 2 Step 6: Reckoning duel when Tyrant is eliminated
+    if (state.tyrantOn) {
+      const eliminator = state.turnOrder[state.currentTurnIdx];
+      const tyrantWins = runReckoningEngine(state, eliminator);
+      if (tyrantWins) {
+        const empty = Object.values(state.tiles).filter(t => !t.owner);
+        if (empty.length > 0) {
+          const ri = state.rng ? nextInt(state.rng, empty.length) : { value: 0, rng: state.rng };
+          if (ri.rng) state.rng = ri.rng;
+          const t = empty[ri.value || 0];
+          t.owner = TYRANT_KEY; t.troops = 3; t.heldRounds = 0;
+          log.push('🦠 THE TYRANT rises from the ashes!');
+        }
+        return;
+      }
+      state.factions[eliminator].corruption = 0;
+      log.push(`💀 The Reckoning is over — ${state.factions[eliminator].name} vanquished the Tyrant!`);
+    }
   }
   state.factions[fk].eliminated = true;
   log.push(`💀 ${state.factions[fk].name} ELIMINATED!`);
+}
+
+// Part 2 Step 6: Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties
+function runReckoningEngine(state, conspirator) {
+  const tEssence = Math.max(1, tilesOf(state, TYRANT_KEY).length) + 3;
+  const cEssence = Math.max(1, tilesOf(state, conspirator).length) + (state.factions[conspirator].corruption || 0);
+  let tWins = 0, cWins = 0;
+  for (let r = 0; r < 3 && tWins < 2 && cWins < 2; r++) {
+    let tRoll, cRoll;
+    if (state.rng) {
+      let ri = roll2d6(state.rng); state.rng = ri.rng; tRoll = ri.sum + tEssence;
+      ri = roll2d6(state.rng); state.rng = ri.rng; cRoll = ri.sum + cEssence;
+    } else {
+      tRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + tEssence;
+      cRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + cEssence;
+    }
+    if (tRoll >= cRoll) tWins++; else cWins++;
+  }
+  return tWins >= 2;
 }
 
 // ---- Helper: form / break pacts ----
