@@ -299,9 +299,9 @@ export function aiPickBoon(state, aiFk) {
 }
 
 // Conspirator AI redemption — should this bound AI renounce-kill the Tyrant?
-// Returns true if renounce-kill is the better play than riding to a Reckoning.
-// REDEMPTION_THRESHOLD tunes duel frequency: higher = more renounces = fewer duels.
-const REDEMPTION_THRESHOLD = 0.30; // probability of renouncing when in the dead zone
+// Aligned with the HUMAN rule: a bound faction can only renounce at the "last reprieve" —
+// the moment it is close to a victory that would force a Reckoning. There is NO mid-game
+// dead-zone bailout (that escape hatch was AI-only and unfair to humans).
 export function aiShouldRenounce(state, aiFk) {
   if (!state.tyrantOn) return false;
   if (!state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) return false;
@@ -309,32 +309,17 @@ export function aiShouldRenounce(state, aiFk) {
   const corr = state.factions[aiFk].corruption || 0;
   if (corr <= 0) return false;
 
-  const moonLow = THRALLDOM_CAP - MOON_BAND;
-  const myTiles = tilesOf(state, aiFk).length;
+  // Same gate as the human's "Fork in the Dark" prompt: only offered when close to a win.
   const myNodes = countNodes(state, aiFk);
+  const myTiles = tilesOf(state, aiFk).length;
+  const heldSince = state.nodesHeldSince && state.nodesHeldSince[aiFk];
+  const closeToWin = (myNodes >= 3 && heldSince !== undefined)
+                  || (myNodes >= 2 && myTiles >= 8);
+  if (!closeToWin) return false;
 
-  // Near thralldom cap — desperate, consider renounce vs moon shot
-  if (corr >= THRALLDOM_CAP - 1) {
-    // One step from thralldom. If we can't reach moon, renounce.
-    // If we're IN the moon band, commit (don't renounce).
-    if (corr >= moonLow && corr < THRALLDOM_CAP) return false; // in moon, commit
-    return true; // at or past cap boundary, renounce
-  }
-
-  // In the dead zone (mid-high corruption, duel curve against us, not in moon)
-  // Dead zone: corruption 4+ but not in moon band
-  if (corr >= 4 && corr < moonLow) {
-    // Strong board position? Can survive the refill from renounce-kill.
-    const canSurvive = myTiles >= 5 || myNodes >= 2;
-    if (canSurvive) {
-      // Stochastic: renounce with probability proportional to corruption depth
-      const depth = (corr - 3) / (moonLow - 3); // 0..1 as corruption approaches moon
-      return Math.random() < REDEMPTION_THRESHOLD * depth;
-    }
-    // Weak board: can't survive the refill, ride it out
-    return false;
-  }
-
-  // Low corruption (1-3): duel is roughly fair, don't renounce yet
-  return false;
+  // At the reprieve: if we're in the moon band, commit to the jackpot duel (conspirator-favored).
+  // Otherwise the duel curve favors the Tyrant — renounce-kill to avoid thralldom.
+  const moonLow = THRALLDOM_CAP - MOON_BAND;
+  if (corr >= moonLow && corr < THRALLDOM_CAP) return false;
+  return true;
 }

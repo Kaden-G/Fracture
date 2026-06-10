@@ -297,27 +297,26 @@ function aiConsiderPact(aiFk, propFk){
 }
 
 // AI redemption — should this bound AI renounce-kill the Tyrant?
+// Aligned with the HUMAN rule: renounce is only available at the "last reprieve" — when
+// close to a victory that would force a Reckoning. No mid-game dead-zone bailout.
 function aiShouldRenounceLive(aiFk) {
   if (!tyrantOn() || !G.factions[TYRANT_KEY] || G.factions[TYRANT_KEY].eliminated) return false;
   if (!hasPact(TYRANT_KEY, aiFk)) return false;
   const corr = G.factions[aiFk].corruption || 0;
   if (corr <= 0) return false;
+
+  // Same gate as the human's "Fork in the Dark" prompt: only offered when close to a win.
+  const myNodes = countNodes(aiFk);
+  const myTiles = tilesOf(aiFk).length;
+  const heldSince = G.nodesHeldSince && G.nodesHeldSince[aiFk];
+  const closeToWin = (myNodes >= 3 && heldSince !== undefined)
+                  || (myNodes >= 2 && myTiles >= 8);
+  if (!closeToWin) return false;
+
+  // At the reprieve: in the moon band, commit to the jackpot duel; otherwise renounce-kill.
   const moonLow = THRALLDOM_CAP - MOON_BAND;
-  const myT = tilesOf(aiFk).length;
-  const myN = countNodes(aiFk);
-  if (corr >= THRALLDOM_CAP - 1) {
-    if (corr >= moonLow && corr < THRALLDOM_CAP) return false;
-    return true;
-  }
-  if (corr >= 4 && corr < moonLow) {
-    const canSurvive = myT >= 5 || myN >= 2;
-    if (canSurvive) {
-      const depth = (corr - 3) / (moonLow - 3);
-      return Math.random() < 0.30 * depth;
-    }
-    return false;
-  }
-  return false;
+  if (corr >= moonLow && corr < THRALLDOM_CAP) return false;
+  return true;
 }
 
 // ---- TYRANT helpers ----
