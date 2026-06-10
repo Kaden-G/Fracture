@@ -250,6 +250,14 @@ function breakPactBetrayal(betrayer, victim){
   // Keep Tyrant betrayals vague in the shared log to preserve secrecy.
   addLog('🗡️ A non-aggression pact was broken!');
 }
+// Part 2: corruption band — display only, never show raw integer
+function corruptionBand(n) {
+  if (n <= 0) return { label: 'Untouched',             tier: 0 };
+  if (n <= 3) return { label: 'Touched by shadow',     tier: 1 };
+  if (n <= 6) return { label: 'Deeply corrupt',        tier: 2 };
+  return             { label: 'One with the Dark Lord', tier: 3 };
+}
+
 function grudgeAtkBonus(atk, def){ return (G.grudges[atk+'>'+def] >= G.round) ? 2 : 0; }
 function grudgeDefBonus(atk, def){ return (G.grudges[def+'>'+atk] >= G.round) ? 2 : 0; }
 // Coalition: everyone piles on whoever already holds 2+ Nodes (anti-snowball)
@@ -452,7 +460,8 @@ function mkFaction(name, key, isAI, trait) {
   const def = factionDef(key);
   return { name, icon: def.icon, color: def.color,
            ability: def.ability, isAI, trait, resources: 4, eliminated: false,
-           isTyrant: key === TYRANT_KEY };
+           isTyrant: key === TYRANT_KEY,
+           corruption: 0, boon: null };
 }
 
 function randTrait(fk) {
@@ -772,6 +781,14 @@ function renderPlayerStats() {
     ? `<span class="ps-chip ps-acts ${actsLeft===0?'spent':''}" title="Actions left this turn">⚡ Actions <b>${actsLeft}</b>/3</span>`
     : `<span class="ps-wait">⏳ ${f.isAI?'(AI seat)':'waiting for your turn'}</span>`;
 
+  // Part 2: corruption band — self-visible only (your own faction), Tyrant-on only
+  let corruptChip = '';
+  if (tyrantOn() && fk === G.playerFaction && fk !== TYRANT_KEY && (f.corruption || 0) > 0) {
+    const band = corruptionBand(f.corruption);
+    const colors = ['#8b949e','#9b59b6','#e74c3c','#ff0000'];
+    corruptChip = `<span class="ps-chip" style="color:${colors[band.tier]}" title="Your corruption level (secret)">🦠 <b>${band.label}</b></span>`;
+  }
+
   el.innerHTML = `
     <span class="ps-name" style="color:${f.color}">${f.icon} ${f.name}</span>
     <span class="ps-chip" title="Tiles you hold">▦ Tiles <b>${tiles.length}</b></span>
@@ -779,6 +796,7 @@ function renderPlayerStats() {
     <span class="ps-chip" title="Resources on hand">🎒 Res <b>${f.resources}</b></span>
     ${actsChip}
     ${pactChip}
+    ${corruptChip}
   `;
 }
 
@@ -840,6 +858,15 @@ function startRound() {
           if (t) { t.owner=TYRANT_KEY; t.troops=Math.max(1,t.troops); t.heldRounds=0; G.tyrantHarbor=0;
             addLog(`🦠 ${G.factions[a].name} harbored the Tyrant — it rises again!`); break; }
         }
+      }
+    }
+  }
+  // Part 2: corruption tick — each Tyrant ally gains +1 corruption per round
+  if (tyrantAlive()) {
+    for (const k of livingKeys()) {
+      if (k === TYRANT_KEY) continue;
+      if (hasPact(TYRANT_KEY, k)) {
+        G.factions[k].corruption = (G.factions[k].corruption || 0) + 1;
       }
     }
   }

@@ -701,6 +701,15 @@ export function reduce(inputState, action) {
           log.push('💀 THE TYRANT perished — no ally harbored it in time.');
         }
       }
+      // Part 2: corruption tick — each Tyrant ally gains +1 corruption per round
+      if (state.tyrantOn && state.factions[TYRANT_KEY] && !state.factions[TYRANT_KEY].eliminated) {
+        for (const k of livingKeys(state)) {
+          if (k === TYRANT_KEY) continue;
+          if (hasPact(state, TYRANT_KEY, k)) {
+            state.factions[k].corruption = (state.factions[k].corruption || 0) + 1;
+          }
+        }
+      }
       effects.push({kind:'roundStart', round:state.round});
       break;
     }

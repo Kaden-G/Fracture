@@ -150,7 +150,17 @@ export function mkFaction(name, key, isAI, trait) {
     name, icon: def.icon, color: def.color,
     ability: def.ability, isAI, trait, resources: 4, eliminated: false,
     isTyrant: key === TYRANT_KEY,
+    corruption: 0,   // Part 2: Tyrant corruption clock (exact integer, display via corruptionBand)
+    boon: null,       // Part 2: chosen boon when allied to Tyrant ('tithe' | 'sic' | null)
   };
+}
+
+// ---- Corruption band (Part 2) — display only, never show raw integer ----
+export function corruptionBand(n) {
+  if (n <= 0) return { label: 'Untouched',             tier: 0 };
+  if (n <= 3) return { label: 'Touched by shadow',     tier: 1 };
+  if (n <= 6) return { label: 'Deeply corrupt',        tier: 2 };
+  return             { label: 'One with the Dark Lord', tier: 3 };
 }
 
 // ---- State query helpers (take state explicitly) ----
