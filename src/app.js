@@ -247,6 +247,9 @@ function formPact(a,b){ G.pacts[pairKey(a,b)] = G.round; }
 function breakPactBetrayal(betrayer, victim){
   delete G.pacts[pairKey(betrayer,victim)];
   G.grudges[victim+'>'+betrayer] = G.round + 2;  // victim seethes for 2 rounds
+  // Part 2: clear boon if a Tyrant pact is broken
+  if (betrayer === TYRANT_KEY && G.factions[victim]) G.factions[victim].boon = null;
+  if (victim === TYRANT_KEY && G.factions[betrayer]) G.factions[betrayer].boon = null;
   // Keep Tyrant betrayals vague in the shared log to preserve secrecy.
   addLog('🗡️ A non-aggression pact was broken!');
 }
@@ -869,6 +872,20 @@ function startRound() {
         G.factions[k].corruption = (G.factions[k].corruption || 0) + 1;
       }
     }
+    // Part 2: Tithe boon — +1 troop on a frontline tile each round
+    for (const k of livingKeys()) {
+      if (k === TYRANT_KEY) continue;
+      if (hasPact(TYRANT_KEY, k) && G.factions[k].boon === 'tithe') {
+        const myT = tilesOf(k);
+        const frontline = myT.filter(mt =>
+          Object.values(G.tiles).some(t => t.owner && t.owner !== k && adjacent(mt, t))
+        );
+        const target = frontline.length > 0
+          ? frontline.reduce((a, b) => a.troops <= b.troops ? a : b)
+          : myT.reduce((a, b) => a.troops <= b.troops ? a : b, myT[0]);
+        if (target) { target.troops += 1; refreshHex(target.id); }
+      }
+    }
   }
   document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
 
@@ -1023,10 +1040,28 @@ function tyrantInteract(fk) {
     const last = G.tyrantLastOffer[fk] || -99;
     if (G.round - last >= 2) {
       G.tyrantLastOffer[fk] = G.round;
-      const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nOK = accept   ·   Cancel = refuse`);
-      if (ok) { formPact(TYRANT_KEY, fk); addLog('🦠 A secret pact takes hold in the shadows…'); renderSidebar(); syncPush(); }
+      const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nBut beware: your corruption will grow each round you stay allied.\nOK = accept   ·   Cancel = refuse`);
+      if (ok) {
+        formPact(TYRANT_KEY, fk);
+        // Part 2: choose a boon (locked for duration)
+        const boonChoice = confirm(`🦠 Choose your boon:\n\nOK = TITHE: +1 troop on a frontline tile each round\nCancel = SIC THE BLOB: the Tyrant attacks one adjacent enemy each round`);
+        G.factions[fk].boon = boonChoice ? 'tithe' : 'sic';
+        addLog('🦠 A secret pact takes hold in the shadows…');
+        renderSidebar(); syncPush();
+      }
     }
   }
+}
+
+// Part 2: AI picks a boon when signing with the Tyrant
+function aiPickBoon(aiFk) {
+  const myT = tilesOf(aiFk);
+  const hasAdjacentRival = myT.some(mt =>
+    Object.values(G.tiles).some(t => t.owner && t.owner !== aiFk && t.owner !== TYRANT_KEY && adjacent(mt, t))
+  );
+  // Behind on economy → Tithe (growth). Has adjacent rival → Sic (aggressive).
+  if (hasAdjacentRival && myT.length >= 3) return 'sic';
+  return 'tithe';
 }
 
 // AI ally decides whether to harbor the cornered Tyrant (keep it as a weapon vs the leader).
@@ -1206,6 +1241,9 @@ function handleTileClick(id) {
     delete G.pacts[pairKey(G.playerFaction, other)];
     if (!G.renouncedThisTurn) G.renouncedThisTurn = {};
     G.renouncedThisTurn[other] = true;
+    // Part 2: clear boon if renouncing a Tyrant pact
+    if (other === TYRANT_KEY) G.factions[G.playerFaction].boon = null;
+    if (G.playerFaction === TYRANT_KEY && G.factions[other]) G.factions[other].boon = null;
     addLog('📜 A non-aggression pact was withdrawn.');
     setActionLog(`You withdrew from the pact with ${G.factions[other].name}. No grudge.`);
     renderSidebar(); return;
@@ -1688,8 +1726,35 @@ function runAITurn(fk) {
     // Court every un-allied rival (AIs decide now; humans are offered on their own turn).
     let newAlly = false;
     livingKeys().filter(k => k!==TYRANT_KEY && G.factions[k].isAI && !hasPact(TYRANT_KEY,k))
-      .forEach(k => { if (aiConsiderPact(k, TYRANT_KEY)) { formPact(TYRANT_KEY, k); newAlly = true; } });
+      .forEach(k => {
+        if (aiConsiderPact(k, TYRANT_KEY)) {
+          formPact(TYRANT_KEY, k);
+          // Part 2: AI picks boon — behind on economy? Tithe. Has adjacent rival? Sic.
+          G.factions[k].boon = aiPickBoon(k);
+          newAlly = true;
+        }
+      });
     if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
+
+    // Part 2: Sic boon — Tyrant attacks one adjacent enemy per sic-allied faction
+    for (const ally of livingKeys()) {
+      if (ally === TYRANT_KEY || !hasPact(TYRANT_KEY, ally)) continue;
+      if (G.factions[ally].boon !== 'sic') continue;
+      // Find a Tyrant tile adjacent to an enemy of the ally (not the ally, not the Tyrant)
+      const tyrantTiles = Object.values(G.tiles).filter(t => t.owner === TYRANT_KEY && t.troops >= 2);
+      let sicTarget = null, sicSrc = null;
+      for (const tt of tyrantTiles) {
+        const adj = Object.values(G.tiles).find(t =>
+          t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(TYRANT_KEY, t.owner) && adjacent(tt, t)
+        );
+        if (adj) { sicTarget = adj; sicSrc = tt; break; }
+      }
+      if (sicTarget && sicSrc) {
+        resolveAttack(TYRANT_KEY, sicSrc.id, sicTarget.id, false);
+        addLog(`🦠 The Tyrant lashes out at ${sicTarget.name} (sic the blob)`);
+        renderMap(); renderSidebar();
+      }
+    }
   }
 
   const myTiles    = () => Object.values(G.tiles).filter(t=>t.owner===fk);

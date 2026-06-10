@@ -65,6 +65,9 @@ function formPact(state, a, b) {
 function breakPact(state, betrayer, victim, log) {
   delete state.pacts[pairKey(betrayer, victim)];
   state.grudges[victim + '>' + betrayer] = state.round + 2;
+  // Part 2: clear boon if a Tyrant pact is broken
+  if (betrayer === TYRANT_KEY && state.factions[victim]) state.factions[victim].boon = null;
+  if (victim === TYRANT_KEY && state.factions[betrayer]) state.factions[betrayer].boon = null;
   log.push('🗡️ A non-aggression pact was broken!');
 }
 
@@ -522,6 +525,9 @@ export function reduce(inputState, action) {
         delete state.pacts[pairKey(rFrom, rTo)];
         if (!state.renouncedThisTurn) state.renouncedThisTurn = {};
         state.renouncedThisTurn[rTo] = true;
+        // Part 2: clear boon if renouncing a Tyrant pact
+        if (rFrom === TYRANT_KEY && state.factions[rTo]) state.factions[rTo].boon = null;
+        if (rTo === TYRANT_KEY && state.factions[rFrom]) state.factions[rFrom].boon = null;
         log.push('📜 A non-aggression pact was withdrawn.');
       }
       break;
@@ -626,6 +632,28 @@ export function reduce(inputState, action) {
         }
       }
       if (spread) log.push(`🦠 THE TYRANT spreads into ${spread} new tile${spread>1?'s':''}`);
+      // Part 2: Sic boon — Tyrant attacks one adjacent enemy per sic-allied faction
+      for (const ally of livingKeys(state)) {
+        if (ally === TYRANT_KEY || !hasPact(state, TYRANT_KEY, ally)) continue;
+        if (state.factions[ally].boon !== 'sic') continue;
+        const tyrantT = Object.values(state.tiles).filter(t => t.owner === TYRANT_KEY && t.troops >= 2);
+        for (const tt of tyrantT) {
+          const adj = Object.values(state.tiles).find(t =>
+            t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(state, TYRANT_KEY, t.owner) && adjacent(tt, t)
+          );
+          if (adj) {
+            const result = resolveCombat(state, TYRANT_KEY, tt.id, adj.id, 0);
+            log.push(...result.log);
+            effects.push(...result.effects);
+            log.push(`🦠 The Tyrant lashes out at ${adj.name} (sic the blob)`);
+            if (adj.owner === null) {
+              const prev = result.effects.find(e => e.kind === 'combat')?.defenderFk;
+              if (prev && tilesOf(state, prev).length === 0) killFaction(state, prev, log);
+            }
+            break;  // one attack per sic ally
+          }
+        }
+      }
       break;
     }
 
@@ -707,6 +735,20 @@ export function reduce(inputState, action) {
           if (k === TYRANT_KEY) continue;
           if (hasPact(state, TYRANT_KEY, k)) {
             state.factions[k].corruption = (state.factions[k].corruption || 0) + 1;
+          }
+        }
+        // Part 2: Tithe boon — +1 troop on a frontline tile each round
+        for (const k of livingKeys(state)) {
+          if (k === TYRANT_KEY) continue;
+          if (hasPact(state, TYRANT_KEY, k) && state.factions[k].boon === 'tithe') {
+            const myT = tilesOf(state, k);
+            const frontline = myT.filter(mt =>
+              Object.values(state.tiles).some(t => t.owner && t.owner !== k && adjacent(mt, t))
+            );
+            const target = frontline.length > 0
+              ? frontline.reduce((a, b) => a.troops <= b.troops ? a : b)
+              : myT[0];
+            if (target) { target.troops += 1; effects.push({kind:'refresh', tiles:[target.id]}); }
           }
         }
       }
