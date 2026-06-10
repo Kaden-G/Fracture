@@ -1037,10 +1037,14 @@ function startRound() {
         }
       }
     }
-  // corruption tick — each Tyrant ally gains +1 corruption per round
+  // corruption tick — each Tyrant ally sinks deeper, but slowly: +1 every 2 rounds bound
+  // (first tick delayed to 2 rounds in). Slower accrual keeps the bargain survivable.
     for (const k of livingKeys()) {
       if (k === TYRANT_KEY) continue;
-      if (hasPact(TYRANT_KEY, k)) {
+      if (!hasPact(TYRANT_KEY, k)) continue;
+      const cPactRound = G.pacts[pairKey(TYRANT_KEY, k)];
+      const cElapsed = G.round - cPactRound;
+      if (cElapsed > 0 && cElapsed % 2 === 0) {
         G.factions[k].corruption = (G.factions[k].corruption || 0) + 1;
       }
     }
