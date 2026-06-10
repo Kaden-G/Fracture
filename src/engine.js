@@ -509,6 +509,7 @@ export function reduce(inputState, action) {
       state.assaultCaptures = 0;
       state.assaultOn = false;
       state.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
+      state.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
       applyIncome(state, fk, log, effects);
       break;
     }
@@ -701,20 +702,25 @@ export function reduce(inputState, action) {
           const tile = state.tiles[action.target];
           f.resources -= 1;
           const sabPrev = tile.owner;
+          const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
           const drop = 1;  // Siphon: −1 enemy troop
           if (tile.troops > drop) { tile.troops -= drop; }
           else { tile.owner = null; tile.troops = 0; }
           if (tile.owner === null && tilesOf(state, sabPrev).length === 0) {
             killFaction(state, sabPrev, log);
           }
-          // Siphon: +1 troop on the saboteur's weakest frontline tile (fallback: weakest tile)
-          const mine = tilesOf(state, fk);
-          if (mine.length) {
-            const frontline = mine.filter(mt => Object.values(state.tiles).some(t => t.owner && t.owner !== fk && adjacent(mt, t)));
-            const pool = frontline.length ? frontline : mine;
-            const gain = pool.reduce((a, b) => a.troops <= b.troops ? a : b);
-            gain.troops += 1;
-            effects.push({kind:'refresh', tiles:[gain.id]});
+          // Siphon: +1 to saboteur's weakest frontline tile — only if target survives (≥2 before)
+          // and only once per turn.
+          if (sabPreTroops >= 2 && !state.siphonedThisTurn) {
+            const mine = tilesOf(state, fk);
+            if (mine.length) {
+              const frontline = mine.filter(mt => Object.values(state.tiles).some(t => t.owner && t.owner !== fk && adjacent(mt, t)));
+              const pool = frontline.length ? frontline : mine;
+              const gain = pool.reduce((a, b) => a.troops <= b.troops ? a : b);
+              gain.troops += 1;
+              state.siphonedThisTurn = true;
+              effects.push({kind:'refresh', tiles:[gain.id]});
+            }
           }
           state.actionsUsed++;
           log.push(`👁️ ${f.icon} sabotaged ${tile.name}`);

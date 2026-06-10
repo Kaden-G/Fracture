@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRACTURE</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <!-- Firebase SDK (compat) for online multiplayer — loaded before module scripts -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -221,7 +221,7 @@
       <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less · OVERCLOCK (1 res) surges +3 troops onto a tile</li>
       <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (1 res) steals 1 troop from an adjacent enemy</li>
       <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (1 res) buffs a tile + adjacent friendlies</li>
-      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) <em>siphons</em> a troop from any enemy tile (−1 them, +1 to your weakest frontline tile)</li>
+      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) hits any enemy tile for −1. The <em>first</em> sabotage each turn against a 2+ stack <em>siphons</em> that troop to your weakest frontline tile (+1)</li>
     </ul>
     <h3>🔌 NODE BONUSES</h3>
     <p>Each Core Node grants its controller a passive — so <em>which</em> Nodes you hold matters, not just how many:</p>
@@ -275,6 +275,6 @@
 
 <button class="rules-btn" id="rules-btn" onclick="openRules()" style="display:none">?</button>
 
-<script type="module" src="src/app.js?v=4"></script>
+<script type="module" src="src/app.js?v=5"></script>
 </body>
 </html>

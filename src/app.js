@@ -1163,6 +1163,7 @@ function beginTurnFor(fk) {
   G.actionsUsed = 0;
   turnAttacks = 0; assaultCaptures = 0; assaultOn = false;
   G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
+  G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
   selectedTile = null; currentAction = null;
   myTurnActive = true; isDriver = true;
 
@@ -1486,7 +1487,7 @@ function setAction(action) {
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
     airlift:   'AIRLIFT (3 res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.',
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
-    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — siphon 1 troop (−1 them, +1 to your weakest frontline tile).',
+    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −1 troop. First sabotage each turn vs a 2+ stack siphons +1 to your weakest frontline tile.',
     bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
@@ -1716,14 +1717,19 @@ function handleTileClick(id) {
     }
     f.resources -= 1;
     const sabPrev = tile.owner;
+    const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
     const sabDrop = 1;  // Siphon: −1 enemy troop
     if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
     if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
       killFaction(sabPrev);
     }
-    // Siphon: +1 troop on the Ghost's weakest frontline tile
-    const sabGain = ghostSiphonTarget(G.playerFaction);
-    if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); }
+    // Siphon: +1 to the Ghost's weakest frontline tile — only if the target survives (≥2 before)
+    // and only once per turn.
+    let sabGain = null;
+    if (sabPreTroops >= 2 && !G.siphonedThisTurn) {
+      sabGain = ghostSiphonTarget(G.playerFaction);
+      if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
+    }
     G.actionsUsed++;
     const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
     const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
@@ -2043,6 +2049,7 @@ function runAITurn(fk) {
   if (gameOver) return;
   turnAttacks = 0;
   G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
+  G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
   const f = G.factions[fk];
   if (f.eliminated) { G.currentTurnIdx++; setTimeout(doNextTurn,200); return; }
 
@@ -2291,11 +2298,15 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
     if (target) {
       const prev = target.owner;
       f.resources -= 1;
+      const aiPreTroops = target.troops;  // before the hit (D)
       const aiSabDrop = 1;  // Siphon: −1 enemy troop
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
-      const aiGain = ghostSiphonTarget(fk);
-      if (aiGain) { aiGain.troops += 1; refreshHex(aiGain.id); }
+      let aiGain = null;
+      if (aiPreTroops >= 2 && !G.siphonedThisTurn) {
+        aiGain = ghostSiphonTarget(fk);
+        if (aiGain) { aiGain.troops += 1; refreshHex(aiGain.id); G.siphonedThisTurn = true; }
+      }
       addLog(`👁️ ${f.name} sabotaged ${target.name}${aiGain ? ` (siphoned +1 to ${aiGain.name})` : ''}`);
       refreshHex(target.id); flashHex(target.id);
       return true;
