@@ -525,9 +525,9 @@ export function reduce(inputState, action) {
         delete state.pacts[pairKey(rFrom, rTo)];
         if (!state.renouncedThisTurn) state.renouncedThisTurn = {};
         state.renouncedThisTurn[rTo] = true;
-        // Part 2: clear boon if renouncing a Tyrant pact
-        if (rFrom === TYRANT_KEY && state.factions[rTo]) state.factions[rTo].boon = null;
-        if (rTo === TYRANT_KEY && state.factions[rFrom]) state.factions[rFrom].boon = null;
+        // Part 2: clear boon + purge corruption if renouncing a Tyrant pact
+        if (rFrom === TYRANT_KEY && state.factions[rTo]) { state.factions[rTo].boon = null; state.factions[rTo].corruption = 0; }
+        if (rTo === TYRANT_KEY && state.factions[rFrom]) { state.factions[rFrom].boon = null; state.factions[rFrom].corruption = 0; }
         log.push('📜 A non-aggression pact was withdrawn.');
       }
       break;
@@ -762,6 +762,8 @@ export function reduce(inputState, action) {
       if (state.nodesHeldSince) {
         for (const [k, since] of Object.entries(state.nodesHeldSince)) {
           const f = state.factions[k];
+          // Part 2: corrupt factions cannot win by node dominance
+          if (f && (f.corruption || 0) > 0) continue;
           if (f && !f.eliminated && countNodes(state, k) >= 3 && state.round - since >= 1) {
             const win = { fk: k, condition: 'NODE DOMINANCE',
               detail: `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`, round: state.round };
@@ -776,6 +778,8 @@ export function reduce(inputState, action) {
         let best = null, bestN = -1;
         for (const [k,f] of Object.entries(state.factions)) {
           if (f.eliminated) continue;
+          // Part 2: corrupt factions cannot win by timeout
+          if ((f.corruption || 0) > 0) continue;
           const n = Object.values(state.tiles).filter(t => t.owner === k && t.isNode).length;
           if (n > bestN) { bestN = n; best = k; }
         }

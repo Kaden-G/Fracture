@@ -1100,6 +1100,8 @@ function endRound() {
   if (G.nodesHeldSince) {
     for (const [k, since] of Object.entries(G.nodesHeldSince)) {
       const f = G.factions[k];
+      // Part 2: corrupt factions cannot win by node dominance
+      if (f && (f.corruption || 0) > 0) continue;
       if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 1) {
         showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`);
         return;
@@ -1112,6 +1114,8 @@ function endRound() {
     let best=null, bestN=-1;
     for (const [k,f] of Object.entries(G.factions)) {
       if (f.eliminated) continue;
+      // Part 2: corrupt factions cannot win by timeout
+      if ((f.corruption || 0) > 0) continue;
       const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       if (n>bestN) { bestN=n; best=k; }
     }
@@ -1241,9 +1245,9 @@ function handleTileClick(id) {
     delete G.pacts[pairKey(G.playerFaction, other)];
     if (!G.renouncedThisTurn) G.renouncedThisTurn = {};
     G.renouncedThisTurn[other] = true;
-    // Part 2: clear boon if renouncing a Tyrant pact
-    if (other === TYRANT_KEY) G.factions[G.playerFaction].boon = null;
-    if (G.playerFaction === TYRANT_KEY && G.factions[other]) G.factions[other].boon = null;
+    // Part 2: clear boon + purge corruption if renouncing a Tyrant pact
+    if (other === TYRANT_KEY) { G.factions[G.playerFaction].boon = null; G.factions[G.playerFaction].corruption = 0; }
+    if (G.playerFaction === TYRANT_KEY && G.factions[other]) { G.factions[other].boon = null; G.factions[other].corruption = 0; }
     addLog('📜 A non-aggression pact was withdrawn.');
     setActionLog(`You withdrew from the pact with ${G.factions[other].name}. No grudge.`);
     renderSidebar(); return;
