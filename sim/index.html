@@ -26,6 +26,7 @@
 <div class="controls">
   <div><label>Games:</label><br><input id="numGames" type="number" value="100" min="1" max="10000"></div>
   <div><label>Base seed:</label><br><input id="baseSeed" type="number" value="1" min="0"></div>
+  <div style="align-self:flex-end;"><label style="cursor:pointer;"><input id="tyrantOn" type="checkbox"> <span style="color:#e74c3c;font-weight:bold;">🦠 TYRANT ON</span></label></div>
   <div style="align-self:flex-end;"><button id="runBtn" onclick="runSim()">▶ RUN SIMULATION</button></div>
   <div style="align-self:flex-end;"><button onclick="if(window._lastSimOutput){navigator.clipboard.writeText(window._lastSimOutput);this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 COPY OUTPUT',1500)}">📋 COPY OUTPUT</button></div>
 </div>
@@ -49,7 +50,8 @@ window.runSim = async function() {
   const t0 = performance.now();
   let stats;
   try {
-    stats = runBatch(numGames, baseSeed);
+    const tyrant = document.getElementById('tyrantOn').checked;
+    stats = runBatch(numGames, baseSeed, { tyrant });
   } catch (e) {
     out.textContent += `\n❌ ERROR: ${e.message}\n${e.stack}`;
     btn.disabled = false;
@@ -95,6 +97,33 @@ window.runSim = async function() {
     const bd = stats.factionCondBreakdown[fk] || {};
     allConds.forEach(c => text += (bd[c] || 0).toString().padStart(14));
     text += (stats.winCounts[fk] || 0).toString().padStart(12) + '\n';
+  }
+
+  // Tyrant-specific stats
+  if (document.getElementById('tyrantOn').checked) {
+    text += '\n═══ TYRANT STATS ═══\n';
+    const tyrantWins = stats.results.filter(r => r.winnerFk === '__tyrant__').length;
+    text += `  Tyrant wins: ${tyrantWins}  (${(tyrantWins/numGames*100).toFixed(1)}%)\n`;
+    const tyrantConds = {};
+    stats.results.filter(r => r.winnerFk === '__tyrant__').forEach(r => {
+      tyrantConds[r.condition] = (tyrantConds[r.condition] || 0) + 1;
+    });
+    for (const [c, n] of Object.entries(tyrantConds).sort((a,b) => b[1] - a[1])) {
+      text += `    ${c.padEnd(20)} ${n}\n`;
+    }
+    // Tyrant elimination stats
+    const tyrantElim = stats.results.filter(r => r.factions['__tyrant__']?.eliminated).length;
+    const tyrantSurv = numGames - tyrantElim;
+    text += `  Tyrant survived: ${tyrantSurv}  |  Eliminated: ${tyrantElim}\n`;
+    // Avg corruption of non-tyrant factions at game end
+    let corrSum = 0, corrCount = 0;
+    stats.results.forEach(r => {
+      for (const [fk, f] of Object.entries(r.factions)) {
+        if (fk === '__tyrant__') continue;
+        if (f.corruption !== undefined) { corrSum += f.corruption; corrCount++; }
+      }
+    });
+    if (corrCount) text += `  Avg end-game corruption: ${(corrSum/corrCount).toFixed(1)}\n`;
   }
 
   // Sample a few game details

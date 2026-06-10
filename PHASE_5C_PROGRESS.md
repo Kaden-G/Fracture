@@ -38,35 +38,44 @@ ghost    20.0%  (baseline 20.1%)
 
 ---
 
-## PART 2 — The Tyrant / Treachery Path ⏳ NOT STARTED
+## PART 2 — The Tyrant / Treachery Path ✅ COMPLETE
 
-### Build order (recommended)
-1. **Corruption state + corruptionBand() display** — add `corruption` field per faction, `corruptionBand(n)` pure helper, self-visible-only UI band. All behind `tyrantOn()` guard.
-2. **Boons (Tithe / Sic the blob)** — chosen at Tyrant pact signing, locked. Tithe: +1 troop on frontline each round. Sic: Tyrant attacks one adjacent enemy per round.
-3. **Victory forfeit** — while `corruption > 0`, node/timeout wins blocked. Redemption: renounce + purge to 0 restores eligibility.
-4. **Tribute events** — every N rounds while bound, pay tribute or corruption spikes (+2).
-5. **Tyrant betrayal flip** — `tyrantConquest` flag. Triggers when diplomacy win becomes impossible (a contender refuses). Tyrant turns on allies.
-6. **Reckoning duel** — elimination trigger → sub-mode. Strike/Purge/Bargain actions. Essence = base + corruption. Tyrant wins ties.
-7. **Fallen vote** — eliminated players spend influence to nudge duel rolls. Anti-Tyrant default, flips spiteful if conspirator eliminated them.
-8. **AI for all above** — sign decision, boon pick, corruption management, betrayal flip, Reckoning play, fallen vote leaning.
-9. **Sim instrumentation + calibration** — Tyrant win rate, conspirator Reckoning win rate by corruption tier, base-four shift.
+### What was built
+1. **Corruption state + corruptionBand()** — `corruption` integer per faction, `corruptionBand(n)` pure helper (4 tiers), self-visible-only UI chip. +1/round while allied with Tyrant.
+2. **Boons (Tithe / Sic)** — chosen at pact signing, locked. Tithe: +1 troop weakest frontline tile/round. Sic: Tyrant attacks one adjacent enemy/round per sic ally.
+3. **Victory forfeit** — corruption > 0 blocks NODE DOMINANCE and TIMED OUT wins. Renounce purges corruption to 0 (redemption path).
+4. **Tribute** — every 3 rounds while allied, pay 2 resources or +2 corruption surge. Humans prompted; AI auto-pays if affordable.
+5. **Tyrant betrayal flip** — `tyrantConquest` flag. Triggers when all un-allied rivals refused. Breaks all existing Tyrant pacts.
+6. **Reckoning duel** — best-of-3 dice (2d6 + essence). Tyrant essence = tiles + 3. Conspirator essence = tiles + corruption. Tyrant wins ties. Winner: resurrects or dies permanently.
+7. **Fallen vote** — each eliminated faction adds +1 to one side. Anti-Tyrant default; spiteful (pro-Tyrant) if conspirator has grudge from them.
+8. **AI** — `aiConsiderPact` Tyrant-specific logic (contenders refuse, weak appease). `aiPickBoon()` heuristic. `TYRANT_COURT`/`TYRANT_BETRAY` engine actions. Sim courting loop.
+9. **Leakage test** — N=1000 Tyrant-OFF matches baseline (±0.1pp).
 
-### Hard requirements
-- **Zero leakage**: every Part 2 mechanic behind explicit `tyrantOn()` guard. N=1000 Tyrant-OFF run after Part 2 must reproduce post-5b baseline within noise.
-- **Corruption never rendered as raw integer** — only `corruptionBand()` label.
-- **Boon chosen once at signing, locked for duration.**
-- **Calibration targets**: prepared conspirator Reckoning win ~45–55%, greedy conspirator ~15–25%.
+### Files modified (Part 2)
+- `src/state.js` — corruption + boon fields in mkFaction, corruptionBand()
+- `src/engine.js` — corruption tick, tithe, tribute, sic, victory forfeit, TYRANT_COURT, TYRANT_BETRAY, Reckoning duel, fallen vote
+- `src/app.js` — all above mirrored + human prompts (boon selection, tribute, Reckoning alert) + UI corruption band chip
+- `src/ai.js` — aiConsiderPact Tyrant logic, aiPickBoon()
+- `sim/simulate.js` — tyrantConquest state, Tyrant courting/betrayal loop, aiPickBoon import
 
-### Key existing Tyrant infrastructure (already in codebase)
-- `G.setup.tyrant` toggle + lobby UI ("+ ADD TYRANT" card)
-- `TYRANT_KEY`, `TYRANT_DEF` constants in state.js
-- `tyrantOn()`, `tyrantAlive()`, `tyrantAllies()` helpers in app.js
-- `tyrantSpread(fk)` — blob expansion (capped at 4/turn)
-- `tyrantInteract(fk)` — secret deal offer/harbor request at turn start
-- `killFaction` routes through Tyrant harbor reprieve
-- Tyrant pacts are durable (exempt from 4-round lapse)
-- Tyrant diplomacy win: all surviving rivals allied → Tyrant wins
-- AI: Tyrant accepts every pact; contenders refuse Tyrant; weak AIs appease
+### Gate result
+N=1000 Tyrant-OFF regression passed — within 0.1pp of baseline:
+```
+commune  28.2%  (baseline 28.1%)
+grid     26.6%  (baseline 26.6%)
+syndicate 25.2% (baseline 25.2%)
+ghost    20.0%  (baseline 20.1%)
+```
+
+---
+
+## PART 3 — Tyrant-ON Sim Calibration ⏳ IN PROGRESS
+
+### Goals
+- Run N=1000 with Tyrant ON to establish Tyrant-ON baseline
+- Measure: Tyrant win rate, faction win rates, Reckoning outcomes, corruption distribution
+- Calibration targets: prepared conspirator Reckoning win ~45–55%, greedy conspirator ~15–25%
+- Tune Tyrant essence bonus, tribute cost, boon strength as needed
 
 ---
 

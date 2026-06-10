@@ -1238,7 +1238,15 @@ function endRound() {
       const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       if (n>bestN) { bestN=n; best=k; }
     }
-    showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most Nodes.`);
+    // Fallback: if all factions are corrupt, least-corrupt wins
+    if (!best) {
+      let leastCorr = Infinity;
+      for (const [k,f] of Object.entries(G.factions)) {
+        if (f.eliminated) continue;
+        if ((f.corruption || 0) < leastCorr) { leastCorr = f.corruption || 0; best = k; }
+      }
+    }
+    if (best) showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most Nodes.`);
     return;
   }
   startRound();

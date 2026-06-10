@@ -217,6 +217,8 @@ function summarize(state, seed) {
         tiles: tilesOf(state, k).length,
         nodes: countNodes(state, k),
         resources: f.resources,
+        corruption: f.corruption || 0,
+        boon: f.boon || null,
       }])
     ),
   };
