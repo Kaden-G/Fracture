@@ -5,7 +5,7 @@
 // ============================================================
 
 import { reduce, buildMap } from '../src/engine.js';
-import { chooseAction, aiChooseEvent, aiConsiderPact, aiPickBoon } from '../src/ai.js';
+import { chooseAction, aiChooseEvent, aiConsiderPact, aiPickBoon, aiShouldRenounce } from '../src/ai.js';
 import {
   RES_CAP, ROUND_CAP, FACTIONS, TYRANT_KEY, TRAITS, EVENT_DEFS,
   factionDef, mkFaction, livingKeys, hasPact, pairKey, countNodes, tilesOf, traitsFor,
@@ -152,6 +152,16 @@ function runGame(seed, opts = {}) {
         }
       }
 
+      // AI redemption: bound AI may renounce-kill the Tyrant
+      if (fk !== TYRANT_KEY && aiShouldRenounce(state, fk)) {
+        result = reduce(state, { type: 'RENOUNCE', from: fk, target: TYRANT_KEY });
+        state = result.state;
+        if (verbose) result.log.forEach(l => console.log(`    ${fk}: ${l}`));
+        // Tyrant is now dead — check if game ended
+        const winEffect = result.effects.find(e => e.kind === 'win');
+        if (winEffect || state.winner) return summarize(state, seed);
+      }
+
       // AI actions (up to 3 + assault chains)
       let actionsLeft = 3;
       let aiCaptures = 0;
@@ -238,6 +248,7 @@ function summarize(state, seed) {
     tyrantPacts,
     tyrantConquest: !!state.tyrantConquest,
     tyrantEliminations: state.tyrantEliminations || 0,
+    renounceKills: state.renounceKills || 0,
     reckonings: state.reckonings || [],
   };
 }

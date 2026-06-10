@@ -29,6 +29,8 @@ const FACTIONS = {
 
 // The Tyrant — an optional permanent AI player (not selectable as a normal faction).
 const TYRANT_KEY = 'tyrant';
+const THRALLDOM_CAP = 13; // at this corruption → auto-loss
+const MOON_BAND = 2;     // moon band = CAP-MOON_BAND .. CAP-1
 const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'reinforce',
                      perk:'Virus: spreads into adjacent tiles every turn · harbored allies can revive it' };
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
@@ -255,10 +257,11 @@ function breakPactBetrayal(betrayer, victim){
 }
 // Part 2: corruption band — display only, never show raw integer
 function corruptionBand(n) {
-  if (n <= 0) return { label: 'Untouched',             tier: 0 };
-  if (n <= 3) return { label: 'Touched by shadow',     tier: 1 };
-  if (n <= 6) return { label: 'Deeply corrupt',        tier: 2 };
-  return             { label: 'One with the Dark Lord', tier: 3 };
+  if (n <= 0)                               return { label: 'Untouched',             tier: 0 };
+  if (n <= 3)                               return { label: 'Touched by shadow',     tier: 1 };
+  if (n < THRALLDOM_CAP - MOON_BAND)        return { label: 'Deeply corrupt',        tier: 2 };
+  if (n < THRALLDOM_CAP)                    return { label: 'Moon-touched',          tier: 3 };
+  return                                           { label: 'Thrall of the Tyrant',  tier: 4 };
 }
 
 function grudgeAtkBonus(atk, def){ return (G.grudges[atk+'>'+def] >= G.round) ? 2 : 0; }
@@ -283,6 +286,30 @@ function aiConsiderPact(aiFk, propFk){
   if (propNodes > aiNodes) return true;                       // buy time vs a stronger rival
   if (tilesOf(propFk).length >= tilesOf(aiFk).length) return true;
   return Math.random() < 0.5;                                  // weaker suitor: a coin flip
+}
+
+// AI redemption — should this bound AI renounce-kill the Tyrant?
+function aiShouldRenounceLive(aiFk) {
+  if (!tyrantOn() || !G.factions[TYRANT_KEY] || G.factions[TYRANT_KEY].eliminated) return false;
+  if (!hasPact(TYRANT_KEY, aiFk)) return false;
+  const corr = G.factions[aiFk].corruption || 0;
+  if (corr <= 0) return false;
+  const moonLow = THRALLDOM_CAP - MOON_BAND;
+  const myT = tilesOf(aiFk).length;
+  const myN = countNodes(aiFk);
+  if (corr >= THRALLDOM_CAP - 1) {
+    if (corr >= moonLow && corr < THRALLDOM_CAP) return false;
+    return true;
+  }
+  if (corr >= 4 && corr < moonLow) {
+    const canSurvive = myT >= 5 || myN >= 2;
+    if (canSurvive) {
+      const depth = (corr - 3) / (moonLow - 3);
+      return Math.random() < 0.55 * depth;
+    }
+    return false;
+  }
+  return false;
 }
 
 // ---- TYRANT helpers ----
@@ -311,7 +338,7 @@ function killFaction(fk){
   addLog(`💀 ${G.factions[fk].name} ELIMINATED!`);
 }
 
-// Part 2: Reckoning intercept — called when a faction would win.
+// Reckoning intercept — called when a faction would win.
 // Returns: 'freedom' (conspirator won), 'thralldom' (Tyrant won), or false (no Reckoning).
 function maybeReckoningApp(fk) {
   if (!tyrantOn()) return false;
@@ -319,6 +346,14 @@ function maybeReckoningApp(fk) {
   if (fk === TYRANT_KEY) return false;
   const corr = G.factions[fk].corruption || 0;
   if (corr <= 0) return false;
+
+  // Thralldom cap — auto-loss
+  if (corr >= THRALLDOM_CAP) {
+    addLog(`🦠 THRALLDOM! ${G.factions[fk].name} is consumed — corruption reached the cap!`);
+    showWin(TYRANT_KEY, 'RECKONING (THRALLDOM)',
+      `${G.factions[fk].name} was consumed by corruption — the Tyrant wins through its thrall.`);
+    return 'thralldom';
+  }
 
   addLog(`⚔️ RECKONING triggered! ${G.factions[fk].name} (corruption ${corr}) must face the Tyrant!`);
   const tyrantWins = runReckoning(fk);
@@ -334,10 +369,20 @@ function maybeReckoningApp(fk) {
   }
 }
 
-// Reckoning duel — best-of-3 dice rounds, Tyrant wins ties, fallen vote
+// Reckoning duel — best-of-3 dice, host-skim, moon band, fallen vote
 function runReckoning(conspirator) {
-  const tEssence = Math.max(1, tilesOf(TYRANT_KEY).length) + 3;
-  const cEssence = Math.max(1, tilesOf(conspirator).length) + (G.factions[conspirator].corruption || 0);
+  const corr = G.factions[conspirator].corruption || 0;
+  const moonLow = THRALLDOM_CAP - MOON_BAND;
+  const inMoon = corr >= moonLow && corr < THRALLDOM_CAP;
+
+  // Host-skim: corruption eats conspirator tiles in the duel
+  const rawTiles = tilesOf(conspirator).length;
+  const skim = inMoon ? 0 : Math.min(Math.floor(corr / 2), Math.max(0, rawTiles - 1));
+  const cTiles = Math.max(1, rawTiles - skim);
+  const tTiles = Math.max(1, tilesOf(TYRANT_KEY).length);
+
+  const tEssence = tTiles + 3 + (inMoon ? 0 : Math.floor(corr / 3));
+  const cEssence = cTiles + (inMoon ? 5 : 0);
 
   let fallenForTyrant = 0, fallenForCon = 0;
   for (const [k, f] of Object.entries(G.factions)) {
@@ -358,10 +403,12 @@ function runReckoning(conspirator) {
   }
 
   const winner = tWins >= 2 ? 'Tyrant' : G.factions[conspirator].name;
+  const skimMsg = skim > 0 ? `\nHost-skim: −${skim} tiles (corruption ate your army)` : '';
+  const moonMsg = inMoon ? '\n🌙 MOON BAND — jackpot spike!' : '';
   const fallenMsg = (fallenForTyrant || fallenForCon)
     ? `\nFallen votes: +${fallenForCon} for conspirator, +${fallenForTyrant} for Tyrant`
     : '';
-  const msg = `⚔️ THE RECKONING ⚔️\n\n${G.factions[conspirator].name} challenges the Tyrant!\nTyrant Essence: ${tEssence}  |  Conspirator Essence: ${cEssence}${fallenMsg}\n\n${rounds.join('\n')}\n\n${winner} wins the Reckoning!`;
+  const msg = `⚔️ THE RECKONING ⚔️\n\n${G.factions[conspirator].name} challenges the Tyrant!\nTyrant Essence: ${tEssence}  |  Conspirator Essence: ${cEssence}${skimMsg}${moonMsg}${fallenMsg}\n\n${rounds.join('\n')}\n\n${winner} wins the Reckoning!`;
   
   addLog(`⚔️ RECKONING: ${winner} prevails! (${tWins}-${cWins})`);
   
@@ -934,8 +981,18 @@ function startRound() {
       }
     }
   }
-  // Part 2: Tyrant mechanics (tribute, corruption, tithe)
+  // Part 2: Tyrant mechanics (skim, tribute, corruption, tithe)
   if (tyrantAlive()) {
+    // Standing imbalance: Tyrant skims 1 troop from each ally's weakest tile
+    for (const k of livingKeys()) {
+      if (k === TYRANT_KEY || !hasPact(TYRANT_KEY, k)) continue;
+      const myTiles = tilesOf(k).filter(t => t.troops >= 2);
+      if (myTiles.length > 0) {
+        const weakest = myTiles.reduce((a, b) => a.troops <= b.troops ? a : b);
+        weakest.troops--;
+        refreshHex(weakest.id);
+      }
+    }
     // Tribute: every 3 rounds while allied, pay 2 resources or +2 corruption
     const TRIBUTE_INTERVAL = 3;
     const TRIBUTE_COST = 2;
@@ -1181,6 +1238,63 @@ function tyrantInteract(fk) {
       }
     }
   }
+  // §4: Two-steps-from-victory prompt — if bound and close to triggering a win, warn
+  if (tyrantAlive() && hasPact(TYRANT_KEY, fk) && (G.factions[fk].corruption || 0) > 0) {
+    const corr = G.factions[fk].corruption;
+    const myNodes = countNodes(fk);
+    const heldSince = G.nodesHeldSince && G.nodesHeldSince[fk];
+    const closeToWin = (myNodes >= 3 && heldSince !== undefined)
+                    || (myNodes >= 2 && tilesOf(fk).length >= 8);
+    if (closeToWin) {
+      const band = corruptionBand(corr);
+      const renounce = confirm(
+        `⚠️ THE RECKONING IS NEAR\n\n` +
+        `You are close to victory, but you are ${band.label} (corruption tier).\n` +
+        `Winning while bound forces a Reckoning duel against the Tyrant.\n\n` +
+        `RENOUNCE now? The Tyrant will lash out and die — but eliminated factions will resurrect with a grudge against you.\n\n` +
+        `OK = RENOUNCE (destroy the Tyrant, face the consequences)\n` +
+        `Cancel = PRESS ON (risk the Reckoning duel)`
+      );
+      if (renounce) {
+        // Trigger renounce-kill
+        delete G.pacts[pairKey(fk, TYRANT_KEY)];
+        G.factions[fk].boon = null;
+        const rTiles = tilesOf(fk).sort((a,b) => a.troops - b.troops);
+        for (let i = 0; i < Math.min(2, rTiles.length); i++) {
+          const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
+          rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
+          refreshHex(rTiles[i].id);
+        }
+        addLog(`🦠💥 ${G.factions[fk].name} RENOUNCES the Tyrant before the Reckoning!`);
+        tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
+        G.factions[TYRANT_KEY].eliminated = true;
+        for (const pk of Object.keys(G.pacts || {})) {
+          const [pa, pb] = pk.split('|');
+          if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
+            const ally = pa === TYRANT_KEY ? pb : pa;
+            if (G.factions[ally]) G.factions[ally].boon = null;
+            delete G.pacts[pk];
+          }
+        }
+        addLog('💀 THE TYRANT is destroyed!');
+        for (const [ek, ef] of Object.entries(G.factions)) {
+          if (!ef.eliminated || ek === TYRANT_KEY || ek === fk) continue;
+          const neutrals = Object.values(G.tiles).filter(t => !t.owner);
+          if (neutrals.length === 0) continue;
+          ef.eliminated = false; ef.corruption = 0; ef.resources = 3;
+          const count = Math.min(2, neutrals.length);
+          for (let i = 0; i < count; i++) {
+            neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+            refreshHex(neutrals[i].id); neutrals.splice(i, 1); i--;
+          }
+          G.grudges[ek + '>' + fk] = G.round + 3;
+          addLog(`👻 ${ef.name} rises — grudge against ${G.factions[fk].name}!`);
+        }
+        G.factions[fk].corruption = 0;
+        renderMap(); renderSidebar(); syncPush();
+      }
+    }
+  }
 }
 
 // Part 2: AI picks a boon when signing with the Tyrant
@@ -1370,22 +1484,72 @@ function handleTileClick(id) {
     renderSidebar(); return;
   }
 
-  // ---- RENOUNCE (Part 1: peaceful pact exit, free, no grudge) ----
+  // ---- RENOUNCE ----
   if (currentAction === 'renounce') {
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Click a tile owned by a faction you have a pact with.'); return; }
     const other = tile.owner;
     if (!hasPact(G.playerFaction, other)) { setActionLog(`You don't have a pact with ${G.factions[other].name}.`); return; }
+    // Non-Tyrant renounce: simple exit
+    if (other !== TYRANT_KEY && G.playerFaction !== TYRANT_KEY) {
+      delete G.pacts[pairKey(G.playerFaction, other)];
+      if (!G.renouncedThisTurn) G.renouncedThisTurn = {};
+      G.renouncedThisTurn[other] = true;
+      addLog('📜 A non-aggression pact was withdrawn.');
+      setActionLog(`You withdrew from the pact with ${G.factions[other].name}. No grudge.`);
+      renderSidebar(); return;
+    }
+    // Tyrant renounce — confirm: this triggers renounce-kill
+    if (!confirm('⚠️ Renouncing the Tyrant will:\n• The Tyrant lashes out (withdrawal hit)\n• The Tyrant dies — its tiles go neutral\n• Eliminated factions resurrect with a grudge against you\n\nProceed?')) {
+      setActionLog('Renounce cancelled.'); return;
+    }
     delete G.pacts[pairKey(G.playerFaction, other)];
     if (!G.renouncedThisTurn) G.renouncedThisTurn = {};
     G.renouncedThisTurn[other] = true;
-    // Part 2: clear boon + purge corruption if renouncing a Tyrant pact
-    if (other === TYRANT_KEY) { G.factions[G.playerFaction].boon = null; G.factions[G.playerFaction].corruption = 0; }
-    if (G.playerFaction === TYRANT_KEY && G.factions[other]) { G.factions[other].boon = null; G.factions[other].corruption = 0; }
-    addLog('📜 A non-aggression pact was withdrawn.');
-    setActionLog(`You withdrew from the pact with ${G.factions[other].name}. No grudge.`);
-    renderSidebar(); return;
+    const renouncer = G.playerFaction === TYRANT_KEY ? other : G.playerFaction;
+    G.factions[renouncer].boon = null;
+    // 1. Withdrawal hit
+    const rTiles = tilesOf(renouncer).sort((a,b) => a.troops - b.troops);
+    for (let i = 0; i < Math.min(2, rTiles.length); i++) {
+      const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
+      rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
+      refreshHex(rTiles[i].id);
+    }
+    addLog(`🦠💥 The Tyrant lashes out at ${G.factions[renouncer].name} — withdrawal hit!`);
+    // 2. Tyrant dies — tiles go neutral
+    tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
+    G.factions[TYRANT_KEY].eliminated = true;
+    // Break all remaining Tyrant pacts
+    for (const pk of Object.keys(G.pacts || {})) {
+      const [pa, pb] = pk.split('|');
+      if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
+        const ally = pa === TYRANT_KEY ? pb : pa;
+        if (G.factions[ally]) G.factions[ally].boon = null;
+        delete G.pacts[pk];
+      }
+    }
+    addLog('💀 THE TYRANT is destroyed — its domain collapses to nothing!');
+    // 3. Resurrect eliminated factions with grudge against renouncer
+    for (const [ek, ef] of Object.entries(G.factions)) {
+      if (!ef.eliminated || ek === TYRANT_KEY || ek === renouncer) continue;
+      const neutrals = Object.values(G.tiles).filter(t => !t.owner);
+      if (neutrals.length === 0) continue;
+      ef.eliminated = false;
+      ef.corruption = 0;
+      ef.resources = 3;
+      const count = Math.min(2, neutrals.length);
+      for (let i = 0; i < count; i++) {
+        neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+        refreshHex(neutrals[i].id);
+        neutrals.splice(i, 1); i--;
+      }
+      G.grudges[ek + '>' + renouncer] = G.round + 3;
+      addLog(`👻 ${ef.name} rises from the ashes — and bears a grudge against ${G.factions[renouncer].name}!`);
+    }
+    G.factions[renouncer].corruption = 0;
+    setActionLog('The Tyrant is destroyed! Eliminated factions rise again.');
+    renderMap(); renderSidebar(); syncPush(); return;
   }
 
   if (G.actionsUsed >= 3) { setActionLog('No actions left — hit END TURN.'); return; }
@@ -1917,6 +2081,46 @@ function runAITurn(fk) {
         renderMap(); renderSidebar();
       }
     }
+  }
+
+  // AI redemption: bound AI may renounce-kill the Tyrant
+  if (fk !== TYRANT_KEY && hasPact(TYRANT_KEY, fk) && aiShouldRenounceLive(fk)) {
+    // Inline renounce-kill (same logic as player renounce)
+    delete G.pacts[pairKey(fk, TYRANT_KEY)];
+    G.factions[fk].boon = null;
+    const rTiles = tilesOf(fk).sort((a,b) => a.troops - b.troops);
+    for (let i = 0; i < Math.min(2, rTiles.length); i++) {
+      const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
+      rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
+      refreshHex(rTiles[i].id);
+    }
+    addLog(`🦠💥 ${f.name} RENOUNCES the Tyrant! Withdrawal hit!`);
+    tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
+    G.factions[TYRANT_KEY].eliminated = true;
+    for (const pk of Object.keys(G.pacts || {})) {
+      const [pa, pb] = pk.split('|');
+      if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
+        const ally = pa === TYRANT_KEY ? pb : pa;
+        if (G.factions[ally]) G.factions[ally].boon = null;
+        delete G.pacts[pk];
+      }
+    }
+    addLog('💀 THE TYRANT is destroyed — its domain collapses to nothing!');
+    for (const [ek, ef] of Object.entries(G.factions)) {
+      if (!ef.eliminated || ek === TYRANT_KEY || ek === fk) continue;
+      const neutrals = Object.values(G.tiles).filter(t => !t.owner);
+      if (neutrals.length === 0) continue;
+      ef.eliminated = false; ef.corruption = 0; ef.resources = 3;
+      const count = Math.min(2, neutrals.length);
+      for (let i = 0; i < count; i++) {
+        neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+        refreshHex(neutrals[i].id); neutrals.splice(i, 1); i--;
+      }
+      G.grudges[ek + '>' + fk] = G.round + 3;
+      addLog(`👻 ${ef.name} rises from the ashes — and bears a grudge against ${f.name}!`);
+    }
+    G.factions[fk].corruption = 0;
+    renderMap(); renderSidebar(); syncPush();
   }
 
   const myTiles    = () => Object.values(G.tiles).filter(t=>t.owner===fk);

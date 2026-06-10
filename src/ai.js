@@ -5,7 +5,7 @@
 // ============================================================
 
 import {
-  TYRANT_KEY,
+  TYRANT_KEY, THRALLDOM_CAP, MOON_BAND,
   adjacent, tilesOf, nodesOf, countNodes, controlsNode,
   livingKeys, hasPact, pairKey,
   reinforceCost, reinforceAmount, moveReachable, moveRange,
@@ -305,4 +305,45 @@ export function aiPickBoon(state, aiFk) {
     Object.values(state.tiles).some(t => t.owner && t.owner !== aiFk && t.owner !== TYRANT_KEY && adjacent(mt, t))
   );
   return (hasAdjacentRival && myT.length >= 3) ? 'sic' : 'tithe';
+}
+
+// Conspirator AI redemption — should this bound AI renounce-kill the Tyrant?
+// Returns true if renounce-kill is the better play than riding to a Reckoning.
+// REDEMPTION_THRESHOLD tunes duel frequency: higher = more renounces = fewer duels.
+const REDEMPTION_THRESHOLD = 0.55; // probability of renouncing when in the dead zone
+export function aiShouldRenounce(state, aiFk) {
+  if (!state.tyrantOn) return false;
+  if (!state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) return false;
+  if (!hasPact(state, TYRANT_KEY, aiFk)) return false;
+  const corr = state.factions[aiFk].corruption || 0;
+  if (corr <= 0) return false;
+
+  const moonLow = THRALLDOM_CAP - MOON_BAND;
+  const myTiles = tilesOf(state, aiFk).length;
+  const myNodes = countNodes(state, aiFk);
+
+  // Near thralldom cap — desperate, consider renounce vs moon shot
+  if (corr >= THRALLDOM_CAP - 1) {
+    // One step from thralldom. If we can't reach moon, renounce.
+    // If we're IN the moon band, commit (don't renounce).
+    if (corr >= moonLow && corr < THRALLDOM_CAP) return false; // in moon, commit
+    return true; // at or past cap boundary, renounce
+  }
+
+  // In the dead zone (mid-high corruption, duel curve against us, not in moon)
+  // Dead zone: corruption 4+ but not in moon band
+  if (corr >= 4 && corr < moonLow) {
+    // Strong board position? Can survive the refill from renounce-kill.
+    const canSurvive = myTiles >= 5 || myNodes >= 2;
+    if (canSurvive) {
+      // Stochastic: renounce with probability proportional to corruption depth
+      const depth = (corr - 3) / (moonLow - 3); // 0..1 as corruption approaches moon
+      return Math.random() < REDEMPTION_THRESHOLD * depth;
+    }
+    // Weak board: can't survive the refill, ride it out
+    return false;
+  }
+
+  // Low corruption (1-3): duel is roughly fair, don't renounce yet
+  return false;
 }

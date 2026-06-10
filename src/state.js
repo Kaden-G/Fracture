@@ -6,6 +6,8 @@
 export const RES_CAP = 14;
 export const GRID_SIZE = 7;   // board is GRID_SIZE x GRID_SIZE tiles
 export const ROUND_CAP = 30;
+export const THRALLDOM_CAP = 13; // at this corruption → auto-loss (Tyrant wins)
+export const MOON_BAND = 2;     // moon band = CAP-MOON_BAND .. CAP-1 (11-12 at cap 13)
 
 // ---- Factions ----
 export const FACTIONS = {
@@ -157,10 +159,11 @@ export function mkFaction(name, key, isAI, trait) {
 
 // ---- Corruption band (Part 2) — display only, never show raw integer ----
 export function corruptionBand(n) {
-  if (n <= 0) return { label: 'Untouched',             tier: 0 };
-  if (n <= 3) return { label: 'Touched by shadow',     tier: 1 };
-  if (n <= 6) return { label: 'Deeply corrupt',        tier: 2 };
-  return             { label: 'One with the Dark Lord', tier: 3 };
+  if (n <= 0)                               return { label: 'Untouched',             tier: 0 };
+  if (n <= 3)                               return { label: 'Touched by shadow',     tier: 1 };
+  if (n < THRALLDOM_CAP - MOON_BAND)        return { label: 'Deeply corrupt',        tier: 2 };
+  if (n < THRALLDOM_CAP)                    return { label: 'Moon-touched',          tier: 3 };
+  return                                           { label: 'Thrall of the Tyrant',  tier: 4 };
 }
 
 // ---- State query helpers (take state explicitly) ----

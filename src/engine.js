@@ -6,7 +6,8 @@
 // ============================================================
 
 import {
-  RES_CAP, GRID_SIZE, ROUND_CAP, FACTIONS, TYRANT_KEY, TYRANT_DEF,
+  RES_CAP, GRID_SIZE, ROUND_CAP, THRALLDOM_CAP, MOON_BAND,
+  FACTIONS, TYRANT_KEY, TYRANT_DEF,
   TRAITS, EVENT_DEFS, NODE_TILES, NODE_POSITIONS, START_CORNERS,
   DISTRICT_NAMES, REGION_NAMES,
   factionDef, regionOf, adjacent,
@@ -66,12 +67,27 @@ function killFaction(state, fk, log) {
   log.push(`💀 ${state.factions[fk].name} ELIMINATED!`);
 }
 
-// Part 2 Step 6+7: Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties, fallen vote
+// Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties, fallen vote, host-skim
+// Host-skim: corruption eats the conspirator's army going into the duel.
+// Moon band: corruption in [CAP-MOON_BAND .. CAP-1] gives conspirator a jackpot spike.
 function runReckoningEngine(state, conspirator) {
-  const tEssence = Math.max(1, tilesOf(state, TYRANT_KEY).length) + 3;
-  const cEssence = Math.max(1, tilesOf(state, conspirator).length) + (state.factions[conspirator].corruption || 0);
+  const corr = state.factions[conspirator].corruption || 0;
+  const moonLow = THRALLDOM_CAP - MOON_BAND;
+  const inMoon = corr >= moonLow && corr < THRALLDOM_CAP;
 
-  // Step 7: Fallen vote
+  // Host-skim: corruption skims conspirator tiles for the duel
+  // skim = floor(corr/2) capped at their tile count minus 1
+  const rawTiles = tilesOf(state, conspirator).length;
+  const skim = inMoon ? 0 : Math.min(Math.floor(corr / 2), Math.max(0, rawTiles - 1));
+  const cTiles = Math.max(1, rawTiles - skim);
+  const tTiles = Math.max(1, tilesOf(state, TYRANT_KEY).length);
+
+  // Tyrant essence: base 3 + tiles + corruption influence
+  const tEssence = tTiles + 3 + (inMoon ? 0 : Math.floor(corr / 3));
+  // Conspirator essence: tiles (after skim) + moon bonus
+  const cEssence = cTiles + (inMoon ? 5 : 0);
+
+  // Fallen vote
   let fallenForTyrant = 0, fallenForCon = 0;
   for (const [k, f] of Object.entries(state.factions)) {
     if (!f.eliminated || k === TYRANT_KEY) continue;
@@ -95,7 +111,7 @@ function runReckoningEngine(state, conspirator) {
   return tWins >= 2;
 }
 
-// Part 2: Reckoning intercept — called when a faction would win.
+// Reckoning intercept — called when a faction would win.
 // Returns: win object (conspirator won duel), null (Tyrant won duel), or false (no Reckoning needed).
 function maybeReckoning(state, fk, log) {
   if (!state.tyrantOn) return false;
@@ -104,27 +120,37 @@ function maybeReckoning(state, fk, log) {
   const corr = state.factions[fk].corruption || 0;
   if (corr <= 0) return false;
 
-  // Track Reckoning for diagnostics
   if (!state.reckonings) state.reckonings = [];
-  const tier = corr <= 2 ? 'low' : corr <= 5 ? 'mid' : 'high';
+  const moonLow = THRALLDOM_CAP - MOON_BAND;
+  const tier = corr >= THRALLDOM_CAP ? 'thralldom'
+             : corr >= moonLow       ? 'moon'
+             : corr <= 2             ? 'low'
+             : corr <= 5             ? 'mid'
+             :                         'deep';
+
+  // Thralldom cap — auto-loss, no duel needed
+  if (corr >= THRALLDOM_CAP) {
+    log.push(`🦠 THRALLDOM! ${state.factions[fk].name} is consumed — corruption reached the cap!`);
+    state.reckonings.push({ fk, corruption: corr, tier, tyrantWins: true });
+    const win = { fk: TYRANT_KEY, condition: 'RECKONING (THRALLDOM)',
+      detail: `${state.factions[fk].name} was consumed by corruption — the Tyrant wins through its thrall.`, round: state.round };
+    state.winner = win;
+    return null;
+  }
 
   log.push(`⚔️ RECKONING triggered! ${state.factions[fk].name} (corruption ${corr}) must face the Tyrant!`);
   const tyrantWins = runReckoningEngine(state, fk);
-
   state.reckonings.push({ fk, corruption: corr, tier, tyrantWins });
 
   if (tyrantWins) {
-    // Tyrant wins through the thrall
     log.push(`🦠 The Tyrant prevails — ${state.factions[fk].name} falls to thralldom!`);
     const win = { fk: TYRANT_KEY, condition: 'RECKONING (THRALLDOM)',
       detail: `${state.factions[fk].name} was about to win but lost the Reckoning — the Tyrant consumes Nexus.`, round: state.round };
     state.winner = win;
-    return null; // signals caller that Tyrant won
+    return null;
   } else {
-    // Conspirator breaks free
     state.factions[fk].corruption = 0;
     log.push(`💀 ${state.factions[fk].name} vanquished the Tyrant in the Reckoning!`);
-    // Return the win object for the conspirator — caller determines condition
     const f = state.factions[fk];
     return { fk, condition: 'RECKONING (FREEDOM)',
       detail: `${f.name} fought off the Tyrant and claimed Nexus!`, round: state.round };
@@ -593,19 +619,75 @@ export function reduce(inputState, action) {
       break;
     }
 
-    // ---- RENOUNCE (Part 1): peaceful pact exit, no grudge ----
+    // ---- RENOUNCE: peaceful pact exit (non-Tyrant) or renounce-kill (Tyrant) ----
     case 'RENOUNCE': {
       const rFrom = action.from;
       const rTo   = action.target;
-      if (hasPact(state, rFrom, rTo)) {
-        delete state.pacts[pairKey(rFrom, rTo)];
-        if (!state.renouncedThisTurn) state.renouncedThisTurn = {};
-        state.renouncedThisTurn[rTo] = true;
-        // Part 2: clear boon + purge corruption if renouncing a Tyrant pact
-        if (rFrom === TYRANT_KEY && state.factions[rTo]) { state.factions[rTo].boon = null; state.factions[rTo].corruption = 0; }
-        if (rTo === TYRANT_KEY && state.factions[rFrom]) { state.factions[rFrom].boon = null; state.factions[rFrom].corruption = 0; }
+      if (!hasPact(state, rFrom, rTo)) break;
+      delete state.pacts[pairKey(rFrom, rTo)];
+      if (!state.renouncedThisTurn) state.renouncedThisTurn = {};
+      state.renouncedThisTurn[rTo] = true;
+
+      // Non-Tyrant renounce: simple exit
+      if (rTo !== TYRANT_KEY && rFrom !== TYRANT_KEY) {
         log.push('📜 A non-aggression pact was withdrawn.');
+        break;
       }
+
+      // Renounce-kill: renouncing a Tyrant pact
+      const renouncer = rFrom === TYRANT_KEY ? rTo : rFrom;
+      state.factions[renouncer].boon = null;
+
+      // 1. Withdrawal hit: renouncer's weakest two tiles lose half their troops
+      const rTiles = tilesOf(state, renouncer).sort((a, b) => a.troops - b.troops);
+      for (let i = 0; i < Math.min(2, rTiles.length); i++) {
+        const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
+        rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
+        effects.push({kind:'refresh', tiles:[rTiles[i].id]});
+      }
+      log.push(`🦠💥 The Tyrant lashes out at ${state.factions[renouncer].name} — withdrawal hit!`);
+
+      // 2. Tyrant dies — all its tiles go neutral
+      const tyrantTiles = tilesOf(state, TYRANT_KEY);
+      for (const t of tyrantTiles) { t.owner = null; t.troops = 0; t.heldRounds = 0; effects.push({kind:'refresh', tiles:[t.id]}); }
+      state.factions[TYRANT_KEY].eliminated = true;
+      state.tyrantEliminations = (state.tyrantEliminations || 0) + 1;
+      // Break all remaining Tyrant pacts
+      for (const pk of Object.keys(state.pacts || {})) {
+        const [pa, pb] = pk.split('|');
+        if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
+          const ally = pa === TYRANT_KEY ? pb : pa;
+          if (state.factions[ally]) { state.factions[ally].boon = null; }
+          delete state.pacts[pk];
+        }
+      }
+      log.push('💀 THE TYRANT is destroyed — its domain collapses to nothing!');
+
+      // 3. Resurrect eliminated factions on their former ground with grudge against renouncer
+      if (!state.renounceKills) state.renounceKills = 0;
+      state.renounceKills++;
+      for (const [ek, ef] of Object.entries(state.factions)) {
+        if (!ef.eliminated || ek === TYRANT_KEY || ek === renouncer) continue;
+        // Find up to 2 neutral tiles to resurrect on (prefer tiles near board edges)
+        const neutrals = Object.values(state.tiles).filter(t => !t.owner);
+        if (neutrals.length === 0) continue;
+        ef.eliminated = false;
+        ef.corruption = 0;
+        ef.resources = 3;
+        const count = Math.min(2, neutrals.length);
+        for (let i = 0; i < count; i++) {
+          neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+          effects.push({kind:'refresh', tiles:[neutrals[i].id]});
+          // Remove from available pool
+          neutrals.splice(i, 1); i--;
+        }
+        // Grudge against the renouncer (they caused the turmoil)
+        state.grudges[ek + '>' + renouncer] = state.round + 3;
+        log.push(`👻 ${ef.name} rises from the ashes — and bears a grudge against ${state.factions[renouncer].name}!`);
+      }
+
+      // Clear renouncer's corruption (they've paid the price)
+      state.factions[renouncer].corruption = 0;
       break;
     }
 
@@ -843,8 +925,18 @@ export function reduce(inputState, action) {
           log.push('💀 THE TYRANT perished — no ally harbored it in time.');
         }
       }
-      // Part 2: Tyrant mechanics (corruption, tribute, tithe)
+      // Part 2: Tyrant mechanics (corruption, tribute, tithe, skim)
       if (state.tyrantOn && state.factions[TYRANT_KEY] && !state.factions[TYRANT_KEY].eliminated) {
+        // Standing imbalance: Tyrant skims 1 troop from each ally's weakest tile
+        for (const k of livingKeys(state)) {
+          if (k === TYRANT_KEY || !hasPact(state, TYRANT_KEY, k)) continue;
+          const myTiles = tilesOf(state, k).filter(t => t.troops >= 2);
+          if (myTiles.length > 0) {
+            const weakest = myTiles.reduce((a, b) => a.troops <= b.troops ? a : b);
+            weakest.troops--;
+            effects.push({kind:'refresh', tiles:[weakest.id]});
+          }
+        }
         // Tribute: every 3 rounds while allied, pay 2 resources or +2 corruption
         const TRIBUTE_INTERVAL = 3;
         const TRIBUTE_COST = 2;
