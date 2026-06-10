@@ -102,28 +102,41 @@ window.runSim = async function() {
   // Tyrant-specific stats
   if (document.getElementById('tyrantOn').checked) {
     text += '\n═══ TYRANT STATS ═══\n';
-    const tyrantWins = stats.results.filter(r => r.winnerFk === '__tyrant__').length;
+    const tyrantWins = stats.results.filter(r => r.winnerFk === 'tyrant').length;
     text += `  Tyrant wins: ${tyrantWins}  (${(tyrantWins/numGames*100).toFixed(1)}%)\n`;
-    const tyrantConds = {};
-    stats.results.filter(r => r.winnerFk === '__tyrant__').forEach(r => {
-      tyrantConds[r.condition] = (tyrantConds[r.condition] || 0) + 1;
-    });
-    for (const [c, n] of Object.entries(tyrantConds).sort((a,b) => b[1] - a[1])) {
-      text += `    ${c.padEnd(20)} ${n}\n`;
+    if (tyrantWins) {
+      const tyrantConds = {};
+      stats.results.filter(r => r.winnerFk === 'tyrant').forEach(r => {
+        tyrantConds[r.condition] = (tyrantConds[r.condition] || 0) + 1;
+      });
+      for (const [c, n] of Object.entries(tyrantConds).sort((a,b) => b[1] - a[1])) {
+        text += `    ${c.padEnd(20)} ${n}\n`;
+      }
     }
     // Tyrant elimination stats
-    const tyrantElim = stats.results.filter(r => r.factions['__tyrant__']?.eliminated).length;
+    const tyrantElim = stats.results.filter(r => r.factions['tyrant']?.eliminated).length;
     const tyrantSurv = numGames - tyrantElim;
-    text += `  Tyrant survived: ${tyrantSurv}  |  Eliminated: ${tyrantElim}\n`;
-    // Avg corruption of non-tyrant factions at game end
-    let corrSum = 0, corrCount = 0;
+    text += `  Tyrant survived: ${tyrantSurv} (${(tyrantSurv/numGames*100).toFixed(1)}%)  |  Eliminated: ${tyrantElim} (${(tyrantElim/numGames*100).toFixed(1)}%)\n`;
+
+    // Pact and corruption stats
+    let pactCount = 0, corruptedCount = 0, corrSum = 0, corrN = 0;
+    let boonTithe = 0, boonSic = 0, boonNone = 0;
     stats.results.forEach(r => {
       for (const [fk, f] of Object.entries(r.factions)) {
-        if (fk === '__tyrant__') continue;
-        if (f.corruption !== undefined) { corrSum += f.corruption; corrCount++; }
+        if (fk === 'tyrant') continue;
+        if (f.corruption > 0) { corruptedCount++; corrSum += f.corruption; }
+        corrN++;
+        if (f.boon === 'tithe') boonTithe++;
+        else if (f.boon === 'sic') boonSic++;
+        else boonNone++;
       }
     });
-    if (corrCount) text += `  Avg end-game corruption: ${(corrSum/corrCount).toFixed(1)}\n`;
+    text += `  Factions with corruption > 0 at end: ${corruptedCount}/${corrN} (${(corruptedCount/corrN*100).toFixed(1)}%)\n`;
+    if (corruptedCount) text += `  Avg corruption (corrupted only): ${(corrSum/corruptedCount).toFixed(1)}\n`;
+    text += `  Boons at end: Tithe ${boonTithe}  |  Sic ${boonSic}  |  None (no pact) ${boonNone}\n`;
+
+    // Conquest mode frequency
+    // (We can't directly track this from summarize, but tyrantConquest could be added)
   }
 
   // Sample a few game details
