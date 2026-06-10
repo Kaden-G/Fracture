@@ -116,7 +116,8 @@ function runGame(seed, opts = {}) {
         // Part 2 Step 8: Tyrant courts un-allied AI factions
         if (state.tyrantOn && !state.tyrantConquest && state.factions[TYRANT_KEY] && !state.factions[TYRANT_KEY].eliminated) {
           const unAllied = livingKeys(state).filter(k => k !== TYRANT_KEY && !hasPact(state, TYRANT_KEY, k));
-          let anyRefused = false;
+          let anyAccepted = false;
+          let allRefusedThisRound = true;
           for (const k of unAllied) {
             if (!state.tyrantLastOffer) state.tyrantLastOffer = {};
             const last = state.tyrantLastOffer[k] || -99;
@@ -126,16 +127,24 @@ function runGame(seed, opts = {}) {
                 const boon = aiPickBoon(state, k);
                 result = reduce(state, { type: 'TYRANT_COURT', target: k, boon });
                 state = result.state;
-              } else {
-                anyRefused = true;
+                anyAccepted = true;
+                allRefusedThisRound = false;
               }
+            } else {
+              allRefusedThisRound = false; // not offered this round, can't count as refusal
             }
           }
-          // Check betrayal flip: all un-allied factions refused
-          if (anyRefused) {
+          // Reset streak if any new pact formed; increment if all refused
+          if (!state.tyrantRefusalStreak) state.tyrantRefusalStreak = 0;
+          if (anyAccepted) {
+            state.tyrantRefusalStreak = 0;
+          } else if (unAllied.length > 0 && allRefusedThisRound) {
+            state.tyrantRefusalStreak++;
+          }
+          // Conquest flip: only after 3 consecutive rounds of universal refusal
+          if (state.tyrantRefusalStreak >= 3) {
             const stillUnAllied = livingKeys(state).filter(k => k !== TYRANT_KEY && !hasPact(state, TYRANT_KEY, k));
-            const allOffered = stillUnAllied.every(k => (state.tyrantLastOffer||{})[k] >= state.round - 1);
-            if (stillUnAllied.length > 0 && allOffered) {
+            if (stillUnAllied.length > 0) {
               result = reduce(state, { type: 'TYRANT_BETRAY' });
               state = result.state;
             }

@@ -262,11 +262,25 @@ export function aiChooseEvent(state, fk, eventKey) {
 export function aiConsiderPact(state, aiFk, propFk) {
   // Tyrant accepts every pact — every ally brings it closer to diplomacy win.
   if (aiFk === TYRANT_KEY) return true;
-  // Being courted BY the Tyrant: contenders refuse; the weak/scared appease.
+
+  // Being courted BY the Tyrant: graduated acceptance based on board position.
   if (propFk === TYRANT_KEY) {
-    if (countNodes(state, aiFk) >= 2) return false;
-    return tilesOf(state, TYRANT_KEY).length >= 4 || Math.random() < 0.45;
+    const myNodes = countNodes(state, aiFk);
+    const myTiles = tilesOf(state, aiFk).length;
+    const tyrantTiles = tilesOf(state, TYRANT_KEY).length;
+    // Leading contender (2+ nodes) — strong reason to refuse
+    if (myNodes >= 2) return Math.random() < 0.15;
+    // Healthy mid-range (5+ tiles, 1 node) — cautious, coin-flip
+    if (myTiles >= 5 && myNodes >= 1) return Math.random() < 0.35;
+    // Underdog (few tiles, 0 nodes) — desperate, usually accepts
+    if (myTiles <= 3) return Math.random() < 0.75;
+    // Scared by large Tyrant blob
+    if (tyrantTiles >= 5) return Math.random() < 0.65;
+    // Default middle ground
+    return Math.random() < 0.50;
   }
+
+  // Normal (non-Tyrant) pact consideration
   const myTiles = tilesOf(state, aiFk).length;
   const theirTiles = tilesOf(state, propFk).length;
   if (myTiles <= 2) return true;

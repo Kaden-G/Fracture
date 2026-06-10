@@ -1151,27 +1151,31 @@ function tyrantInteract(fk) {
       const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nBut beware: your corruption will grow each round you stay allied.\nOK = accept   ·   Cancel = refuse`);
       if (ok) {
         formPact(TYRANT_KEY, fk);
+        G.tyrantRefusalStreak = 0; // pact formed — reset streak
         // Part 2: choose a boon (locked for duration)
         const boonChoice = confirm(`🦠 Choose your boon:\n\nOK = TITHE: +1 troop on a frontline tile each round\nCancel = SIC THE BLOB: the Tyrant attacks one adjacent enemy each round`);
         G.factions[fk].boon = boonChoice ? 'tithe' : 'sic';
         addLog('🦠 A secret pact takes hold in the shadows…');
         renderSidebar(); syncPush();
       } else {
-        // Part 2 Step 5: human refused — check if betrayal flip should trigger
+        // Part 2 Step 5: human refused — increment refusal streak, check conquest
         if (!G.tyrantConquest) {
-          const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
-          const allOffered = unAllied.every(k => (G.tyrantLastOffer||{})[k] >= G.round - 1);
-          if (unAllied.length > 0 && allOffered) {
-            G.tyrantConquest = true;
-            addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
-            for (const k of Object.keys(G.pacts||{})) {
-              const [a,b] = k.split('|');
-              if (a === TYRANT_KEY || b === TYRANT_KEY) {
-                const ally = a === TYRANT_KEY ? b : a;
-                breakPactBetrayal(TYRANT_KEY, ally);
+          if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
+          G.tyrantRefusalStreak++;
+          if (G.tyrantRefusalStreak >= 3) {
+            const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
+            if (unAllied.length > 0) {
+              G.tyrantConquest = true;
+              addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
+              for (const k of Object.keys(G.pacts||{})) {
+                const [a,b] = k.split('|');
+                if (a === TYRANT_KEY || b === TYRANT_KEY) {
+                  const ally = a === TYRANT_KEY ? b : a;
+                  breakPactBetrayal(TYRANT_KEY, ally);
+                }
               }
+              renderSidebar(); syncPush();
             }
-            renderSidebar(); syncPush();
           }
         }
       }
@@ -1860,28 +1864,30 @@ function runAITurn(fk) {
     tyrantSpread(fk);   // virus expansion before its normal actions
     // Court every un-allied rival (AIs decide now; humans are offered on their own turn).
     let newAlly = false;
+    let allAIsRefused = true;
     livingKeys().filter(k => k!==TYRANT_KEY && G.factions[k].isAI && !hasPact(TYRANT_KEY,k))
       .forEach(k => {
         if (aiConsiderPact(k, TYRANT_KEY)) {
           formPact(TYRANT_KEY, k);
-          // Part 2: AI picks boon — behind on economy? Tithe. Has adjacent rival? Sic.
           G.factions[k].boon = aiPickBoon(k);
           newAlly = true;
+          allAIsRefused = false;
         }
       });
     if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
 
-    // Part 2 Step 5: Tyrant betrayal flip — if diplomacy is impossible, switch to conquest
+    // Part 2 Step 5: Tyrant betrayal flip — streak-based, requires 3 consecutive rounds
     if (!G.tyrantConquest) {
+      if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
       const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
-      // Diplomacy impossible if there are un-allied AI rivals who refused (offered recently)
-      const aiRefusals = unAllied.filter(k => G.factions[k].isAI && (G.tyrantLastOffer||{})[k] >= G.round - 1);
-      const humanUnallied = unAllied.filter(k => !G.factions[k].isAI);
-      // Flip if: all unallied AIs refused, and no humans remain unallied to court
-      if (unAllied.length > 0 && aiRefusals.length >= unAllied.length - humanUnallied.length && humanUnallied.length === 0) {
+      if (newAlly) {
+        G.tyrantRefusalStreak = 0;
+      } else if (unAllied.length > 0 && allAIsRefused) {
+        G.tyrantRefusalStreak++;
+      }
+      if (G.tyrantRefusalStreak >= 3 && unAllied.length > 0) {
         G.tyrantConquest = true;
         addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
-        // Break all existing Tyrant pacts
         for (const k of Object.keys(G.pacts||{})) {
           const [a,b] = k.split('|');
           if (a === TYRANT_KEY || b === TYRANT_KEY) {
