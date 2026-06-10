@@ -1146,7 +1146,7 @@ function tyrantInteract(fk) {
   if (tyrantAlive() && !hasPact(TYRANT_KEY, fk)) {
     if (!G.tyrantLastOffer) G.tyrantLastOffer = {};   // Firebase strips empty objects; rebuild defensively
     const last = G.tyrantLastOffer[fk] || -99;
-    if (G.round - last >= 2) {
+    if (G.round - last >= 3) {
       G.tyrantLastOffer[fk] = G.round;
       const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nBut beware: your corruption will grow each round you stay allied.\nOK = accept   ·   Cancel = refuse`);
       if (ok) {

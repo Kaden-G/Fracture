@@ -264,20 +264,27 @@ export function aiConsiderPact(state, aiFk, propFk) {
   if (aiFk === TYRANT_KEY) return true;
 
   // Being courted BY the Tyrant: graduated acceptance based on board position.
+  // Awareness: the more allies the Tyrant already has, the more dangerous signing becomes.
   if (propFk === TYRANT_KEY) {
     const myNodes = countNodes(state, aiFk);
     const myTiles = tilesOf(state, aiFk).length;
     const tyrantTiles = tilesOf(state, TYRANT_KEY).length;
+    const tyrantAllies = livingKeys(state).filter(k => k !== TYRANT_KEY && hasPact(state, TYRANT_KEY, k)).length;
+    const totalRivals = livingKeys(state).filter(k => k !== TYRANT_KEY).length;
+    // Last holdout — signing hands the Tyrant the diplomacy win. Near-zero.
+    if (tyrantAllies >= totalRivals - 1) return Math.random() < 0.05;
+    // Pact penalty: more Tyrant allies = closer to diplomacy win = riskier to sign
+    const pactMul = tyrantAllies >= 2 ? 0.4 : tyrantAllies >= 1 ? 0.7 : 1.0;
     // Leading contender (2+ nodes) — strong reason to refuse
-    if (myNodes >= 2) return Math.random() < 0.15;
-    // Healthy mid-range (5+ tiles, 1 node) — cautious, coin-flip
-    if (myTiles >= 5 && myNodes >= 1) return Math.random() < 0.35;
-    // Underdog (few tiles, 0 nodes) — desperate, usually accepts
-    if (myTiles <= 3) return Math.random() < 0.75;
+    if (myNodes >= 2) return Math.random() < 0.08 * pactMul;
+    // Healthy mid-range (5+ tiles, 1 node) — cautious
+    if (myTiles >= 5 && myNodes >= 1) return Math.random() < 0.18 * pactMul;
+    // Underdog (few tiles, 0 nodes) — desperate, more willing
+    if (myTiles <= 3) return Math.random() < 0.50 * pactMul;
     // Scared by large Tyrant blob
-    if (tyrantTiles >= 5) return Math.random() < 0.65;
+    if (tyrantTiles >= 5) return Math.random() < 0.35 * pactMul;
     // Default middle ground
-    return Math.random() < 0.50;
+    return Math.random() < 0.25 * pactMul;
   }
 
   // Normal (non-Tyrant) pact consideration

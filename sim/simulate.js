@@ -121,7 +121,7 @@ function runGame(seed, opts = {}) {
           for (const k of unAllied) {
             if (!state.tyrantLastOffer) state.tyrantLastOffer = {};
             const last = state.tyrantLastOffer[k] || -99;
-            if (state.round - last >= 2) {
+            if (state.round - last >= 3) {
               state.tyrantLastOffer[k] = state.round;
               if (aiConsiderPact(state, k, TYRANT_KEY)) {
                 const boon = aiPickBoon(state, k);
