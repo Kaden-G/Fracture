@@ -75,19 +75,29 @@ function killFaction(state, fk, log) {
   log.push(`💀 ${state.factions[fk].name} ELIMINATED!`);
 }
 
-// Part 2 Step 6: Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties
+// Part 2 Step 6+7: Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties, fallen vote
 function runReckoningEngine(state, conspirator) {
   const tEssence = Math.max(1, tilesOf(state, TYRANT_KEY).length) + 3;
   const cEssence = Math.max(1, tilesOf(state, conspirator).length) + (state.factions[conspirator].corruption || 0);
+
+  // Step 7: Fallen vote
+  let fallenForTyrant = 0, fallenForCon = 0;
+  for (const [k, f] of Object.entries(state.factions)) {
+    if (!f.eliminated || k === TYRANT_KEY) continue;
+    const grudgeKey = k + '>' + conspirator;
+    if (state.grudges[grudgeKey]) fallenForTyrant++;
+    else fallenForCon++;
+  }
+
   let tWins = 0, cWins = 0;
   for (let r = 0; r < 3 && tWins < 2 && cWins < 2; r++) {
     let tRoll, cRoll;
     if (state.rng) {
-      let ri = roll2d6(state.rng); state.rng = ri.rng; tRoll = ri.sum + tEssence;
-      ri = roll2d6(state.rng); state.rng = ri.rng; cRoll = ri.sum + cEssence;
+      let ri = roll2d6(state.rng); state.rng = ri.rng; tRoll = ri.sum + tEssence + fallenForTyrant;
+      ri = roll2d6(state.rng); state.rng = ri.rng; cRoll = ri.sum + cEssence + fallenForCon;
     } else {
-      tRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + tEssence;
-      cRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + cEssence;
+      tRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + tEssence + fallenForTyrant;
+      cRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + cEssence + fallenForCon;
     }
     if (tRoll >= cRoll) tWins++; else cWins++;
   }

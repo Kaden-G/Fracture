@@ -323,21 +323,37 @@ function killFaction(fk){
 }
 
 // Part 2 Step 6: Reckoning duel — best-of-3 dice rounds, Tyrant wins ties
+// Part 2 Step 7: Fallen vote — eliminated factions nudge duel rolls
 function runReckoning(conspirator) {
   const tEssence = Math.max(1, tilesOf(TYRANT_KEY).length) + 3;  // Tyrant base essence
   const cEssence = Math.max(1, tilesOf(conspirator).length) + (G.factions[conspirator].corruption || 0);
+
+  // Step 7: Fallen vote — each eliminated faction adds +1 to one side
+  // Default: anti-Tyrant. Spiteful: if the conspirator eliminated them, they flip pro-Tyrant.
+  let fallenForTyrant = 0, fallenForCon = 0;
+  for (const [k, f] of Object.entries(G.factions)) {
+    if (!f.eliminated || k === TYRANT_KEY) continue;
+    // Was this faction eliminated by the conspirator? Check grudge as a proxy.
+    const grudgeKey = k + '>' + conspirator;
+    if (G.grudges[grudgeKey]) { fallenForTyrant++; } // spiteful — helps Tyrant
+    else                      { fallenForCon++; }    // anti-Tyrant default
+  }
+
   let tWins = 0, cWins = 0;
   const rounds = [];
 
   for (let r = 0; r < 3 && tWins < 2 && cWins < 2; r++) {
-    const tRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + tEssence;
-    const cRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + cEssence;
+    const tRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + tEssence + fallenForTyrant;
+    const cRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + cEssence + fallenForCon;
     if (tRoll >= cRoll) { tWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Tyrant wins`); }
     else               { cWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Conspirator wins`); }
   }
 
   const winner = tWins >= 2 ? 'Tyrant' : G.factions[conspirator].name;
-  const msg = `⚔️ THE RECKONING ⚔️\n\n${G.factions[conspirator].name} challenges the Tyrant!\nTyrant Essence: ${tEssence}  |  Conspirator Essence: ${cEssence}\n\n${rounds.join('\n')}\n\n${winner} wins the Reckoning!`;
+  const fallenMsg = (fallenForTyrant || fallenForCon)
+    ? `\nFallen votes: +${fallenForCon} for conspirator, +${fallenForTyrant} for Tyrant`
+    : '';
+  const msg = `⚔️ THE RECKONING ⚔️\n\n${G.factions[conspirator].name} challenges the Tyrant!\nTyrant Essence: ${tEssence}  |  Conspirator Essence: ${cEssence}${fallenMsg}\n\n${rounds.join('\n')}\n\n${winner} wins the Reckoning!`;
   
   addLog(`⚔️ RECKONING: ${winner} prevails! (${tWins}-${cWins})`);
   
