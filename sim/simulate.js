@@ -5,7 +5,7 @@
 // ============================================================
 
 import { reduce, buildMap } from '../src/engine.js';
-import { chooseAction, aiChooseEvent, aiConsiderPact } from '../src/ai.js';
+import { chooseAction, aiChooseEvent, aiConsiderPact, aiPickBoon } from '../src/ai.js';
 import {
   RES_CAP, ROUND_CAP, FACTIONS, TYRANT_KEY, TRAITS, EVENT_DEFS,
   factionDef, mkFaction, livingKeys, hasPact, pairKey, countNodes, tilesOf, traitsFor,
@@ -109,10 +109,38 @@ function runGame(seed, opts = {}) {
       result = reduce(state, { type: 'BEGIN_TURN', faction: fk });
       state = result.state;
 
-      // Tyrant spread
+      // Tyrant spread + courting + betrayal
       if (fk === TYRANT_KEY) {
         result = reduce(state, { type: 'TYRANT_SPREAD' });
         state = result.state;
+        // Part 2 Step 8: Tyrant courts un-allied AI factions
+        if (state.tyrantOn && !state.tyrantConquest && state.factions[TYRANT_KEY] && !state.factions[TYRANT_KEY].eliminated) {
+          const unAllied = livingKeys(state).filter(k => k !== TYRANT_KEY && !hasPact(state, TYRANT_KEY, k));
+          let anyRefused = false;
+          for (const k of unAllied) {
+            if (!state.tyrantLastOffer) state.tyrantLastOffer = {};
+            const last = state.tyrantLastOffer[k] || -99;
+            if (state.round - last >= 2) {
+              state.tyrantLastOffer[k] = state.round;
+              if (aiConsiderPact(state, k, TYRANT_KEY)) {
+                const boon = aiPickBoon(state, k);
+                result = reduce(state, { type: 'TYRANT_COURT', target: k, boon });
+                state = result.state;
+              } else {
+                anyRefused = true;
+              }
+            }
+          }
+          // Check betrayal flip: all un-allied factions refused
+          if (anyRefused) {
+            const stillUnAllied = livingKeys(state).filter(k => k !== TYRANT_KEY && !hasPact(state, TYRANT_KEY, k));
+            const allOffered = stillUnAllied.every(k => (state.tyrantLastOffer||{})[k] >= state.round - 1);
+            if (stillUnAllied.length > 0 && allOffered) {
+              result = reduce(state, { type: 'TYRANT_BETRAY' });
+              state = result.state;
+            }
+          }
+        }
       }
 
       // AI actions (up to 3 + assault chains)

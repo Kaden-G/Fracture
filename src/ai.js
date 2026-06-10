@@ -260,6 +260,13 @@ export function aiChooseEvent(state, fk, eventKey) {
 
 // ---- AI pact consideration ----
 export function aiConsiderPact(state, aiFk, propFk) {
+  // Tyrant accepts every pact — every ally brings it closer to diplomacy win.
+  if (aiFk === TYRANT_KEY) return true;
+  // Being courted BY the Tyrant: contenders refuse; the weak/scared appease.
+  if (propFk === TYRANT_KEY) {
+    if (countNodes(state, aiFk) >= 2) return false;
+    return tilesOf(state, TYRANT_KEY).length >= 4 || Math.random() < 0.45;
+  }
   const myTiles = tilesOf(state, aiFk).length;
   const theirTiles = tilesOf(state, propFk).length;
   if (myTiles <= 2) return true;
@@ -267,5 +274,14 @@ export function aiConsiderPact(state, aiFk, propFk) {
   const myNodes = countNodes(state, aiFk);
   const theirNodes = countNodes(state, propFk);
   if (theirNodes >= 2 && myNodes < 2) return true;
-  return Math.random() < 0.3; // Note: in sim, this should use RNG
+  return Math.random() < 0.3;
+}
+
+// Part 2 Step 8: AI boon pick — behind on economy? Tithe. Has adjacent rival? Sic.
+export function aiPickBoon(state, aiFk) {
+  const myT = tilesOf(state, aiFk);
+  const hasAdjacentRival = myT.some(mt =>
+    Object.values(state.tiles).some(t => t.owner && t.owner !== aiFk && t.owner !== TYRANT_KEY && adjacent(mt, t))
+  );
+  return (hasAdjacentRival && myT.length >= 3) ? 'sic' : 'tithe';
 }

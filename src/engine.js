@@ -660,6 +660,34 @@ export function reduce(inputState, action) {
       break;
     }
 
+    // ---- TYRANT_COURT: Tyrant courts a specific faction (sim dispatches after AI decision) ----
+    case 'TYRANT_COURT': {
+      const target = action.target;
+      if (!state.tyrantOn || !state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) break;
+      if (hasPact(state, TYRANT_KEY, target)) break;
+      formPact(state, TYRANT_KEY, target);
+      state.factions[target].boon = action.boon || 'tithe';
+      if (!state.tyrantLastOffer) state.tyrantLastOffer = {};
+      state.tyrantLastOffer[target] = state.round;
+      log.push('🦠 A secret pact takes hold in the shadows…');
+      break;
+    }
+
+    // ---- TYRANT_BETRAY: Tyrant switches to conquest mode, breaks all pacts ----
+    case 'TYRANT_BETRAY': {
+      if (state.tyrantConquest) break;
+      state.tyrantConquest = true;
+      log.push('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
+      for (const k of Object.keys(state.pacts || {})) {
+        const [a, b] = k.split('|');
+        if (a === TYRANT_KEY || b === TYRANT_KEY) {
+          const ally = a === TYRANT_KEY ? b : a;
+          breakPact(state, TYRANT_KEY, ally, log);
+        }
+      }
+      break;
+    }
+
     // ---- TYRANT_SPREAD: metastasize into adjacent empty tiles ----
     case 'TYRANT_SPREAD': {
       const fk = TYRANT_KEY;
