@@ -305,7 +305,7 @@ function aiShouldRenounceLive(aiFk) {
     const canSurvive = myT >= 5 || myN >= 2;
     if (canSurvive) {
       const depth = (corr - 3) / (moonLow - 3);
-      return Math.random() < 0.55 * depth;
+      return Math.random() < 0.30 * depth;
     }
     return false;
   }
@@ -1285,7 +1285,7 @@ function tyrantInteract(fk) {
           const count = Math.min(2, neutrals.length);
           for (let i = 0; i < count; i++) {
             neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
-            refreshHex(neutrals[i].id); neutrals.splice(i, 1); i--;
+            refreshHex(neutrals[i].id);
           }
           G.grudges[ek + '>' + fk] = G.round + 3;
           addLog(`👻 ${ef.name} rises — grudge against ${G.factions[fk].name}!`);
@@ -1542,7 +1542,6 @@ function handleTileClick(id) {
       for (let i = 0; i < count; i++) {
         neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
         refreshHex(neutrals[i].id);
-        neutrals.splice(i, 1); i--;
       }
       G.grudges[ek + '>' + renouncer] = G.round + 3;
       addLog(`👻 ${ef.name} rises from the ashes — and bears a grudge against ${G.factions[renouncer].name}!`);
@@ -2114,7 +2113,7 @@ function runAITurn(fk) {
       const count = Math.min(2, neutrals.length);
       for (let i = 0; i < count; i++) {
         neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
-        refreshHex(neutrals[i].id); neutrals.splice(i, 1); i--;
+        refreshHex(neutrals[i].id);
       }
       G.grudges[ek + '>' + fk] = G.round + 3;
       addLog(`👻 ${ef.name} rises from the ashes — and bears a grudge against ${f.name}!`);

@@ -74,7 +74,8 @@ function initGame(seed, opts = {}) {
 function runGame(seed, opts = {}) {
   let state = initGame(seed, opts);
   const verbose = opts.verbose || false;
-
+  let _dbgPhase = 'init', _dbgFk = '';
+  try {
   for (let round = 1; round <= ROUND_CAP + 1; round++) {
     // Start round
     let result = reduce(state, { type: 'START_ROUND' });
@@ -103,6 +104,7 @@ function runGame(seed, opts = {}) {
     for (let ti = 0; ti < state.turnOrder.length; ti++) {
       state.currentTurnIdx = ti;
       const fk = state.turnOrder[ti];
+      _dbgPhase = 'turn'; _dbgFk = fk;
       if (state.factions[fk].eliminated) continue;
 
       // Begin turn (income)
@@ -153,6 +155,7 @@ function runGame(seed, opts = {}) {
       }
 
       // AI redemption: bound AI may renounce-kill the Tyrant
+      _dbgPhase = 'renounce';
       if (fk !== TYRANT_KEY && aiShouldRenounce(state, fk)) {
         result = reduce(state, { type: 'RENOUNCE', from: fk, target: TYRANT_KEY });
         state = result.state;
@@ -163,6 +166,7 @@ function runGame(seed, opts = {}) {
       }
 
       // AI actions (up to 3 + assault chains)
+      _dbgPhase = 'actions';
       let actionsLeft = 3;
       let aiCaptures = 0;
 
@@ -218,6 +222,10 @@ function runGame(seed, opts = {}) {
 
   // Should not reach here (ROUND_CAP triggers TIMED OUT)
   return summarize(state, seed);
+  } catch (e) {
+    e.message = `[R${state.round} phase=${_dbgPhase} fk=${_dbgFk}] ${e.message}`;
+    throw e;
+  }
 }
 
 function summarize(state, seed) {
@@ -283,7 +291,7 @@ export function runBatch(numGames, baseSeed = 1, opts = {}) {
         traitWins[trait] = (traitWins[trait] || 0) + 1;
       }
     } catch (e) {
-      console.error(`Game ${i} (seed=${seed}) crashed:`, e.message);
+      if (errors < 5) console.error(`Game ${i} (seed=${seed}) phase=${e._dbgPhase||'?'} fk=${e._dbgFk||'?'} crashed:`, e.message, '\n', e.stack);
       errors++;
     }
   }

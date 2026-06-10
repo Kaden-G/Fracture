@@ -678,8 +678,6 @@ export function reduce(inputState, action) {
         for (let i = 0; i < count; i++) {
           neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
           effects.push({kind:'refresh', tiles:[neutrals[i].id]});
-          // Remove from available pool
-          neutrals.splice(i, 1); i--;
         }
         // Grudge against the renouncer (they caused the turmoil)
         state.grudges[ek + '>' + renouncer] = state.round + 3;

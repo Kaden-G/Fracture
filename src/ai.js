@@ -310,7 +310,7 @@ export function aiPickBoon(state, aiFk) {
 // Conspirator AI redemption — should this bound AI renounce-kill the Tyrant?
 // Returns true if renounce-kill is the better play than riding to a Reckoning.
 // REDEMPTION_THRESHOLD tunes duel frequency: higher = more renounces = fewer duels.
-const REDEMPTION_THRESHOLD = 0.55; // probability of renouncing when in the dead zone
+const REDEMPTION_THRESHOLD = 0.30; // probability of renouncing when in the dead zone
 export function aiShouldRenounce(state, aiFk) {
   if (!state.tyrantOn) return false;
   if (!state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) return false;
