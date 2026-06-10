@@ -295,48 +295,56 @@ function pactVisibleTo(a, b, viewer){ return a===viewer || b===viewer; }
 // All elimination flows route through here so the Tyrant can get its harbor reprieve.
 function killFaction(fk){
   if (fk === TYRANT_KEY && tyrantAllies().length > 0 && !G.tyrantHarbor) {
-    G.tyrantHarbor = G.round + 3;   // cornered, but allies may shelter & re-seed it
+    G.tyrantHarbor = G.round + 3;
     addLog(`🦠 THE TYRANT is cornered — harbored by allies. Feed it a tile within 3 rounds or it dies.`);
     return;
   }
-  // Part 2 Step 6: Reckoning — when the Tyrant is eliminated, trigger a duel
+  // Tyrant eliminated — purge corruption for the eliminator, track it
   if (fk === TYRANT_KEY && tyrantOn()) {
-    const eliminator = G.playerFaction;  // the faction that dealt the killing blow
-    const tyrantWins = runReckoning(eliminator);
-    if (tyrantWins) {
-      // Tyrant resurrects on a random empty tile
-      const empty = Object.values(G.tiles).filter(t => !t.owner);
-      if (empty.length > 0) {
-        const t = empty[Math.floor(Math.random() * empty.length)];
-        t.owner = TYRANT_KEY; t.troops = 3; t.heldRounds = 0;
-        addLog('🦠 THE TYRANT rises from the ashes!');
-        refreshHex(t.id);
-      }
-      return;
+    const eliminator = G.turnOrder[G.currentTurnIdx];
+    if (eliminator && G.factions[eliminator]) {
+      G.factions[eliminator].corruption = 0;
+      addLog(`💀 ${G.factions[eliminator].name} purged the Tyrant!`);
     }
-    // Conspirator wins: Tyrant dies permanently, conspirator purges corruption
-    G.factions[eliminator].corruption = 0;
-    addLog(`💀 The Reckoning is over — ${G.factions[eliminator].name} vanquished the Tyrant!`);
   }
   G.factions[fk].eliminated = true;
   addLog(`💀 ${G.factions[fk].name} ELIMINATED!`);
 }
 
-// Part 2 Step 6: Reckoning duel — best-of-3 dice rounds, Tyrant wins ties
-// Part 2 Step 7: Fallen vote — eliminated factions nudge duel rolls
+// Part 2: Reckoning intercept — called when a faction would win.
+// Returns: 'freedom' (conspirator won), 'thralldom' (Tyrant won), or false (no Reckoning).
+function maybeReckoningApp(fk) {
+  if (!tyrantOn()) return false;
+  if (!G.factions[TYRANT_KEY] || G.factions[TYRANT_KEY].eliminated) return false;
+  if (fk === TYRANT_KEY) return false;
+  const corr = G.factions[fk].corruption || 0;
+  if (corr <= 0) return false;
+
+  addLog(`⚔️ RECKONING triggered! ${G.factions[fk].name} (corruption ${corr}) must face the Tyrant!`);
+  const tyrantWins = runReckoning(fk);
+  if (tyrantWins) {
+    addLog(`🦠 The Tyrant prevails — ${G.factions[fk].name} falls to thralldom!`);
+    showWin(TYRANT_KEY, 'RECKONING (THRALLDOM)',
+      `${G.factions[fk].name} was about to win but lost the Reckoning — the Tyrant consumes Nexus.`);
+    return 'thralldom';
+  } else {
+    G.factions[fk].corruption = 0;
+    addLog(`💀 ${G.factions[fk].name} vanquished the Tyrant in the Reckoning!`);
+    return 'freedom';
+  }
+}
+
+// Reckoning duel — best-of-3 dice rounds, Tyrant wins ties, fallen vote
 function runReckoning(conspirator) {
-  const tEssence = Math.max(1, tilesOf(TYRANT_KEY).length) + 3;  // Tyrant base essence
+  const tEssence = Math.max(1, tilesOf(TYRANT_KEY).length) + 3;
   const cEssence = Math.max(1, tilesOf(conspirator).length) + (G.factions[conspirator].corruption || 0);
 
-  // Step 7: Fallen vote — each eliminated faction adds +1 to one side
-  // Default: anti-Tyrant. Spiteful: if the conspirator eliminated them, they flip pro-Tyrant.
   let fallenForTyrant = 0, fallenForCon = 0;
   for (const [k, f] of Object.entries(G.factions)) {
     if (!f.eliminated || k === TYRANT_KEY) continue;
-    // Was this faction eliminated by the conspirator? Check grudge as a proxy.
     const grudgeKey = k + '>' + conspirator;
-    if (G.grudges[grudgeKey]) { fallenForTyrant++; } // spiteful — helps Tyrant
-    else                      { fallenForCon++; }    // anti-Tyrant default
+    if (G.grudges[grudgeKey]) { fallenForTyrant++; }
+    else                      { fallenForCon++; }
   }
 
   let tWins = 0, cWins = 0;
@@ -357,7 +365,6 @@ function runReckoning(conspirator) {
   
   addLog(`⚔️ RECKONING: ${winner} prevails! (${tWins}-${cWins})`);
   
-  // Show to human if involved
   if (!G.factions[conspirator].isAI) {
     alert(msg);
   }
@@ -1219,9 +1226,11 @@ function endRound() {
   if (G.nodesHeldSince) {
     for (const [k, since] of Object.entries(G.nodesHeldSince)) {
       const f = G.factions[k];
-      // Part 2: corrupt factions cannot win by node dominance
-      if (f && (f.corruption || 0) > 0) continue;
       if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 1) {
+        // Part 2: corrupt faction → Reckoning intercept
+        const r = maybeReckoningApp(k);
+        if (r === 'thralldom') return; // Tyrant won — showWin already called
+        if (r === 'freedom') { showWin(k, 'RECKONING (FREEDOM)', `${f.name} fought off the Tyrant and claimed Nexus!`); return; }
         showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`);
         return;
       }
@@ -1229,24 +1238,19 @@ function endRound() {
   }
   G.round++;
   if (G.round > ROUND_CAP) {
-    // Tiebreak: most nodes
+    // Tiebreak: most nodes (Tyrant excluded from timeout)
     let best=null, bestN=-1;
     for (const [k,f] of Object.entries(G.factions)) {
-      if (f.eliminated) continue;
-      // Part 2: corrupt factions cannot win by timeout
-      if ((f.corruption || 0) > 0) continue;
+      if (f.eliminated || k === TYRANT_KEY) continue;
       const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       if (n>bestN) { bestN=n; best=k; }
     }
-    // Fallback: if all factions are corrupt, least-corrupt wins
-    if (!best) {
-      let leastCorr = Infinity;
-      for (const [k,f] of Object.entries(G.factions)) {
-        if (f.eliminated) continue;
-        if ((f.corruption || 0) < leastCorr) { leastCorr = f.corruption || 0; best = k; }
-      }
+    if (best) {
+      const r = maybeReckoningApp(best);
+      if (r === 'thralldom') return;
+      if (r === 'freedom') { showWin(best, 'RECKONING (FREEDOM)', `${G.factions[best].name} fought off the Tyrant and claimed Nexus!`); return; }
+      showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most Nodes.`);
     }
-    if (best) showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most Nodes.`);
     return;
   }
   startRound();
@@ -2337,7 +2341,11 @@ function checkWin() {
   }
   const alive = Object.entries(G.factions).filter(([,f])=>!f.eliminated);
   if (alive.length===1) {
-    showWin(alive[0][0],'LAST STANDING',`${alive[0][1].name} eliminated all rivals.`);
+    const [wk, wf] = alive[0];
+    const r = maybeReckoningApp(wk);
+    if (r === 'thralldom') return true;
+    if (r === 'freedom') { showWin(wk, 'RECKONING (FREEDOM)', `${wf.name} fought off the Tyrant and claimed Nexus!`); return true; }
+    showWin(wk,'LAST STANDING',`${wf.name} eliminated all rivals.`);
     return true;
   }
   return false;

@@ -102,6 +102,8 @@ window.runSim = async function() {
   // Tyrant-specific stats
   if (document.getElementById('tyrantOn').checked) {
     text += '\n═══ TYRANT STATS ═══\n';
+
+    // Win rate + condition split
     const tyrantWins = stats.results.filter(r => r.winnerFk === 'tyrant').length;
     text += `  Tyrant wins: ${tyrantWins}  (${(tyrantWins/numGames*100).toFixed(1)}%)\n`;
     if (tyrantWins) {
@@ -110,33 +112,74 @@ window.runSim = async function() {
         tyrantConds[r.condition] = (tyrantConds[r.condition] || 0) + 1;
       });
       for (const [c, n] of Object.entries(tyrantConds).sort((a,b) => b[1] - a[1])) {
-        text += `    ${c.padEnd(20)} ${n}\n`;
+        text += `    ${c.padEnd(28)} ${n}\n`;
       }
     }
-    // Tyrant elimination stats
+
+    // Tyrant elimination + survival
     const tyrantElim = stats.results.filter(r => r.factions['tyrant']?.eliminated).length;
     const tyrantSurv = numGames - tyrantElim;
+    const tyrantElimActions = stats.results.reduce((s, r) => s + r.tyrantEliminations, 0);
     text += `  Tyrant survived: ${tyrantSurv} (${(tyrantSurv/numGames*100).toFixed(1)}%)  |  Eliminated: ${tyrantElim} (${(tyrantElim/numGames*100).toFixed(1)}%)\n`;
+    if (tyrantElimActions) text += `  Tyrant elimination events (inc. harbored): ${tyrantElimActions}\n`;
 
-    // Pact and corruption stats
-    let pactCount = 0, corruptedCount = 0, corrSum = 0, corrN = 0;
+    // Pacts signed per game
+    const avgPacts = stats.results.reduce((s, r) => s + r.tyrantPacts, 0) / numGames;
+    const avgAllPacts = stats.results.reduce((s, r) => s + r.pactCount, 0) / numGames;
+    text += `  Avg pacts at end: ${avgAllPacts.toFixed(1)} total  |  ${avgPacts.toFixed(1)} Tyrant pacts\n`;
+
+    // Conquest flips
+    const conquestFlips = stats.results.filter(r => r.tyrantConquest).length;
+    text += `  Conquest flips: ${conquestFlips} (${(conquestFlips/numGames*100).toFixed(1)}%)\n`;
+
+    // Corruption scoped to bound conspirators (had boon at end = was/is allied)
+    let boundCorr = 0, boundMax = 0, boundCount = 0;
+    stats.results.forEach(r => {
+      for (const [fk, f] of Object.entries(r.factions)) {
+        if (fk === 'tyrant') continue;
+        if (f.corruption > 0 || f.boon) {
+          boundCorr += f.corruption; boundCount++;
+          if (f.corruption > boundMax) boundMax = f.corruption;
+        }
+      }
+    });
+    if (boundCount) {
+      text += `  Bound conspirators: ${boundCount} across ${numGames} games\n`;
+      text += `  Avg corruption (bound only): ${(boundCorr/boundCount).toFixed(1)}  |  Max: ${boundMax}\n`;
+    } else {
+      text += `  Bound conspirators: 0 (no pacts ever formed!)\n`;
+    }
+
+    // Boon distribution
     let boonTithe = 0, boonSic = 0, boonNone = 0;
     stats.results.forEach(r => {
       for (const [fk, f] of Object.entries(r.factions)) {
         if (fk === 'tyrant') continue;
-        if (f.corruption > 0) { corruptedCount++; corrSum += f.corruption; }
-        corrN++;
         if (f.boon === 'tithe') boonTithe++;
         else if (f.boon === 'sic') boonSic++;
         else boonNone++;
       }
     });
-    text += `  Factions with corruption > 0 at end: ${corruptedCount}/${corrN} (${(corruptedCount/corrN*100).toFixed(1)}%)\n`;
-    if (corruptedCount) text += `  Avg corruption (corrupted only): ${(corrSum/corruptedCount).toFixed(1)}\n`;
-    text += `  Boons at end: Tithe ${boonTithe}  |  Sic ${boonSic}  |  None (no pact) ${boonNone}\n`;
+    text += `  Boons at end: Tithe ${boonTithe}  |  Sic ${boonSic}  |  None ${boonNone}\n`;
 
-    // Conquest mode frequency
-    // (We can't directly track this from summarize, but tyrantConquest could be added)
+    // Reckoning outcomes by corruption tier
+    const allReckonings = stats.results.flatMap(r => r.reckonings || []);
+    if (allReckonings.length > 0) {
+      text += '\n═══ RECKONING OUTCOMES ═══\n';
+      text += `  Total Reckonings: ${allReckonings.length}\n`;
+      const tiers = ['low', 'mid', 'high'];
+      for (const tier of tiers) {
+        const t = allReckonings.filter(r => r.tier === tier);
+        if (t.length === 0) continue;
+        const tyrantW = t.filter(r => r.tyrantWins).length;
+        const conW = t.length - tyrantW;
+        text += `  ${tier.padEnd(6)} (corr ${tier==='low'?'1-2':tier==='mid'?'3-5':'6+'}): ${t.length} duels — Tyrant ${tyrantW} (${(tyrantW/t.length*100).toFixed(0)}%) vs Conspirator ${conW} (${(conW/t.length*100).toFixed(0)}%)\n`;
+      }
+      const tyrantTotalW = allReckonings.filter(r => r.tyrantWins).length;
+      text += `  Overall: Tyrant ${tyrantTotalW}/${allReckonings.length} (${(tyrantTotalW/allReckonings.length*100).toFixed(1)}%)\n`;
+    } else {
+      text += `\n  ⚠️ No Reckonings fired in ${numGames} games!\n`;
+    }
   }
 
   // Sample a few game details

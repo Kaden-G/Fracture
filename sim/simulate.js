@@ -203,6 +203,9 @@ function runGame(seed, opts = {}) {
 
 function summarize(state, seed) {
   const winner = state.winner;
+  // Count pacts at game end
+  const pactCount = Object.keys(state.pacts || {}).length;
+  const tyrantPacts = Object.keys(state.pacts || {}).filter(k => k.includes(TYRANT_KEY)).length;
   return {
     seed,
     round: state.round,
@@ -221,6 +224,12 @@ function summarize(state, seed) {
         boon: f.boon || null,
       }])
     ),
+    // Tyrant diagnostics
+    pactCount,
+    tyrantPacts,
+    tyrantConquest: !!state.tyrantConquest,
+    tyrantEliminations: state.tyrantEliminations || 0,
+    reckonings: state.reckonings || [],
   };
 }
 

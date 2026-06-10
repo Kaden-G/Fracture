@@ -52,23 +52,14 @@ function killFaction(state, fk, log) {
       log.push('🦠 THE TYRANT is cornered — harbored by allies. Feed it a tile within 3 rounds or it dies.');
       return;
     }
-    // Part 2 Step 6: Reckoning duel when Tyrant is eliminated
+    // Tyrant eliminated — purge corruption for the eliminator, track it
     if (state.tyrantOn) {
       const eliminator = state.turnOrder[state.currentTurnIdx];
-      const tyrantWins = runReckoningEngine(state, eliminator);
-      if (tyrantWins) {
-        const empty = Object.values(state.tiles).filter(t => !t.owner);
-        if (empty.length > 0) {
-          const ri = state.rng ? nextInt(state.rng, empty.length) : { value: 0, rng: state.rng };
-          if (ri.rng) state.rng = ri.rng;
-          const t = empty[ri.value || 0];
-          t.owner = TYRANT_KEY; t.troops = 3; t.heldRounds = 0;
-          log.push('🦠 THE TYRANT rises from the ashes!');
-        }
-        return;
+      if (eliminator && state.factions[eliminator]) {
+        state.factions[eliminator].corruption = 0;
+        log.push(`💀 ${state.factions[eliminator].name} purged the Tyrant!`);
       }
-      state.factions[eliminator].corruption = 0;
-      log.push(`💀 The Reckoning is over — ${state.factions[eliminator].name} vanquished the Tyrant!`);
+      state.tyrantEliminations = (state.tyrantEliminations || 0) + 1;
     }
   }
   state.factions[fk].eliminated = true;
@@ -102,6 +93,42 @@ function runReckoningEngine(state, conspirator) {
     if (tRoll >= cRoll) tWins++; else cWins++;
   }
   return tWins >= 2;
+}
+
+// Part 2: Reckoning intercept — called when a faction would win.
+// Returns: win object (conspirator won duel), null (Tyrant won duel), or false (no Reckoning needed).
+function maybeReckoning(state, fk, log) {
+  if (!state.tyrantOn) return false;
+  if (!state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) return false;
+  if (fk === TYRANT_KEY) return false;
+  const corr = state.factions[fk].corruption || 0;
+  if (corr <= 0) return false;
+
+  // Track Reckoning for diagnostics
+  if (!state.reckonings) state.reckonings = [];
+  const tier = corr <= 2 ? 'low' : corr <= 5 ? 'mid' : 'high';
+
+  log.push(`⚔️ RECKONING triggered! ${state.factions[fk].name} (corruption ${corr}) must face the Tyrant!`);
+  const tyrantWins = runReckoningEngine(state, fk);
+
+  state.reckonings.push({ fk, corruption: corr, tier, tyrantWins });
+
+  if (tyrantWins) {
+    // Tyrant wins through the thrall
+    log.push(`🦠 The Tyrant prevails — ${state.factions[fk].name} falls to thralldom!`);
+    const win = { fk: TYRANT_KEY, condition: 'RECKONING (THRALLDOM)',
+      detail: `${state.factions[fk].name} was about to win but lost the Reckoning — the Tyrant consumes Nexus.`, round: state.round };
+    state.winner = win;
+    return null; // signals caller that Tyrant won
+  } else {
+    // Conspirator breaks free
+    state.factions[fk].corruption = 0;
+    log.push(`💀 ${state.factions[fk].name} vanquished the Tyrant in the Reckoning!`);
+    // Return the win object for the conspirator — caller determines condition
+    const f = state.factions[fk];
+    return { fk, condition: 'RECKONING (FREEDOM)',
+      detail: `${f.name} fought off the Tyrant and claimed Nexus!`, round: state.round };
+  }
 }
 
 // ---- Helper: form / break pacts ----
@@ -493,8 +520,10 @@ export function reduce(inputState, action) {
       // Check win after attack
       const win = checkWinCondition(state, log);
       if (win) {
-        state.winner = win;
-        effects.push({kind:'win', winner:win});
+        const rWin = maybeReckoning(state, win.fk, log);
+        if (rWin) { state.winner = rWin; effects.push({kind:'win', winner:rWin}); }
+        else if (rWin === null) { effects.push({kind:'win', winner:state.winner}); }
+        else { state.winner = win; effects.push({kind:'win', winner:win}); }
       }
 
       // Check if assault should end
@@ -603,7 +632,12 @@ export function reduce(inputState, action) {
           effects.push({kind:'refresh', tiles:[action.target]});
           effects.push({kind:'flash', tile:action.target});
           const win = checkWinCondition(state, log);
-          if (win) { state.winner = win; effects.push({kind:'win', winner:win}); }
+          if (win) {
+            const rWin = maybeReckoning(state, win.fk, log);
+            if (rWin) { state.winner = rWin; effects.push({kind:'win', winner:rWin}); }
+            else if (rWin === null) { effects.push({kind:'win', winner:state.winner}); }
+            else { state.winner = win; effects.push({kind:'win', winner:win}); }
+          }
           break;
         }
         case 'bribe': {
@@ -619,7 +653,12 @@ export function reduce(inputState, action) {
           log.push(`💰 ${f.icon} bribed ${tile.name}!`);
           effects.push({kind:'refresh', tiles:[action.target]});
           const win = checkWinCondition(state, log);
-          if (win) { state.winner = win; effects.push({kind:'win', winner:win}); }
+          if (win) {
+            const rWin = maybeReckoning(state, win.fk, log);
+            if (rWin) { state.winner = rWin; effects.push({kind:'win', winner:rWin}); }
+            else if (rWin === null) { effects.push({kind:'win', winner:state.winner}); }
+            else { state.winner = win; effects.push({kind:'win', winner:win}); }
+          }
           break;
         }
         case 'rally': {
@@ -857,9 +896,19 @@ export function reduce(inputState, action) {
       if (state.nodesHeldSince) {
         for (const [k, since] of Object.entries(state.nodesHeldSince)) {
           const f = state.factions[k];
-          // Part 2: corrupt factions cannot win by node dominance
-          if (f && (f.corruption || 0) > 0) continue;
           if (f && !f.eliminated && countNodes(state, k) >= 3 && state.round - since >= 1) {
+            // Part 2: corrupt faction → Reckoning intercept
+            const reckoningWin = maybeReckoning(state, k, log);
+            if (reckoningWin) {
+              state.winner = reckoningWin;
+              effects.push({kind:'win', winner:reckoningWin});
+              return { state, effects, log };
+            }
+            if (reckoningWin === null) {
+              // Reckoning fired but conspirator lost → Tyrant wins through them
+              continue; // skip this winner, Tyrant win already set below
+            }
+            // reckoningWin === false → no corruption, normal win
             const win = { fk: k, condition: 'NODE DOMINANCE',
               detail: `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`, round: state.round };
             state.winner = win;
@@ -868,29 +917,36 @@ export function reduce(inputState, action) {
           }
         }
       }
+      // If a Reckoning resulted in Tyrant winning, it's set in state.winner by maybeReckoning
+      if (state.winner) {
+        effects.push({kind:'win', winner:state.winner});
+        return { state, effects, log };
+      }
       state.round++;
       if (state.round > ROUND_CAP) {
+        // Find best non-eliminated faction by nodes
         let best = null, bestN = -1;
         for (const [k,f] of Object.entries(state.factions)) {
           if (f.eliminated) continue;
-          // Part 2: corrupt factions cannot win by timeout
-          if ((f.corruption || 0) > 0) continue;
+          if (k === TYRANT_KEY) continue; // Tyrant doesn't win by timeout directly
           const n = Object.values(state.tiles).filter(t => t.owner === k && t.isNode).length;
           if (n > bestN) { bestN = n; best = k; }
         }
-        // Fallback: if all factions are corrupt, least-corrupt wins
-        if (!best) {
-          let leastCorr = Infinity;
-          for (const [k,f] of Object.entries(state.factions)) {
-            if (f.eliminated) continue;
-            if ((f.corruption || 0) < leastCorr) { leastCorr = f.corruption || 0; best = k; }
-          }
-        }
         if (best) {
-          const win = { fk: best, condition: 'TIMED OUT',
-            detail: `After ${ROUND_CAP} rounds, ${state.factions[best].name} held the most Nodes.`, round: state.round };
-          state.winner = win;
-          effects.push({kind:'win', winner:win});
+          // Part 2: corrupt faction → Reckoning intercept
+          const reckoningWin = maybeReckoning(state, best, log);
+          if (reckoningWin) {
+            state.winner = reckoningWin;
+            effects.push({kind:'win', winner:reckoningWin});
+          } else if (reckoningWin === null) {
+            // Tyrant wins through them — already set in state.winner
+            effects.push({kind:'win', winner:state.winner});
+          } else {
+            const win = { fk: best, condition: 'TIMED OUT',
+              detail: `After ${ROUND_CAP} rounds, ${state.factions[best].name} held the most Nodes.`, round: state.round };
+            state.winner = win;
+            effects.push({kind:'win', winner:win});
+          }
         }
       }
       break;
