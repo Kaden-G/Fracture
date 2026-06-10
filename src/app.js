@@ -864,8 +864,46 @@ function startRound() {
       }
     }
   }
-  // Part 2: corruption tick — each Tyrant ally gains +1 corruption per round
+  // Part 2: Tyrant mechanics (tribute, corruption, tithe)
   if (tyrantAlive()) {
+    // Tribute: every 3 rounds while allied, pay 2 resources or +2 corruption
+    const TRIBUTE_INTERVAL = 3;
+    const TRIBUTE_COST = 2;
+    for (const k of livingKeys()) {
+      if (k === TYRANT_KEY) continue;
+      if (!hasPact(TYRANT_KEY, k)) continue;
+      const pactRound = G.pacts[pairKey(TYRANT_KEY, k)];
+      const elapsed = G.round - pactRound;
+      if (elapsed > 0 && elapsed % TRIBUTE_INTERVAL === 0) {
+        const f = G.factions[k];
+        if (f.isAI) {
+          // AI always pays if it can
+          if (f.resources >= TRIBUTE_COST) {
+            f.resources -= TRIBUTE_COST;
+            addLog(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
+          } else {
+            f.corruption = (f.corruption || 0) + 2;
+            addLog(`🦠 ${f.name} can't pay tribute — corruption surges!`);
+          }
+        } else {
+          // Human: prompt
+          if (f.resources >= TRIBUTE_COST) {
+            const pay = confirm(`🦠 The Tyrant demands tribute! Pay ${TRIBUTE_COST} resources?\n\nOK = pay tribute (lose ${TRIBUTE_COST} res)\nCancel = refuse (+2 corruption)`);
+            if (pay) {
+              f.resources -= TRIBUTE_COST;
+              addLog(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
+            } else {
+              f.corruption = (f.corruption || 0) + 2;
+              addLog(`🦠 ${f.name} refused tribute — corruption surges!`);
+            }
+          } else {
+            f.corruption = (f.corruption || 0) + 2;
+            addLog(`🦠 ${f.name} can't afford tribute — corruption surges!`);
+          }
+        }
+      }
+    }
+  // corruption tick — each Tyrant ally gains +1 corruption per round
     for (const k of livingKeys()) {
       if (k === TYRANT_KEY) continue;
       if (hasPact(TYRANT_KEY, k)) {

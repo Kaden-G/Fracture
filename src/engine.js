@@ -729,8 +729,28 @@ export function reduce(inputState, action) {
           log.push('💀 THE TYRANT perished — no ally harbored it in time.');
         }
       }
-      // Part 2: corruption tick — each Tyrant ally gains +1 corruption per round
+      // Part 2: Tyrant mechanics (corruption, tribute, tithe)
       if (state.tyrantOn && state.factions[TYRANT_KEY] && !state.factions[TYRANT_KEY].eliminated) {
+        // Tribute: every 3 rounds while allied, pay 2 resources or +2 corruption
+        const TRIBUTE_INTERVAL = 3;
+        const TRIBUTE_COST = 2;
+        for (const k of livingKeys(state)) {
+          if (k === TYRANT_KEY) continue;
+          if (!hasPact(state, TYRANT_KEY, k)) continue;
+          const pactRound = state.pacts[pairKey(TYRANT_KEY, k)];
+          const elapsed = state.round - pactRound;
+          if (elapsed > 0 && elapsed % TRIBUTE_INTERVAL === 0) {
+            const f = state.factions[k];
+            if (f.resources >= TRIBUTE_COST) {
+              f.resources -= TRIBUTE_COST;
+              log.push(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
+            } else {
+              f.corruption = (f.corruption || 0) + 2;
+              log.push(`🦠 ${f.name} can't pay tribute — corruption surges!`);
+            }
+          }
+        }
+      // corruption tick — each Tyrant ally gains +1 corruption per round
         for (const k of livingKeys(state)) {
           if (k === TYRANT_KEY) continue;
           if (hasPact(state, TYRANT_KEY, k)) {
