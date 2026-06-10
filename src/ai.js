@@ -205,15 +205,6 @@ export function chooseAction(state, fk) {
   const push = aiNodePush(state, fk);
   if (push) return push;
 
-  // 2b. RETREAT thin stacks
-  const threatened = myT().filter(t => t.troops <= 2 && !t.isNode &&
-    enemyT().some(e => adjacent(t,e) && e.troops >= t.troops + 2));
-  if (threatened.length) {
-    const victim = threatened[0];
-    const safe = myT().find(t => t.id !== victim.id && adjacent(t, victim));
-    if (safe) return { type: 'AI_RETREAT', src: victim.id, dst: safe.id };
-  }
-
   // 3. Any favorable attack
   if (attackable && best.atk.troops > best.def.troops) {
     const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk };

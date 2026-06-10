@@ -765,20 +765,6 @@ export function reduce(inputState, action) {
       break;
     }
 
-    // ---- AI_RETREAT: consolidate thin stack into adjacent friendly tile ----
-    case 'AI_RETREAT': {
-      const fk = state.turnOrder[state.currentTurnIdx];
-      const victim = state.tiles[action.src];
-      const safe = state.tiles[action.dst];
-      safe.troops += victim.troops;
-      victim.troops = 0;
-      victim.owner = null;
-      victim.heldRounds = 0;
-      log.push(`🏃 ${state.factions[fk].icon} ${state.factions[fk].name} retreated from ${victim.name}`);
-      effects.push({kind:'refresh', tiles:[action.src, action.dst]});
-      break;
-    }
-
     // ---- TYRANT_COURT: Tyrant courts a specific faction (sim dispatches after AI decision) ----
     case 'TYRANT_COURT': {
       const target = action.target;

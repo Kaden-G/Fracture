@@ -2236,21 +2236,6 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
   if (aiNodePush(fk)) return true;
 
-  // 2b. RETREAT: pull a thin stack (1-2 troops) away from a larger adjacent enemy instead of feeding it.
-  const threatened = myTiles().filter(t => t.troops <= 2 && !t.isNode &&
-    enemyTiles().some(e => adjacent(t,e) && e.troops >= t.troops + 2));
-  if (threatened.length) {
-    const victim = threatened[0];
-    const safe = myTiles().find(t => t.id !== victim.id && adjacent(t, victim));
-    if (safe) {
-      safe.troops += victim.troops;
-      victim.troops = 0; victim.owner = null; victim.heldRounds = 0;
-      addLog(`🏃 ${f.icon} ${f.name} retreated from ${victim.name}`);
-      refreshHex(victim.id); refreshHex(safe.id);
-      return true;
-    }
-  }
-
   // 3. Take any other favorable attack.
   if (attackable && best.atk.troops > best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
