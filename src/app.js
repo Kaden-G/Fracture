@@ -1205,37 +1205,7 @@ function tyrantInteract(fk) {
     const last = G.tyrantLastOffer[fk] || -99;
     if (G.round - last >= 3) {
       G.tyrantLastOffer[fk] = G.round;
-      const ok = confirm(`🦠 THE TYRANT offers ${G.factions[fk].name} a SECRET non-aggression pact.\n\nWhile it holds, neither of you attacks the other — and no rival will know.\nBut beware: your corruption will grow each round you stay allied.\nOK = accept   ·   Cancel = refuse`);
-      if (ok) {
-        formPact(TYRANT_KEY, fk);
-        G.tyrantRefusalStreak = 0; // pact formed — reset streak
-        // Part 2: choose a boon (locked for duration)
-        const boonChoice = confirm(`🦠 Choose your boon:\n\nOK = TITHE: +1 troop on a frontline tile each round\nCancel = SIC THE BLOB: the Tyrant attacks one adjacent enemy each round`);
-        G.factions[fk].boon = boonChoice ? 'tithe' : 'sic';
-        addLog('🦠 A secret pact takes hold in the shadows…');
-        renderSidebar(); syncPush();
-      } else {
-        // Part 2 Step 5: human refused — increment refusal streak, check conquest
-        if (!G.tyrantConquest) {
-          if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
-          G.tyrantRefusalStreak++;
-          if (G.tyrantRefusalStreak >= 3) {
-            const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
-            if (unAllied.length > 0) {
-              G.tyrantConquest = true;
-              addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
-              for (const k of Object.keys(G.pacts||{})) {
-                const [a,b] = k.split('|');
-                if (a === TYRANT_KEY || b === TYRANT_KEY) {
-                  const ally = a === TYRANT_KEY ? b : a;
-                  breakPactBetrayal(TYRANT_KEY, ally);
-                }
-              }
-              renderSidebar(); syncPush();
-            }
-          }
-        }
-      }
+      showTyrantPactOffer(fk);   // custom themed modal — accept/refuse handled in callbacks
     }
   }
   // §4: Two-steps-from-victory prompt — if bound and close to triggering a win, warn
@@ -1292,6 +1262,62 @@ function tyrantInteract(fk) {
         }
         G.factions[fk].corruption = 0;
         renderMap(); renderSidebar(); syncPush();
+      }
+    }
+  }
+}
+
+// ---- Custom Tyrant pact offer modal (replaces system confirm dialogs) ----
+let tyrantOfferFk = null;
+
+function showTyrantPactOffer(fk) {
+  tyrantOfferFk = fk;
+  const body = document.getElementById('tyrant-offer-body');
+  if (body) {
+    body.innerHTML = `It offers <b>${G.factions[fk].name}</b> a <b>secret non-aggression pact</b>. ` +
+      `While it holds, neither of you attacks the other — and no rival will know. ` +
+      `<span style="color:#d98fd9;">But your corruption festers each round you stay bound.</span>`;
+  }
+  document.getElementById('tyrant-overlay').classList.add('show');
+}
+
+function closeTyrantPactOffer() {
+  document.getElementById('tyrant-overlay').classList.remove('show');
+  tyrantOfferFk = null;
+}
+
+function acceptTyrantPact(boon) {
+  const fk = tyrantOfferFk;
+  if (!fk) { closeTyrantPactOffer(); return; }
+  formPact(TYRANT_KEY, fk);
+  G.tyrantRefusalStreak = 0;  // pact formed — reset streak
+  G.factions[fk].boon = (boon === 'sic') ? 'sic' : 'tithe';
+  addLog('🦠 A secret pact takes hold in the shadows…');
+  closeTyrantPactOffer();
+  renderSidebar(); syncPush();
+}
+
+function refuseTyrantPact() {
+  const fk = tyrantOfferFk;
+  closeTyrantPactOffer();
+  if (!fk) return;
+  // Human refused — increment refusal streak, check for conquest flip
+  if (!G.tyrantConquest) {
+    if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
+    G.tyrantRefusalStreak++;
+    if (G.tyrantRefusalStreak >= 3) {
+      const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
+      if (unAllied.length > 0) {
+        G.tyrantConquest = true;
+        addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
+        for (const k of Object.keys(G.pacts||{})) {
+          const [a,b] = k.split('|');
+          if (a === TYRANT_KEY || b === TYRANT_KEY) {
+            const ally = a === TYRANT_KEY ? b : a;
+            breakPactBetrayal(TYRANT_KEY, ally);
+          }
+        }
+        renderSidebar(); syncPush();
       }
     }
   }
@@ -1863,7 +1889,7 @@ function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
     <div class="result-line ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
   `;
   document.body.appendChild(el);
-  setTimeout(()=>el.remove(), 1550);
+  setTimeout(()=>el.remove(), 3100);
 }
 
 // ============================================================
@@ -2112,7 +2138,7 @@ function runAITurn(fk) {
     const combat = (result === 'won' || result === 'repelled');
     if (result === 'won') aiCaptures++;
     if (result !== 'won' || aiCaptures >= 3) { actsLeft--; aiCaptures = 0; }   // wins chain; 3-capture cap or repel spends action
-    setTimeout(step, combat ? 1700 : 450);
+    setTimeout(step, combat ? 3400 : 450);
   };
   setTimeout(step, 250);
 }
@@ -2853,4 +2879,5 @@ Object.assign(window, {
   setSeatType, setSeatName, setSeatTrait,
   hostRoom, joinRoomPrompt, claimSeat, hostSetSeat, hostSetTyrant, hostStart,
   setMyName, setMyTrait,
+  acceptTyrantPact, refuseTyrantPact,
 });

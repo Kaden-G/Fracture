@@ -144,6 +144,31 @@
   </div>
 </div>
 
+<!-- TYRANT PACT OFFER -->
+<div id="tyrant-overlay">
+  <div class="tyrant-card">
+    <div class="tyrant-card-type">A WHISPER IN THE DARK</div>
+    <div class="tyrant-card-title">🦠 THE TYRANT'S OFFER</div>
+    <div class="tyrant-card-body" id="tyrant-offer-body"></div>
+    <div class="tyrant-boon-prompt">Accept the pact — and choose your boon:</div>
+    <div class="tyrant-boons">
+      <button class="tyrant-boon-btn" onclick="acceptTyrantPact('tithe')">
+        <span class="boon-icon">🩸</span>
+        <span class="boon-name">TITHE</span>
+        <span class="boon-desc">+1 troop on a frontline tile each round</span>
+      </button>
+      <button class="tyrant-boon-btn" onclick="acceptTyrantPact('sic')">
+        <span class="boon-icon">👹</span>
+        <span class="boon-name">SIC THE BLOB</span>
+        <span class="boon-desc">The Tyrant strikes one adjacent enemy each round</span>
+      </button>
+    </div>
+    <div class="tyrant-actions">
+      <button class="tyrant-refuse-btn" onclick="refuseTyrantPact()">✋ REFUSE THE PACT</button>
+    </div>
+  </div>
+</div>
+
 <!-- RULES -->
 <div id="rules-overlay">
   <div class="rules-panel">
