@@ -47,6 +47,7 @@ function initGame(seed, opts = {}) {
     tyrantOn: !!opts.tyrant,
     tyrantHarbor: 0,
     tyrantLastOffer: {},
+    tyrantConquest: false,
     nodesHeldSince: {},
     tiles: {},
     log: [],

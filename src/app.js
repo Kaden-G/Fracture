@@ -438,6 +438,7 @@ function startGame() {
     tyrantOn: !!G.setup.tyrant,
     tyrantHarbor: 0,        // round the harbor reprieve expires (0 = not harbored)
     tyrantLastOffer: {},    // fk -> round the Tyrant last offered them a pact
+    tyrantConquest: false,  // Part 2: Tyrant switched from diplomacy to conquest
     nodesHeldSince: {},     // fk -> round they first held 3+ nodes (for 2-round win check)
     tiles: {},
     log: [],
@@ -1086,6 +1087,24 @@ function tyrantInteract(fk) {
         G.factions[fk].boon = boonChoice ? 'tithe' : 'sic';
         addLog('🦠 A secret pact takes hold in the shadows…');
         renderSidebar(); syncPush();
+      } else {
+        // Part 2 Step 5: human refused — check if betrayal flip should trigger
+        if (!G.tyrantConquest) {
+          const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
+          const allOffered = unAllied.every(k => (G.tyrantLastOffer||{})[k] >= G.round - 1);
+          if (unAllied.length > 0 && allOffered) {
+            G.tyrantConquest = true;
+            addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
+            for (const k of Object.keys(G.pacts||{})) {
+              const [a,b] = k.split('|');
+              if (a === TYRANT_KEY || b === TYRANT_KEY) {
+                const ally = a === TYRANT_KEY ? b : a;
+                breakPactBetrayal(TYRANT_KEY, ally);
+              }
+            }
+            renderSidebar(); syncPush();
+          }
+        }
       }
     }
   }
@@ -1777,6 +1796,27 @@ function runAITurn(fk) {
         }
       });
     if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
+
+    // Part 2 Step 5: Tyrant betrayal flip — if diplomacy is impossible, switch to conquest
+    if (!G.tyrantConquest) {
+      const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
+      // Diplomacy impossible if there are un-allied AI rivals who refused (offered recently)
+      const aiRefusals = unAllied.filter(k => G.factions[k].isAI && (G.tyrantLastOffer||{})[k] >= G.round - 1);
+      const humanUnallied = unAllied.filter(k => !G.factions[k].isAI);
+      // Flip if: all unallied AIs refused, and no humans remain unallied to court
+      if (unAllied.length > 0 && aiRefusals.length >= unAllied.length - humanUnallied.length && humanUnallied.length === 0) {
+        G.tyrantConquest = true;
+        addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
+        // Break all existing Tyrant pacts
+        for (const k of Object.keys(G.pacts||{})) {
+          const [a,b] = k.split('|');
+          if (a === TYRANT_KEY || b === TYRANT_KEY) {
+            const ally = a === TYRANT_KEY ? b : a;
+            breakPactBetrayal(TYRANT_KEY, ally);
+          }
+        }
+      }
+    }
 
     // Part 2: Sic boon — Tyrant attacks one adjacent enemy per sic-allied faction
     for (const ally of livingKeys()) {
@@ -2555,7 +2595,7 @@ function buildOnlineGame(seats, tyrant) {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
-    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, nodesHeldSince: {},
+    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantConquest: false, nodesHeldSince: {},
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
