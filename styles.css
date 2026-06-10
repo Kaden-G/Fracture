@@ -690,7 +690,8 @@
   }
 
   /* ===== TYRANT PACT OFFER ===== */
-  #tyrant-overlay {
+  #tyrant-overlay,
+  #tyrant-confirm-overlay {
     display: none;
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -699,7 +700,8 @@
     align-items: center;
     justify-content: center;
   }
-  #tyrant-overlay.show { display: flex; }
+  #tyrant-overlay.show,
+  #tyrant-confirm-overlay.show { display: flex; }
 
   .tyrant-card {
     background: #0e1410;
@@ -789,6 +791,12 @@
   .tyrant-boon-btn .boon-desc { font-size: 13px; color: #b8d0a8; line-height: 1.3; }
 
   .tyrant-actions { margin-top: 16px; text-align: center; }
+  .tyrant-confirm-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
   .tyrant-refuse-btn {
     font-family: 'Bangers', cursive;
     font-size: 18px;
@@ -801,6 +809,22 @@
     transition: background 0.12s ease, color 0.12s ease;
   }
   .tyrant-refuse-btn:hover { background: #9b59b6; color: #0a0a0a; }
+
+  .tyrant-accept-btn {
+    font-family: 'Bangers', cursive;
+    font-size: 18px;
+    letter-spacing: 2px;
+    background: #7fd13b;
+    border: 2px solid #7fd13b;
+    color: #0a0a0a;
+    padding: 8px 28px;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .tyrant-accept-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(127,209,59,0.5);
+  }
 
   /* ===== WIN SCREEN ===== */
   #win-screen {

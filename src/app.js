@@ -1191,12 +1191,19 @@ function tyrantInteract(fk) {
   if (fk === TYRANT_KEY) return;
   // 1. Harbor: a cornered Tyrant begs an ally to feed it a tile so it can rise again.
   if (G.tyrantHarbor && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0) {
-    const give = confirm(`🦠 THE TYRANT is cornered and begs you (its secret ally) to HARBOR it.\n\nGive it one of your tiles to revive it?\nOK = harbor it   ·   Cancel = let it perish`);
-    if (give) {
-      const t = tilesOf(fk).sort((a,b)=>a.troops-b.troops)[0];
-      if (t) { t.owner = TYRANT_KEY; t.troops = Math.max(1, t.troops); t.heldRounds = 0; G.tyrantHarbor = 0;
-        addLog(`🦠 ${G.factions[fk].name} HARBORED the Tyrant — it rises again!`); refreshHex(t.id); renderSidebar(); syncPush(); }
-    }
+    tyrantModal({
+      type: 'A CORNERED BEAST',
+      title: '🦠 HARBOR THE TYRANT?',
+      body: `The Tyrant is cornered and begs you — its <b>secret ally</b> — to harbor it. ` +
+            `Give up one of your tiles to revive it, or let it perish?`,
+      confirmLabel: '🩸 HARBOR IT',
+      cancelLabel: '✋ LET IT PERISH',
+      onConfirm: () => {
+        const t = tilesOf(fk).sort((a,b)=>a.troops-b.troops)[0];
+        if (t) { t.owner = TYRANT_KEY; t.troops = Math.max(1, t.troops); t.heldRounds = 0; G.tyrantHarbor = 0;
+          addLog(`🦠 ${G.factions[fk].name} HARBORED the Tyrant — it rises again!`); refreshHex(t.id); renderSidebar(); syncPush(); }
+      }
+    });
     return;
   }
   // 2. Otherwise the Tyrant may offer a secret non-aggression pact (re-offers every couple rounds).
@@ -1217,54 +1224,78 @@ function tyrantInteract(fk) {
                     || (myNodes >= 2 && tilesOf(fk).length >= 8);
     if (closeToWin) {
       const band = corruptionBand(corr);
-      const renounce = confirm(
-        `⚠️ THE RECKONING IS NEAR\n\n` +
-        `You are close to victory, but you are ${band.label} (corruption tier).\n` +
-        `Winning while bound forces a Reckoning duel against the Tyrant.\n\n` +
-        `RENOUNCE now? The Tyrant will lash out and die — but eliminated factions will resurrect with a grudge against you.\n\n` +
-        `OK = RENOUNCE (destroy the Tyrant, face the consequences)\n` +
-        `Cancel = PRESS ON (risk the Reckoning duel)`
-      );
-      if (renounce) {
-        // Trigger renounce-kill
-        delete G.pacts[pairKey(fk, TYRANT_KEY)];
-        G.factions[fk].boon = null;
-        const rTiles = tilesOf(fk).sort((a,b) => a.troops - b.troops);
-        for (let i = 0; i < Math.min(2, rTiles.length); i++) {
-          const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
-          rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
-          refreshHex(rTiles[i].id);
-        }
-        addLog(`🦠💥 ${G.factions[fk].name} RENOUNCES the Tyrant before the Reckoning!`);
-        tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
-        G.factions[TYRANT_KEY].eliminated = true;
-        for (const pk of Object.keys(G.pacts || {})) {
-          const [pa, pb] = pk.split('|');
-          if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
-            const ally = pa === TYRANT_KEY ? pb : pa;
-            if (G.factions[ally]) G.factions[ally].boon = null;
-            delete G.pacts[pk];
+      tyrantModal({
+        type: 'THE RECKONING IS NEAR',
+        title: '⚠️ A FORK IN THE DARK',
+        body: `You are close to victory — but you are <b>${band.label}</b>. ` +
+              `Winning while bound forces a <b>Reckoning duel</b> against the Tyrant.<br><br>` +
+              `<b>Renounce now</b> and the Tyrant lashes out and dies — but eliminated factions ` +
+              `<span style="color:#d98fd9;">resurrect with a grudge against you</span>.`,
+        confirmLabel: '🗡️ RENOUNCE',
+        cancelLabel: '⚔️ PRESS ON',
+        onConfirm: () => {
+          // Trigger renounce-kill
+          delete G.pacts[pairKey(fk, TYRANT_KEY)];
+          G.factions[fk].boon = null;
+          const rTiles = tilesOf(fk).sort((a,b) => a.troops - b.troops);
+          for (let i = 0; i < Math.min(2, rTiles.length); i++) {
+            const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
+            rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
+            refreshHex(rTiles[i].id);
           }
-        }
-        addLog('💀 THE TYRANT is destroyed!');
-        for (const [ek, ef] of Object.entries(G.factions)) {
-          if (!ef.eliminated || ek === TYRANT_KEY || ek === fk) continue;
-          const neutrals = Object.values(G.tiles).filter(t => !t.owner);
-          if (neutrals.length === 0) continue;
-          ef.eliminated = false; ef.corruption = 0; ef.resources = 3;
-          const count = Math.min(2, neutrals.length);
-          for (let i = 0; i < count; i++) {
-            neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
-            refreshHex(neutrals[i].id);
+          addLog(`🦠💥 ${G.factions[fk].name} RENOUNCES the Tyrant before the Reckoning!`);
+          tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
+          G.factions[TYRANT_KEY].eliminated = true;
+          for (const pk of Object.keys(G.pacts || {})) {
+            const [pa, pb] = pk.split('|');
+            if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
+              const ally = pa === TYRANT_KEY ? pb : pa;
+              if (G.factions[ally]) G.factions[ally].boon = null;
+              delete G.pacts[pk];
+            }
           }
-          G.grudges[ek + '>' + fk] = G.round + 3;
-          addLog(`👻 ${ef.name} rises — grudge against ${G.factions[fk].name}!`);
+          addLog('💀 THE TYRANT is destroyed!');
+          for (const [ek, ef] of Object.entries(G.factions)) {
+            if (!ef.eliminated || ek === TYRANT_KEY || ek === fk) continue;
+            const neutrals = Object.values(G.tiles).filter(t => !t.owner);
+            if (neutrals.length === 0) continue;
+            ef.eliminated = false; ef.corruption = 0; ef.resources = 3;
+            const count = Math.min(2, neutrals.length);
+            for (let i = 0; i < count; i++) {
+              neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+              refreshHex(neutrals[i].id);
+            }
+            G.grudges[ek + '>' + fk] = G.round + 3;
+            addLog(`👻 ${ef.name} rises — grudge against ${G.factions[fk].name}!`);
+          }
+          G.factions[fk].corruption = 0;
+          renderMap(); renderSidebar(); syncPush();
         }
-        G.factions[fk].corruption = 0;
-        renderMap(); renderSidebar(); syncPush();
-      }
+      });
     }
   }
+}
+
+// ---- Reusable Tyrant-themed confirm modal (harbor / renounce) ----
+let _tyrantModalCb = null;
+function tyrantModal({ type = 'THE TYRANT', title, body, confirmLabel = 'CONFIRM', cancelLabel = 'CANCEL', onConfirm, onCancel }) {
+  document.getElementById('tyrant-confirm-type').textContent  = type;
+  document.getElementById('tyrant-confirm-title').textContent = title;
+  document.getElementById('tyrant-confirm-body').innerHTML    = body;
+  document.getElementById('tyrant-confirm-ok').textContent     = confirmLabel;
+  document.getElementById('tyrant-confirm-cancel').textContent = cancelLabel;
+  _tyrantModalCb = { onConfirm, onCancel };
+  document.getElementById('tyrant-confirm-overlay').classList.add('show');
+}
+function tyrantModalConfirm() {
+  const cb = _tyrantModalCb; _tyrantModalCb = null;
+  document.getElementById('tyrant-confirm-overlay').classList.remove('show');
+  if (cb && cb.onConfirm) cb.onConfirm();
+}
+function tyrantModalCancel() {
+  const cb = _tyrantModalCb; _tyrantModalCb = null;
+  document.getElementById('tyrant-confirm-overlay').classList.remove('show');
+  if (cb && cb.onCancel) cb.onCancel();
 }
 
 // ---- Custom Tyrant pact offer modal (replaces system confirm dialogs) ----
@@ -2880,4 +2911,5 @@ Object.assign(window, {
   hostRoom, joinRoomPrompt, claimSeat, hostSetSeat, hostSetTyrant, hostStart,
   setMyName, setMyTrait,
   acceptTyrantPact, refuseTyrantPact,
+  tyrantModalConfirm, tyrantModalCancel,
 });
