@@ -440,9 +440,6 @@ function switchScreen(id) {
     s.classList.remove('active');
     s.style.display = '';
   });
-  // Also ensure win-screen overlay is hidden (it uses inline display)
-  const winEl = document.getElementById('win-screen');
-  if (winEl) winEl.style.display = '';
   document.getElementById(id).classList.add('active');
 }
 
@@ -2527,18 +2524,11 @@ function showWin(fk, condition, detail) {
 function renderWin(w) {
   const f = G.factions[w.fk];
   const humanWon = !f.isAI;  // a human seat took it
-  // Flood the board with the winner's color (idempotent)
-  for (const t of Object.values(G.tiles)) {
-    t.owner = w.fk; t.troops = 0; t.heldRounds = 0;
-  }
-  renderMap();
   document.getElementById('win-title').textContent   = humanWon ? '⚡ VICTORY!' : '💀 AI WINS';
   document.getElementById('win-title').style.color   = humanWon ? 'var(--node-glow)' : 'var(--syndicate)';
   document.getElementById('win-subtitle').textContent = `${f.icon} ${f.name} — ${w.condition}`;
   document.getElementById('win-detail').textContent   = w.detail + ` (Round ${w.round})`;
-  // Show win overlay on top of the flooded game board
-  document.getElementById('win-screen').classList.add('active');
-  document.getElementById('win-screen').style.display = 'flex';
+  switchScreen('win-screen');
   document.getElementById('rules-btn').style.display = 'none';
 }
 
