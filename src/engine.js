@@ -701,11 +701,20 @@ export function reduce(inputState, action) {
           const tile = state.tiles[action.target];
           f.resources -= 1;
           const sabPrev = tile.owner;
-          const drop = 2;  // Phase 5b: sabotage removes 2 troops
+          const drop = 1;  // Siphon: −1 enemy troop
           if (tile.troops > drop) { tile.troops -= drop; }
           else { tile.owner = null; tile.troops = 0; }
           if (tile.owner === null && tilesOf(state, sabPrev).length === 0) {
             killFaction(state, sabPrev, log);
+          }
+          // Siphon: +1 troop on the saboteur's weakest frontline tile (fallback: weakest tile)
+          const mine = tilesOf(state, fk);
+          if (mine.length) {
+            const frontline = mine.filter(mt => Object.values(state.tiles).some(t => t.owner && t.owner !== fk && adjacent(mt, t)));
+            const pool = frontline.length ? frontline : mine;
+            const gain = pool.reduce((a, b) => a.troops <= b.troops ? a : b);
+            gain.troops += 1;
+            effects.push({kind:'refresh', tiles:[gain.id]});
           }
           state.actionsUsed++;
           log.push(`👁️ ${f.icon} sabotaged ${tile.name}`);

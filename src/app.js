@@ -188,6 +188,14 @@ function canActNow() { if (!G.turnOrder || gameOver) return false; const a=activ
 function tilesOf(fk)  { return Object.values(G.tiles).filter(t=>t.owner===fk); }
 function nodesOf(fk)  { return tilesOf(fk).filter(t=>t.isNode); }
 function countNodes(fk){ return nodesOf(fk).length; }
+// Sabotage siphon: where the +1 troop lands — weakest frontline tile, else weakest tile.
+function ghostSiphonTarget(fk){
+  const mine = tilesOf(fk);
+  if (!mine.length) return null;
+  const frontline = mine.filter(mt => Object.values(G.tiles).some(t => t.owner && t.owner !== fk && adjacent(mt, t)));
+  const pool = frontline.length ? frontline : mine;
+  return pool.reduce((a, b) => a.troops <= b.troops ? a : b);
+}
 function controlsNode(fk, nodeId){ return !!fk && Object.values(G.tiles).some(t=>t.nodeId===nodeId && t.owner===fk); }
 
 // Economy (faction perks + node bonuses fold in here)
@@ -1478,7 +1486,7 @@ function setAction(action) {
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
     airlift:   'AIRLIFT (3 res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.',
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
-    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile to remove 2 troops.',
+    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — siphon 1 troop (−1 them, +1 to your weakest frontline tile).',
     bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
@@ -1708,15 +1716,19 @@ function handleTileClick(id) {
     }
     f.resources -= 1;
     const sabPrev = tile.owner;
-    const sabDrop = 2;  // Phase 5b: sabotage removes 2 troops
+    const sabDrop = 1;  // Siphon: −1 enemy troop
     if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
     if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
       killFaction(sabPrev);
     }
+    // Siphon: +1 troop on the Ghost's weakest frontline tile
+    const sabGain = ghostSiphonTarget(G.playerFaction);
+    if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); }
     G.actionsUsed++;
     const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
-    addLog(`👁️ You sabotaged ${tile.name} — ${sabLeft}!`);
-    setActionLog(`Sabotage hit! ${sabLeft}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+    const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
+    addLog(`👁️ You sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
+    setActionLog(`Sabotage hit!${gainMsg}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); flashHex(id); renderSidebar(); checkWin();
     syncPush();   // broadcast so online opponents see the troop drop immediately
     return;
@@ -2279,10 +2291,12 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
     if (target) {
       const prev = target.owner;
       f.resources -= 1;
-      const aiSabDrop = 2;  // Phase 5b: sabotage removes 2 troops
+      const aiSabDrop = 1;  // Siphon: −1 enemy troop
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
-      addLog(`👁️ ${f.name} sabotaged ${target.name}`);
+      const aiGain = ghostSiphonTarget(fk);
+      if (aiGain) { aiGain.troops += 1; refreshHex(aiGain.id); }
+      addLog(`👁️ ${f.name} sabotaged ${target.name}${aiGain ? ` (siphoned +1 to ${aiGain.name})` : ''}`);
       refreshHex(target.id); flashHex(target.id);
       return true;
     }
