@@ -126,7 +126,10 @@ def main():
         im = im.resize((CARD, int(CARD * im.height / im.width)), Image.LANCZOS)
         if fk == 'syndicate':
             im = gold_to_red(im)
-        im = tint_interior(im, THEME[fk])
+        # The Tyrant keeps its original black interior (red accents) so it stays
+        # visually distinct from the Ghost's purple — every other card is tinted.
+        if fk != 'tyrant':
+            im = tint_interior(im, THEME[fk])
         out = OUT / f'card_{fk}.png'
         im.save(out, optimize=True)
         print(f'{out}: {im.size}, {out.stat().st_size // 1024}KB')
