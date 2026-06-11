@@ -251,8 +251,13 @@ export function aiChooseEvent(state, fk, eventKey) {
 
 // ---- AI pact consideration ----
 export function aiConsiderPact(state, aiFk, propFk) {
-  // Tyrant accepts every pact — every ally brings it closer to diplomacy win.
-  if (aiFk === TYRANT_KEY) return true;
+  // Tyrant accepts every pact — every ally brings it closer to diplomacy win —
+  // unless it has hit its concurrent-pact cap (single-human games: max 3).
+  if (aiFk === TYRANT_KEY) {
+    const allies = livingKeys(state).filter(k => k !== TYRANT_KEY && hasPact(state, TYRANT_KEY, k));
+    const cap = (state.humans && state.humans.length === 1) ? 3 : Infinity;
+    return allies.length < cap;
+  }
 
   // Being courted BY the Tyrant: graduated acceptance based on board position.
   // Awareness: the more allies the Tyrant already has, the more dangerous signing becomes.
