@@ -65,14 +65,16 @@ const EVENTS = [
   { type:'CHOICE', title:"WARLORD'S TRIBUTE",
     body:'A warlord marches on Nexus and demands payment. Coin, or blood?',
     choices:[
-      { label:'💰 PAY TRIBUTE (−4 resources)', resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.max(0,f.resources-4); } },
+      { label:'💰 PAY TRIBUTE (−4 resources)', canPick:(fk)=>G.factions[fk].resources>=4,
+        resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.max(0,f.resources-4); } },
       { label:'🩸 REFUSE (−1 troop on every tile)', resolve:(fk)=>{ tilesOf(fk).forEach(t=>{ if(t.troops>1) t.troops--; refreshHex(t.id); }); } },
     ],
     aiChoose:(fk)=> G.factions[fk].resources>=4 ? 0 : 1 },
   { type:'CHOICE', title:'MERCENARY CONTRACT',
     body:'Sellswords are for hire — at a steep price.',
     choices:[
-      { label:'🪖 HIRE (−5 res → +4 troops on your strongest tile)', resolve:(fk)=>{ const f=G.factions[fk]; if(f.resources>=5){ f.resources-=5; const t=tilesOf(fk).sort((a,b)=>b.troops-a.troops)[0]; if(t){ t.troops+=4; refreshHex(t.id);} } } },
+      { label:'🪖 HIRE (−5 res → +4 troops on your strongest tile)', canPick:(fk)=>G.factions[fk].resources>=5,
+        resolve:(fk)=>{ const f=G.factions[fk]; if(f.resources>=5){ f.resources-=5; const t=tilesOf(fk).sort((a,b)=>b.troops-a.troops)[0]; if(t){ t.troops+=4; refreshHex(t.id);} } } },
       { label:'🔋 DECLINE (+3 resources)', resolve:(fk)=>{ const f=G.factions[fk]; f.resources=Math.min(f.resources+3,RES_CAP); } },
     ],
     aiChoose:(fk)=> (G.factions[fk].resources>=5 && aiTroopHunger(fk)) ? 0 : 1 },
@@ -279,8 +281,9 @@ function coalitionAtkBonus(defFk, atkFk){ return (defFk!==atkFk && countNodes(de
 
 // Does an AI accept a non-aggression pact proposal?
 function aiConsiderPact(aiFk, propFk){
-  // The Tyrant accepts EVERY pact — every ally brings it closer to winning by diplomacy.
-  if (aiFk === TYRANT_KEY) return true;
+  // The Tyrant accepts EVERY pact — every ally brings it closer to winning by diplomacy —
+  // unless it has hit its concurrent-pact cap (single-human games: max 3).
+  if (aiFk === TYRANT_KEY) return !tyrantAtPactCap();
   // Being courted BY the Tyrant: contenders refuse (deny its diplo-win); the weak/scared appease it.
   if (propFk === TYRANT_KEY) {
     if (countNodes(aiFk) >= 2) return false;
@@ -323,6 +326,10 @@ function aiShouldRenounceLive(aiFk) {
 function tyrantOn()      { return !!(G.tyrantOn && G.factions[TYRANT_KEY]); }
 function tyrantAlive()   { return tyrantOn() && !G.factions[TYRANT_KEY].eliminated; }
 function tyrantAllies()  { return livingKeys().filter(k => k!==TYRANT_KEY && hasPact(TYRANT_KEY, k)); }
+// Single-human games: the Tyrant may hold at most 3 pacts at once, so it can never
+// buy a diplomacy-only win by aligning with all 4 rivals when only one is human.
+function tyrantPactCap()   { return (G.humans && G.humans.length === 1) ? 3 : Infinity; }
+function tyrantAtPactCap() { return tyrantAllies().length >= tyrantPactCap(); }
 // All pacts are secret — visible only to the two parties involved.
 function pactVisibleTo(a, b, viewer){ return a===viewer || b===viewer; }
 
@@ -409,19 +416,25 @@ function runReckoning(conspirator) {
     else               { cWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Conspirator wins`); }
   }
 
-  const winner = tWins >= 2 ? 'Tyrant' : G.factions[conspirator].name;
-  const skimMsg = skim > 0 ? `\nHost-skim: −${skim} tiles (corruption ate your army)` : '';
-  const moonMsg = inMoon ? '\n🌙 MOON BAND — jackpot spike!' : '';
-  const fallenMsg = (fallenForTyrant || fallenForCon)
-    ? `\nFallen votes: +${fallenForCon} for conspirator, +${fallenForTyrant} for Tyrant`
-    : '';
-  const msg = `⚔️ THE RECKONING ⚔️\n\n${G.factions[conspirator].name} challenges the Tyrant!\nTyrant Essence: ${tEssence}  |  Conspirator Essence: ${cEssence}${skimMsg}${moonMsg}${fallenMsg}\n\n${rounds.join('\n')}\n\n${winner} wins the Reckoning!`;
-  
+  const winner = tWins >= 2 ? 'THE TYRANT' : G.factions[conspirator].name;
   addLog(`⚔️ RECKONING: ${winner} prevails! (${tWins}-${cWins})`);
-  
-  if (!G.factions[conspirator].isAI) {
-    alert(msg);
-  }
+
+  // Themed duel report — shown to everyone; it sits above the win screen until dismissed.
+  const skimMsg = skim > 0 ? `<br>Host-skim: <b>−${skim} tiles</b> — corruption ate the army` : '';
+  const moonMsg = inMoon ? '<br>🌙 <b>MOON BAND</b> — jackpot spike!' : '';
+  const fallenMsg = (fallenForTyrant || fallenForCon)
+    ? `<br>Fallen votes: +${fallenForCon} conspirator · +${fallenForTyrant} Tyrant` : '';
+  tyrantModal({
+    type: 'THE RECKONING',
+    title: tWins >= 2 ? '🦠 THE TYRANT PREVAILS' : '⚔️ THE TYRANT FALLS',
+    body: `<b>${G.factions[conspirator].name}</b> challenges the Tyrant in the final duel.<br><br>` +
+          `Tyrant Essence <b>${tEssence}</b> · Conspirator Essence <b>${cEssence}</b>` +
+          skimMsg + moonMsg + fallenMsg +
+          `<br><br><span style="font-family:monospace; font-size:12px;">${rounds.join('<br>')}</span>` +
+          `<br><br><b>${winner} wins the Reckoning!</b>`,
+    confirmLabel: 'SO BE IT',
+    cancelLabel: null,
+  });
 
   return tWins >= 2;
 }
@@ -868,7 +881,12 @@ function renderSidebar() {
       const tp = Object.keys(G.pacts||{}).filter(k => { const [a,b]=k.split('|'); return a===TYRANT_KEY||b===TYRANT_KEY; }).length;
       const need = livingKeys().filter(k=>k!==TYRANT_KEY).length;
       const left = need - tp;
-      rows.push(`<span style="color:${TYRANT_DEF.color}; font-weight:700">🦠 TYRANT has <b>${tp}</b> pact${tp!==1?'s':''} of <b>${need}</b> needed to win${left>0?` — ${left} more to go`:' — ⚠️ WINNING!'}</span>`);
+      const cap = tyrantPactCap();
+      if (cap < need) {
+        rows.push(`<span style="color:${TYRANT_DEF.color}; font-weight:700">🦠 TYRANT holds <b>${tp}</b>/${cap} pacts (capped — it cannot win Nexus by diplomacy alone)</span>`);
+      } else {
+        rows.push(`<span style="color:${TYRANT_DEF.color}; font-weight:700">🦠 TYRANT has <b>${tp}</b> pact${tp!==1?'s':''} of <b>${need}</b> needed to win${left>0?` — ${left} more to go`:' — ⚠️ WINNING!'}</span>`);
+      }
     }
     dipEl.innerHTML = rows.length
       ? rows.map(r=>`<div class="faction-row-sub" style="padding:2px 0">${r}</div>`).join('')
@@ -953,10 +971,14 @@ function setActionLog(msg) {
 // ============================================================
 // TURN ENGINE
 // ============================================================
+const TRIBUTE_INTERVAL = 3;  // Tyrant tribute falls due every 3 rounds of a pact
+const TRIBUTE_COST     = 2;
+
 function startRound() {
   G.currentTurnIdx = 0;
   signalJamActive = false;
   totalWar = false;
+  const tributeQueue = [];   // local human seats owing tribute — prompted via themed modal below
   // Entrenchment: tiles held with 2+ troops dig in deeper each round
   Object.values(G.tiles).forEach(t => {
     if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, t.isNode ? 2 : 3);
@@ -1001,8 +1023,6 @@ function startRound() {
       }
     }
     // Tribute: every 3 rounds while allied, pay 2 resources or +2 corruption
-    const TRIBUTE_INTERVAL = 3;
-    const TRIBUTE_COST = 2;
     for (const k of livingKeys()) {
       if (k === TYRANT_KEY) continue;
       if (!hasPact(TYRANT_KEY, k)) continue;
@@ -1010,30 +1030,16 @@ function startRound() {
       const elapsed = G.round - pactRound;
       if (elapsed > 0 && elapsed % TRIBUTE_INTERVAL === 0) {
         const f = G.factions[k];
-        if (f.isAI) {
-          // AI always pays if it can
-          if (f.resources >= TRIBUTE_COST) {
-            f.resources -= TRIBUTE_COST;
-            addLog(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
-          } else {
-            f.corruption = (f.corruption || 0) + 2;
-            addLog(`🦠 ${f.name} can't pay tribute — corruption surges!`);
-          }
+        const local = !f.isAI && (!online || mySeats.includes(k));
+        if (local && f.resources >= TRIBUTE_COST) {
+          tributeQueue.push(k);   // local human with the coin: ask via the Tyrant modal below
+        } else if (f.resources >= TRIBUTE_COST) {
+          // AI (and remote humans, whose devices can't be prompted from here) pay if able
+          f.resources -= TRIBUTE_COST;
+          addLog(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
         } else {
-          // Human: prompt
-          if (f.resources >= TRIBUTE_COST) {
-            const pay = confirm(`🦠 The Tyrant demands tribute! Pay ${TRIBUTE_COST} resources?\n\nOK = pay tribute (lose ${TRIBUTE_COST} res)\nCancel = refuse (+2 corruption)`);
-            if (pay) {
-              f.resources -= TRIBUTE_COST;
-              addLog(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
-            } else {
-              f.corruption = (f.corruption || 0) + 2;
-              addLog(`🦠 ${f.name} refused tribute — corruption surges!`);
-            }
-          } else {
-            f.corruption = (f.corruption || 0) + 2;
-            addLog(`🦠 ${f.name} can't afford tribute — corruption surges!`);
-          }
+          f.corruption = (f.corruption || 0) + 2;
+          addLog(`🦠 ${f.name} can't pay tribute — corruption surges!`);
         }
       }
     }
@@ -1064,7 +1070,38 @@ function startRound() {
     }
   }
   document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
+  processTributeQueue(tributeQueue, fireRoundEvent);
+}
 
+// Sequentially ask each local human owing tribute via the Tyrant-themed modal, then continue.
+function processTributeQueue(queue, done) {
+  if (!queue.length) { done(); return; }
+  const k = queue.shift();
+  const f = G.factions[k];
+  tyrantModal({
+    type: "THE TYRANT'S DUE",
+    title: '🦠 TRIBUTE DEMANDED',
+    body: `The Tyrant turns its gaze on <b>${f.name}</b> and demands its due: <b>${TRIBUTE_COST} resources</b>.<br><br>` +
+          `Pay — or refuse, and feel the <span style="color:#d98fd9;">corruption surge (+2)</span> through your ranks.`,
+    confirmLabel: `💰 PAY ${TRIBUTE_COST} RES`,
+    cancelLabel: '🩸 REFUSE',
+    onConfirm: () => {
+      f.resources = Math.max(0, f.resources - TRIBUTE_COST);
+      addLog(`🦠 ${f.name} pays tribute to the Tyrant (−${TRIBUTE_COST} res)`);
+      renderSidebar(); syncPush();
+      processTributeQueue(queue, done);
+    },
+    onCancel: () => {
+      f.corruption = (f.corruption || 0) + 2;
+      addLog(`🦠 ${f.name} refused tribute — corruption surges!`);
+      renderSidebar(); syncPush();
+      processTributeQueue(queue, done);
+    },
+  });
+}
+
+// Draw and apply/show the round's event card (runs once any tribute prompts resolve).
+function fireRoundEvent() {
   const evIdx = Math.floor(Math.random()*EVENTS.length);
   const ev = EVENTS[evIdx];
   const reg = ev.region ? nextRegion() : null;   // regional events draw from the even-distribution bag
@@ -1219,7 +1256,8 @@ function tyrantInteract(fk) {
     return;
   }
   // 2. Otherwise the Tyrant may offer a secret non-aggression pact (re-offers every couple rounds).
-  if (tyrantAlive() && !hasPact(TYRANT_KEY, fk)) {
+  //    No offer once it has hit its concurrent-pact cap (single-human games: 3).
+  if (tyrantAlive() && !hasPact(TYRANT_KEY, fk) && !tyrantAtPactCap()) {
     if (!G.tyrantLastOffer) G.tyrantLastOffer = {};   // Firebase strips empty objects; rebuild defensively
     const last = G.tyrantLastOffer[fk] || -99;
     if (G.round - last >= 3) {
@@ -1295,7 +1333,9 @@ function tyrantModal({ type = 'THE TYRANT', title, body, confirmLabel = 'CONFIRM
   document.getElementById('tyrant-confirm-title').textContent = title;
   document.getElementById('tyrant-confirm-body').innerHTML    = body;
   document.getElementById('tyrant-confirm-ok').textContent     = confirmLabel;
-  document.getElementById('tyrant-confirm-cancel').textContent = cancelLabel;
+  const cancelBtn = document.getElementById('tyrant-confirm-cancel');
+  cancelBtn.textContent    = cancelLabel || '';
+  cancelBtn.style.display  = cancelLabel ? '' : 'none';   // null/'' = info-only modal
   _tyrantModalCb = { onConfirm, onCancel };
   document.getElementById('tyrant-confirm-overlay').classList.add('show');
 }
@@ -1683,30 +1723,46 @@ function handleTileClick(id) {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
+    const doAttack = () => {
+      if (!assaultOn) { G.actionsUsed++; assaultOn = true; assaultCaptures = 0; }   // launching the assault costs ONE action
+      const captured = G.tiles[id].troops <= 1;  // will this be a capture if we win?
+      const won = resolveAttack(G.playerFaction, selectedTile, id, true);
+      if (won && captured) assaultCaptures++;
+      renderSidebar();
+      if (checkWin()) return;
+      // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
+      // Hard cap: 3 captures per assault chain.
+      if (won && G.tiles[selectedTile] && G.tiles[selectedTile].troops >= 2 && assaultCaptures < 3) {
+        setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
+        renderMap();
+        document.getElementById('hex-'+selectedTile)?.classList.add('selected');
+        return;
+      }
+      // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
+      assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
+      document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+      renderMap(); renderSidebar();
+    };
     if (hasPact(G.playerFaction, tile.owner)) {
+      if (tile.owner === TYRANT_KEY) {
+        tyrantModal({
+          type: 'A PACT IN THE WAY',
+          title: '🦠 STRIKE YOUR DARK ALLY?',
+          body: `You are bound to the Tyrant by a <b>secret pact</b>. Strike it now and the pact shatters — ` +
+                `<span style="color:#d98fd9;">it will hold a grudge (+2 against you for 2 rounds)</span>.`,
+          confirmLabel: '🗡️ BREAK THE PACT',
+          cancelLabel: '✋ HOLD',
+          onConfirm: () => { breakPactBetrayal(G.playerFaction, tile.owner); doAttack(); },
+          onCancel:  () => setActionLog('Attack cancelled — pact held.'),
+        });
+        return;
+      }
       if (!confirm(`You have a pact with ${G.factions[tile.owner].name}. Break it and attack? They'll hold a grudge (+2 vs you for 2 rounds).`)) {
         setActionLog('Attack cancelled — pact held.'); return;
       }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    if (!assaultOn) { G.actionsUsed++; assaultOn = true; assaultCaptures = 0; }   // launching the assault costs ONE action
-    const captured = G.tiles[id].troops <= 1;  // will this be a capture if we win?
-    const won = resolveAttack(G.playerFaction, selectedTile, id, true);
-    if (won && captured) assaultCaptures++;
-    renderSidebar();
-    if (checkWin()) return;
-    // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
-    // Hard cap: 3 captures per assault chain.
-    if (won && G.tiles[selectedTile] && G.tiles[selectedTile].troops >= 2 && assaultCaptures < 3) {
-      setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
-      renderMap();
-      document.getElementById('hex-'+selectedTile)?.classList.add('selected');
-      return;
-    }
-    // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
-    assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
-    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    renderMap(); renderSidebar(); return;
+    doAttack(); return;
   }
 
   // ---- SABOTAGE ----
@@ -1714,32 +1770,48 @@ function handleTileClick(id) {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
     if (f.resources < 1) { setActionLog('Sabotage costs 1 resource.'); return; }
+    const doSabotage = () => {
+      f.resources -= 1;
+      const sabPrev = tile.owner;
+      const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
+      const sabDrop = 1;  // Siphon: −1 enemy troop
+      if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
+      if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
+        killFaction(sabPrev);
+      }
+      // Siphon: +1 to the Ghost's weakest frontline tile — only if the target survives (≥2 before)
+      // and only once per turn.
+      let sabGain = null;
+      if (sabPreTroops >= 2 && !G.siphonedThisTurn) {
+        sabGain = ghostSiphonTarget(G.playerFaction);
+        if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
+      }
+      G.actionsUsed++;
+      const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
+      const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
+      addLog(`👁️ You sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
+      setActionLog(`Sabotage hit!${gainMsg}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+      refreshHex(id); flashHex(id); renderSidebar(); checkWin();
+      syncPush();   // broadcast so online opponents see the troop drop immediately
+    };
     if (hasPact(G.playerFaction, tile.owner)) {
+      if (tile.owner === TYRANT_KEY) {
+        tyrantModal({
+          type: 'A PACT IN THE WAY',
+          title: '🦠 SABOTAGE YOUR DARK ALLY?',
+          body: `You are bound to the Tyrant by a <b>secret pact</b>. Sabotage it and the pact shatters — ` +
+                `<span style="color:#d98fd9;">it will hold a grudge (+2 against you for 2 rounds)</span>.`,
+          confirmLabel: '🗡️ BREAK THE PACT',
+          cancelLabel: '✋ HOLD',
+          onConfirm: () => { breakPactBetrayal(G.playerFaction, tile.owner); doSabotage(); },
+          onCancel:  () => setActionLog('Sabotage cancelled — pact held.'),
+        });
+        return;
+      }
       if (!confirm(`Sabotaging ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Sabotage cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    f.resources -= 1;
-    const sabPrev = tile.owner;
-    const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
-    const sabDrop = 1;  // Siphon: −1 enemy troop
-    if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
-    if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
-      killFaction(sabPrev);
-    }
-    // Siphon: +1 to the Ghost's weakest frontline tile — only if the target survives (≥2 before)
-    // and only once per turn.
-    let sabGain = null;
-    if (sabPreTroops >= 2 && !G.siphonedThisTurn) {
-      sabGain = ghostSiphonTarget(G.playerFaction);
-      if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
-    }
-    G.actionsUsed++;
-    const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
-    const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
-    addLog(`👁️ You sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
-    setActionLog(`Sabotage hit!${gainMsg}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
-    refreshHex(id); flashHex(id); renderSidebar(); checkWin();
-    syncPush();   // broadcast so online opponents see the troop drop immediately
+    doSabotage();
     return;
   }
 
@@ -1750,21 +1822,38 @@ function handleTileClick(id) {
     const myT = Object.values(G.tiles).filter(t=>t.owner===G.playerFaction);
     if (!myT.some(mt=>adjacent(mt,tile))) { setActionLog('Must be adjacent to YOUR territory.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
+    const doBribe = () => {
+      f.resources -= 1;
+      const bribedPrev = tile.owner;
+      tile.troops--;
+      if (tile.troops<=0) {
+        tile.owner=G.playerFaction; tile.troops=1;
+        if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) killFaction(bribedPrev);
+      }
+      G.actionsUsed++;
+      addLog(`💰 You bribed ${tile.name}!`);
+      setActionLog(`Bribed! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+      refreshHex(id); renderSidebar(); checkWin();
+    };
     if (hasPact(G.playerFaction, tile.owner)) {
+      if (tile.owner === TYRANT_KEY) {
+        tyrantModal({
+          type: 'A PACT IN THE WAY',
+          title: '🦠 BRIBE YOUR DARK ALLY?',
+          body: `You are bound to the Tyrant by a <b>secret pact</b>. Turn its troops and the pact shatters — ` +
+                `<span style="color:#d98fd9;">it will hold a grudge (+2 against you for 2 rounds)</span>.`,
+          confirmLabel: '🗡️ BREAK THE PACT',
+          cancelLabel: '✋ HOLD',
+          onConfirm: () => { breakPactBetrayal(G.playerFaction, tile.owner); doBribe(); },
+          onCancel:  () => setActionLog('Bribe cancelled — pact held.'),
+        });
+        return;
+      }
       if (!confirm(`Bribing ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Bribe cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
-    f.resources -= 1;
-    const bribedPrev = tile.owner;
-    tile.troops--;
-    if (tile.troops<=0) {
-      tile.owner=G.playerFaction; tile.troops=1;
-      if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) killFaction(bribedPrev);
-    }
-    G.actionsUsed++;
-    addLog(`💰 You bribed ${tile.name}!`);
-    setActionLog(`Bribed! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
-    refreshHex(id); renderSidebar(); checkWin(); return;
+    doBribe();
+    return;
   }
 
   // ---- RALLY ----
@@ -2059,10 +2148,13 @@ function runAITurn(fk) {
   if (fk === TYRANT_KEY) {
     tyrantSpread(fk);   // virus expansion before its normal actions
     // Court every un-allied rival (AIs decide now; humans are offered on their own turn).
+    // Courting stops once the Tyrant hits its concurrent-pact cap (single-human games: 3).
     let newAlly = false;
     let allAIsRefused = true;
+    const courtBlocked = tyrantAtPactCap();
     livingKeys().filter(k => k!==TYRANT_KEY && G.factions[k].isAI && !hasPact(TYRANT_KEY,k))
       .forEach(k => {
+        if (tyrantAtPactCap()) return;
         if (aiConsiderPact(k, TYRANT_KEY)) {
           formPact(TYRANT_KEY, k);
           G.factions[k].boon = aiPickBoon(k);
@@ -2073,7 +2165,8 @@ function runAITurn(fk) {
     if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
 
     // Part 2 Step 5: Tyrant betrayal flip — streak-based, requires 3 consecutive rounds
-    if (!G.tyrantConquest) {
+    // (a cap-blocked round made no offers, so it neither builds nor resets the streak)
+    if (!G.tyrantConquest && !courtBlocked) {
       if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
       const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
       if (newAlly) {
@@ -2362,8 +2455,10 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
 // EVENTS
 // ============================================================
 function livingKeys() { return Object.keys(G.factions).filter(k=>!G.factions[k].eliminated); }
+// "Weakest faction" for events never resolves to the Tyrant — it has its own rise/fall
+// mechanics (a harbored Tyrant must be revived by an ALLY, not by a stray Riot).
 function weakestKey() {
-  return livingKeys().sort((a,b)=> tilesOf(a).length - tilesOf(b).length)[0];
+  return livingKeys().filter(k=>k!==TYRANT_KEY).sort((a,b)=> tilesOf(a).length - tilesOf(b).length)[0];
 }
 
 function applyCrash() {
@@ -2453,32 +2548,47 @@ function showEventCardInfo(card) {
   showEventCard({ type: card.type, title: card.title, body: card.body }, function(){}, card.reg);
 }
 
-// Choice event: each living faction decides for itself — you via buttons, AI via aiChoose
+// Choice event: each living faction decides for itself — every (hot-seat) human in turn
+// via buttons, AI via aiChoose. Options a faction can't afford are disabled, never silent no-ops.
 function showChoiceEvent(ev, cb) {
-  document.getElementById('event-type').textContent  = 'CHOICE EVENT';
-  document.getElementById('event-title').textContent = ev.title;
-  document.getElementById('event-body').textContent  = ev.body;
-  document.getElementById('event-ok').style.display = 'none';
-  const box = document.getElementById('event-choices');
-  box.style.display = 'flex';
-  box.innerHTML = '';
-  ev.choices.forEach((ch, idx) => {
-    const b = document.createElement('button');
-    b.className = 'btn btn-secondary';
-    b.style.cssText = 'font-size:14px; padding:10px 14px; text-align:left;';
-    b.textContent = ch.label;
-    b.onclick = () => {
-      ch.resolve(G.playerFaction);
-      addLog(`🃏 ${ev.title}: YOU chose "${ch.label}"`);
-      Object.keys(G.factions)
-        .filter(k => k!==G.playerFaction && !G.factions[k].eliminated)
-        .forEach(k => { ev.choices[ ev.aiChoose ? ev.aiChoose(k) : 0 ].resolve(k); });
-      document.getElementById('event-overlay').classList.remove('show');
-      cb();
-    };
-    box.appendChild(b);
-  });
-  document.getElementById('event-overlay').classList.add('show');
+  const humans = (G.humans || []).filter(k => G.factions[k] && !G.factions[k].eliminated);
+  const queue = humans.slice();
+  const finish = () => {
+    Object.keys(G.factions)
+      .filter(k => !humans.includes(k) && !G.factions[k].eliminated)
+      .forEach(k => { ev.choices[ ev.aiChoose ? ev.aiChoose(k) : 0 ].resolve(k); });
+    document.getElementById('event-overlay').classList.remove('show');
+    cb();
+  };
+  const askNext = () => {
+    if (!queue.length) { finish(); return; }
+    const fk = queue.shift();
+    const f  = G.factions[fk];
+    document.getElementById('event-type').textContent  = 'CHOICE EVENT';
+    document.getElementById('event-title').textContent = ev.title;
+    document.getElementById('event-body').textContent  = ev.body +
+      (humans.length > 1 ? `\n\n${f.icon} ${f.name} decides…` : '');
+    document.getElementById('event-ok').style.display = 'none';
+    const box = document.getElementById('event-choices');
+    box.style.display = 'flex';
+    box.innerHTML = '';
+    ev.choices.forEach((ch) => {
+      const b = document.createElement('button');
+      b.className = 'btn btn-secondary';
+      b.style.cssText = 'font-size:14px; padding:10px 14px; text-align:left;';
+      const affordable = !ch.canPick || ch.canPick(fk);
+      b.textContent = affordable ? ch.label : `${ch.label} — can't afford (${f.resources} res)`;
+      if (!affordable) { b.disabled = true; b.style.opacity = '0.45'; b.style.cursor = 'not-allowed'; }
+      b.onclick = () => {
+        ch.resolve(fk);
+        addLog(`🃏 ${ev.title}: ${f.name} chose "${ch.label}"`);
+        askNext();
+      };
+      box.appendChild(b);
+    });
+    document.getElementById('event-overlay').classList.add('show');
+  };
+  askNext();
 }
 
 // Online choice event: each human player picks on their own device.
@@ -2514,7 +2624,9 @@ function showOnlineChoiceUI() {
     const b = document.createElement('button');
     b.className = 'btn btn-secondary';
     b.style.cssText = 'font-size:14px; padding:10px 14px; text-align:left;';
-    b.textContent = ch.label;
+    const affordable = !ch.canPick || ch.canPick(fk);
+    b.textContent = affordable ? ch.label : `${ch.label} — can't afford (${G.factions[fk].resources} res)`;
+    if (!affordable) { b.disabled = true; b.style.opacity = '0.45'; b.style.cursor = 'not-allowed'; }
     b.onclick = () => {
       if (!G.pendingChoiceEvent) return;
       G.pendingChoiceEvent.choicesMade[fk] = idx;

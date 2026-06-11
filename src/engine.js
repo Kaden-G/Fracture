@@ -38,10 +38,23 @@ function nextRegion(state) {
 }
 
 // ---- Helper: weakest faction key ----
+// Never resolves to the Tyrant — it has its own rise/fall mechanics (a harbored
+// Tyrant must be revived by an ALLY, not by a stray Riot or Insurgency).
 function weakestKey(state) {
-  return livingKeys(state).sort((a,b) =>
+  return livingKeys(state).filter(k => k !== TYRANT_KEY).sort((a,b) =>
     tilesOf(state, a).length - tilesOf(state, b).length
   )[0];
+}
+
+// ---- Helper: Tyrant concurrent-pact cap ----
+// Single-human games: the Tyrant may hold at most 3 pacts at once, so it can never
+// buy a diplomacy-only win by aligning with all 4 rivals when only one is human.
+export function tyrantPactCap(state) {
+  return (state.humans && state.humans.length === 1) ? 3 : Infinity;
+}
+export function tyrantAtPactCap(state) {
+  const allies = livingKeys(state).filter(k => k !== TYRANT_KEY && hasPact(state, TYRANT_KEY, k));
+  return allies.length >= tyrantPactCap(state);
 }
 
 // ---- Helper: kill / eliminate a faction ----
@@ -785,6 +798,7 @@ export function reduce(inputState, action) {
       const target = action.target;
       if (!state.tyrantOn || !state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) break;
       if (hasPact(state, TYRANT_KEY, target)) break;
+      if (tyrantAtPactCap(state)) break;   // concurrent-pact cap (single-human games: 3)
       formPact(state, TYRANT_KEY, target);
       state.factions[target].boon = action.boon || 'tithe';
       if (!state.tyrantLastOffer) state.tyrantLastOffer = {};

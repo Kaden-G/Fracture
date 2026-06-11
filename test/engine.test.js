@@ -5,7 +5,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { reduce, buildMap, checkWinCondition, resolveCombat } from '../src/engine.js';
+import { reduce, buildMap, checkWinCondition, resolveCombat, EVENT_HANDLERS, tyrantAtPactCap } from '../src/engine.js';
 import {
   RES_CAP, FACTIONS, TYRANT_KEY, TRAITS,
   factionDef, adjacent, mkFaction,
@@ -382,5 +382,208 @@ describe('Renounce', () => {
     const { state: next } = reduce(s1, { type: 'RENOUNCE', from: 'grid', target: 'commune' });
     assert.ok(!hasPact(next, 'grid', 'commune'), 'no pact to renounce');
     assert.ok(!next.renouncedThisTurn || !next.renouncedThisTurn['commune'], 'renouncedThisTurn not set for no-op');
+  });
+});
+
+// ============================================================
+// EVENT EFFECT TESTS — every card's effect must be additive/correct
+// ============================================================
+describe('Event effects', () => {
+  const regionOfFaction = (state, fk) =>
+    Object.values(state.tiles).find(t => t.owner === fk && t.region !== 'C').region;
+
+  it('MUSTER adds +1 troop to held tiles (additive, never replaces)', () => {
+    const state = makeTestState();
+    const tile = Object.values(state.tiles).find(t => t.owner === 'grid' && t.region !== 'C');
+    tile.troops = 5;
+    EVENT_HANDLERS.muster(state, tile.region, [], []);
+    assert.equal(tile.troops, 6, 'muster should ADD 1 (5 → 6)');
+  });
+
+  it('MERCENARY HIRE adds +4 to the strongest tile (additive, never replaces)', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 10;
+    const strongest = tilesOf(state, 'grid')[0];
+    strongest.troops = 7;
+    EVENT_HANDLERS.mercenaryContract(state, null, [], [], 'grid', 0);
+    assert.equal(strongest.troops, 11, 'HIRE should ADD 4 (7 → 11), not replace');
+    assert.equal(state.factions.grid.resources, 5, 'HIRE costs 5 resources');
+  });
+
+  it('MERCENARY HIRE without 5 resources changes nothing', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 4;
+    const before = tilesOf(state, 'grid').map(t => t.troops);
+    EVENT_HANDLERS.mercenaryContract(state, null, [], [], 'grid', 0);
+    assert.deepEqual(tilesOf(state, 'grid').map(t => t.troops), before, 'no troops without payment');
+    assert.equal(state.factions.grid.resources, 4, 'no resources spent');
+  });
+
+  it('MERCENARY DECLINE grants +3 resources, capped', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = RES_CAP - 1;
+    EVENT_HANDLERS.mercenaryContract(state, null, [], [], 'grid', 1);
+    assert.equal(state.factions.grid.resources, RES_CAP, 'capped at RES_CAP');
+  });
+
+  it('WARLORD PAY costs 4 resources; REFUSE drops 1 troop per tile (min 1)', () => {
+    const s1 = makeTestState();
+    s1.factions.grid.resources = 6;
+    EVENT_HANDLERS.warlordTribute(s1, null, [], [], 'grid', 0);
+    assert.equal(s1.factions.grid.resources, 2);
+
+    const s2 = makeTestState();
+    const [a, b] = tilesOf(s2, 'grid');
+    a.troops = 3; b.troops = 1;
+    EVENT_HANDLERS.warlordTribute(s2, null, [], [], 'grid', 1);
+    assert.equal(a.troops, 2, '3 → 2');
+    assert.equal(b.troops, 1, 'lone troop holds (min 1)');
+  });
+
+  it('INSURGENCY adds +4 troops & +3 res to the weakest faction (additive)', () => {
+    const state = makeTestState();
+    // make ghost the weakest: one tile with 2 troops
+    const [keep, drop] = tilesOf(state, 'ghost');
+    drop.owner = null; drop.troops = 0;
+    keep.troops = 2;
+    state.factions.ghost.resources = 4;
+    EVENT_HANDLERS.insurgency(state, null, [], []);
+    assert.equal(keep.troops, 6, 'insurgency should ADD 4 (2 → 6), not replace');
+    assert.equal(state.factions.ghost.resources, 7);
+  });
+
+  it('weakest-faction events never target the Tyrant (harbored Tyrant stays down)', () => {
+    const state = makeTestState();
+    state.tyrantOn = true;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    // Tyrant alive with 0 tiles (harbored); ghost is weakest real faction with 1 tile
+    const [keep, drop] = tilesOf(state, 'ghost');
+    drop.owner = null; drop.troops = 0;
+    // INSURGENCY must buff ghost, not the Tyrant
+    EVENT_HANDLERS.insurgency(state, null, [], []);
+    assert.equal(state.factions[TYRANT_KEY].resources, 4, 'Tyrant untouched by insurgency');
+    assert.equal(state.factions.ghost.resources, 7, 'ghost (weakest real faction) gets the boost');
+    // RIOT must hand the tile to ghost, never revive the Tyrant
+    const target = Object.values(state.tiles).find(t => t.owner === 'grid' && !t.isNode);
+    EVENT_HANDLERS.riot(state, target.region, [], []);
+    assert.equal(tilesOf(state, TYRANT_KEY).length, 0, 'riot never gifts the Tyrant a tile');
+  });
+
+  it('POWER FAILURE drops 1 troop (floor 1) and breaks dig-in', () => {
+    const state = makeTestState();
+    const tile = Object.values(state.tiles).find(t => t.owner === 'grid' && t.region !== 'C');
+    tile.troops = 3; tile.heldRounds = 2;
+    const lone = tilesOf(state, 'grid').find(t => t.id !== tile.id);
+    lone.region = tile.region; lone.troops = 1;
+    EVENT_HANDLERS.powerFailure(state, tile.region, [], []);
+    assert.equal(tile.troops, 2);
+    assert.equal(tile.heldRounds, 0);
+    assert.equal(lone.troops, 1, 'lone defender survives (floor 1)');
+  });
+
+  it('UPRISING cuts only 4+ stacks by 2', () => {
+    const state = makeTestState();
+    const [big, small] = tilesOf(state, 'grid');
+    big.troops = 5; small.troops = 3; small.region = big.region;
+    EVENT_HANDLERS.uprising(state, big.region, [], []);
+    assert.equal(big.troops, 3, '5 → 3');
+    assert.equal(small.troops, 3, 'small stack untouched');
+  });
+
+  it('EARTHQUAKE hits districts −1 and nodes −2 (floor 1)', () => {
+    const state = makeTestState();
+    const district = tilesOf(state, 'grid')[0];
+    district.troops = 4;
+    const node = Object.values(state.tiles).find(t => t.isNode && t.region === district.region);
+    node.owner = 'grid'; node.troops = 5;
+    EVENT_HANDLERS.quake(state, district.region, [], []);
+    assert.equal(district.troops, 3);
+    assert.equal(node.troops, 3, 'node loses 2');
+  });
+
+  it('SIEGE wipes entrenchment in the region only', () => {
+    const state = makeTestState();
+    const inRegion = tilesOf(state, 'grid')[0];
+    inRegion.heldRounds = 3;
+    const elsewhere = Object.values(state.tiles).find(t => t.owner && t.region !== inRegion.region);
+    elsewhere.heldRounds = 2;
+    EVENT_HANDLERS.siege(state, inRegion.region, [], []);
+    assert.equal(inRegion.heldRounds, 0);
+    assert.equal(elsewhere.heldRounds, 2, 'other regions keep dig-in');
+  });
+
+  it('GOLD STRIKE pays +1 res per tile held in the region, capped', () => {
+    const state = makeTestState();
+    const reg = regionOfFaction(state, 'grid');
+    const n = tilesOf(state, 'grid').filter(t => t.region === reg).length;
+    state.factions.grid.resources = 4;
+    EVENT_HANDLERS.goldStrike(state, reg, [], []);
+    assert.equal(state.factions.grid.resources, Math.min(4 + n, RES_CAP));
+  });
+
+  it('MARKET CRASH halves every living faction\'s resources', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 9;
+    EVENT_HANDLERS.crash(state, null, [], []);
+    assert.equal(state.factions.grid.resources, 4);
+  });
+
+  it('REVOLUTION topples one node of the leader', () => {
+    const state = makeTestState();
+    const nodes = Object.values(state.tiles).filter(t => t.isNode);
+    nodes[0].owner = 'grid'; nodes[0].troops = 3;
+    EVENT_HANDLERS.revolution(state, null, [], []);
+    assert.equal(nodes[0].owner, null, 'leader\'s only node falls');
+    assert.equal(nodes[0].troops, 0);
+  });
+
+  it('TOTAL WAR sets the flag and wipes all entrenchment', () => {
+    const state = makeTestState();
+    tilesOf(state, 'grid').forEach(t => t.heldRounds = 2);
+    EVENT_HANDLERS.totalWar(state, null, [], []);
+    assert.ok(state.totalWar);
+    assert.ok(tilesOf(state, 'grid').every(t => t.heldRounds === 0));
+  });
+});
+
+// ============================================================
+// TYRANT PACT CAP — single-human games: max 3 concurrent pacts
+// ============================================================
+describe('Tyrant pact cap', () => {
+  function tyrantState(humans) {
+    const state = makeTestState();
+    state.tyrantOn = true;
+    state.humans = humans;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    return state;
+  }
+
+  it('single-human game: 4th concurrent pact is refused (cap 3)', () => {
+    const state = tyrantState(['grid']);
+    for (const k of ['grid', 'syndicate', 'commune']) {
+      state.pacts[pairKey(TYRANT_KEY, k)] = 1;
+    }
+    assert.ok(tyrantAtPactCap(state), 'cap reached at 3 pacts');
+    const { state: next } = reduce(state, { type: 'TYRANT_COURT', target: 'ghost' });
+    assert.ok(!hasPact(next, TYRANT_KEY, 'ghost'), 'court past the cap is a no-op');
+  });
+
+  it('single-human game: pacts up to 3 still form', () => {
+    const state = tyrantState(['grid']);
+    state.pacts[pairKey(TYRANT_KEY, 'grid')] = 1;
+    state.pacts[pairKey(TYRANT_KEY, 'syndicate')] = 1;
+    const { state: next } = reduce(state, { type: 'TYRANT_COURT', target: 'ghost' });
+    assert.ok(hasPact(next, TYRANT_KEY, 'ghost'), '3rd pact forms normally');
+  });
+
+  it('multi-human game: no cap — Tyrant can court everyone', () => {
+    const state = tyrantState(['grid', 'syndicate']);
+    for (const k of ['grid', 'syndicate', 'commune']) {
+      state.pacts[pairKey(TYRANT_KEY, k)] = 1;
+    }
+    assert.ok(!tyrantAtPactCap(state), 'no cap with 2+ humans');
+    const { state: next } = reduce(state, { type: 'TYRANT_COURT', target: 'ghost' });
+    assert.ok(hasPact(next, TYRANT_KEY, 'ghost'), '4th pact allowed in multi-human games');
   });
 });
