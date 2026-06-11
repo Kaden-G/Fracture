@@ -115,6 +115,15 @@ const FACTION_IMAGES = {
   tyrant:    'assets/faction_tyrant.png',
 };
 
+// Themed card frames for the sidebar faction status rows (built by tools/make_cards.py).
+const FACTION_CARDS = {
+  grid:      'assets/card_grid.png',
+  syndicate: 'assets/card_syndicate.png',
+  commune:   'assets/card_commune.png',
+  ghost:     'assets/card_ghost.png',
+  tyrant:    'assets/card_tyrant.png',
+};
+
 // ---- REGIONS: a pinwheel split of the 5×5 grid into N/S/E/W (6 tiles each) + a neutral CORE.
 const REGION_NAMES  = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST', C:'CORE' };
 const REGION_COLORS = { N:'#5dade2', S:'#e74c3c', E:'#2ecc71', W:'#f1c40f', C:'#888' };
@@ -349,6 +358,12 @@ function killFaction(fk){
     }
   }
   G.factions[fk].eliminated = true;
+  // Death voids diplomacy: clear the fallen faction's pacts so stale entries never
+  // count toward anything (e.g. the Tyrant's pact tally). Grudges expire on their own.
+  for (const pk of Object.keys(G.pacts || {})) {
+    const [a, b] = pk.split('|');
+    if (a === fk || b === fk) delete G.pacts[pk];
+  }
   addLog(`💀 ${G.factions[fk].name} ELIMINATED!`);
 }
 
@@ -444,12 +459,14 @@ function runReckoning(conspirator) {
 // ============================================================
 function showTitle() {
   if (typeof resetNet === 'function') resetNet();
+  document.getElementById('conquest-overlay')?.classList.remove('show');
   switchScreen('title-screen');
   document.getElementById('rules-btn').style.display = 'none';
 }
 
 function showSetup() {
   if (typeof resetNet === 'function') resetNet();
+  document.getElementById('conquest-overlay')?.classList.remove('show');
   switchScreen('setup-screen');
   G = {};
   renderSetup();
@@ -808,20 +825,21 @@ function renderSidebar() {
       const nodes = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       const isActive = k===activeFk();
       const isMe = mySeats.includes(k);
+      // Each faction's row sits in its themed card frame (9-slice via border-image).
       return `
-        <div class="faction-row" style="
-          border: 2px solid ${f.color}${isActive?'':'55'};
-          background: ${f.color}${isActive?'28':'10'};
-          border-radius: 6px;
-          ${isActive?`box-shadow: 0 0 10px ${f.color}44;`:''}
-          ${f.eliminated?'opacity:0.35;':''}
+        <div class="faction-row card-framed" style="
+          border-image: url('${FACTION_CARDS[k]}') 80 fill / 12px stretch;
+          ${isActive?`box-shadow: 0 0 12px ${f.color}aa; filter:brightness(1.12);`:''}
+          ${f.eliminated?'opacity:0.35; filter:grayscale(0.7);':''}
         ">
-          <div class="faction-dot" style="background:${f.color}"></div>
-          <div style="flex:1">
-            <div style="font-family:'Bangers'; font-size:13px; letter-spacing:1px; color:${f.color}">
-              ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${isMe?' 👤':''}${isActive?' ◄ TURN':''}
+          <div class="fr-scrim">
+            <div class="faction-dot" style="background:${f.color}"></div>
+            <div style="flex:1">
+              <div style="font-family:'Bangers'; font-size:13px; letter-spacing:1px; color:${f.color}">
+                ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${isMe?' 👤':''}${isActive?' ◄ TURN':''}
+              </div>
+              <div class="faction-row-sub">${tiles} tiles · ${nodes}★ nodes · ${f.resources} res ${f.eliminated?'· DEAD':''}</div>
             </div>
-            <div class="faction-row-sub">${tiles} tiles · ${nodes}★ nodes · ${f.resources} res ${f.eliminated?'· DEAD':''}</div>
           </div>
         </div>`;
     }).join('');
@@ -878,7 +896,7 @@ function renderSidebar() {
     if (hiddenPacts > 0)
       rows.push(`<span style="opacity:0.6">🔒 ${hiddenPacts} other pact${hiddenPacts>1?'s':''} in Nexus</span>`);
     if (tyrantAlive()) {
-      const tp = Object.keys(G.pacts||{}).filter(k => { const [a,b]=k.split('|'); return a===TYRANT_KEY||b===TYRANT_KEY; }).length;
+      const tp = tyrantAllies().length;   // pacts with LIVING rivals only
       const need = livingKeys().filter(k=>k!==TYRANT_KEY).length;
       const left = need - tp;
       const cap = tyrantPactCap();
@@ -1723,19 +1741,26 @@ function handleTileClick(id) {
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
+    const srcId = selectedTile;   // capture now — a confirm modal may defer doAttack
     const doAttack = () => {
+      // Re-validate: if the situation changed while a confirm modal was up, fizzle quietly.
+      const srcT = G.tiles[srcId];
+      if (!srcT || srcT.owner !== G.playerFaction || srcT.troops < 2 || !tile.owner || tile.owner === G.playerFaction) {
+        setActionLog('Attack fizzled — the situation changed.'); return;
+      }
       if (!assaultOn) { G.actionsUsed++; assaultOn = true; assaultCaptures = 0; }   // launching the assault costs ONE action
       const captured = G.tiles[id].troops <= 1;  // will this be a capture if we win?
-      const won = resolveAttack(G.playerFaction, selectedTile, id, true);
+      const won = resolveAttack(G.playerFaction, srcId, id, true);
       if (won && captured) assaultCaptures++;
       renderSidebar();
       if (checkWin()) return;
       // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
       // Hard cap: 3 captures per assault chain.
-      if (won && G.tiles[selectedTile] && G.tiles[selectedTile].troops >= 2 && assaultCaptures < 3) {
+      if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
+        selectedTile = srcId;   // keep the assault source selected for the next strike
         setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
         renderMap();
-        document.getElementById('hex-'+selectedTile)?.classList.add('selected');
+        document.getElementById('hex-'+srcId)?.classList.add('selected');
         return;
       }
       // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
@@ -1771,6 +1796,10 @@ function handleTileClick(id) {
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
     if (f.resources < 1) { setActionLog('Sabotage costs 1 resource.'); return; }
     const doSabotage = () => {
+      // Re-validate: if the situation changed while a confirm modal was up, fizzle quietly.
+      if (!tile.owner || tile.owner === G.playerFaction || f.resources < 1) {
+        setActionLog('Sabotage fizzled — the situation changed.'); return;
+      }
       f.resources -= 1;
       const sabPrev = tile.owner;
       const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
@@ -1823,6 +1852,10 @@ function handleTileClick(id) {
     if (!myT.some(mt=>adjacent(mt,tile))) { setActionLog('Must be adjacent to YOUR territory.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
     const doBribe = () => {
+      // Re-validate: if the situation changed while a confirm modal was up, fizzle quietly.
+      if (!tile.owner || tile.owner === G.playerFaction || f.resources < 1) {
+        setActionLog('Bribe fizzled — the situation changed.'); return;
+      }
       f.resources -= 1;
       const bribedPrev = tile.owner;
       tile.troops--;
@@ -2001,7 +2034,18 @@ function modParts(arr) {
   return arr.filter(p => p.v > 0).map(p => `+${p.v} ${p.label}`).join(' ');
 }
 
+// Combat results queue — EVERY result stays on screen until the player presses OK.
+// Results that land while one is showing queue up behind it; nothing is lost.
+let combatQueue      = [];
+let combatAckWaiters = [];   // engine continuations waiting for the queue to drain
+
 function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
+  combatQueue.push({ att, def, win, playerIsAttacker, af, df, captured });
+  if (combatQueue.length === 1) renderCombatFlash();
+}
+
+function renderCombatFlash() {
+  const { att, def, win, playerIsAttacker, af, df, captured } = combatQueue[0];
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
   const diceStr = (arr) => arr.map(d => faces[d-1]).join('');
   const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
@@ -2014,8 +2058,9 @@ function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
   if (captured)   headline = playerIsAttacker ? '⚡ TILE CAPTURED!' : '💥 TILE LOST!';
   else if (win)   headline = '💢 HIT! −1 TROOP';           // round won, but the tile holds
   else            headline = playerIsAttacker ? '🛡️ REPELLED' : '🛡️ YOU HOLD!';
-  // Never stack flashes — the latest combat replaces any prior one.
-  document.querySelectorAll('.combat-flash').forEach(e => e.remove());
+  document.querySelectorAll('.combat-ack-overlay').forEach(e => e.remove());
+  const ov = document.createElement('div');
+  ov.className = 'combat-ack-overlay';
   const el = document.createElement('div');
   el.className = 'combat-flash';
   el.innerHTML = `
@@ -2028,9 +2073,27 @@ function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
       <span class="roll-line">${diceStr(def.dice)} ${defMods} <b>= ${def.total}</b></span>
     </div>
     <div class="result-line ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
+    <button class="combat-ok-btn" onclick="acknowledgeCombat()">OK ✓</button>
   `;
-  document.body.appendChild(el);
-  setTimeout(()=>el.remove(), 3100);
+  ov.appendChild(el);
+  document.body.appendChild(ov);
+}
+
+// OK pressed — dismiss the current result, show the next queued one, or release the engine.
+function acknowledgeCombat() {
+  if (!combatQueue.length) return;
+  document.querySelectorAll('.combat-ack-overlay').forEach(e => e.remove());
+  combatQueue.shift();
+  if (combatQueue.length) { renderCombatFlash(); return; }
+  const waiters = combatAckWaiters;
+  combatAckWaiters = [];
+  waiters.forEach(cb => cb());
+}
+
+// Run `cb` once every shown combat result has been acknowledged (immediately if none is up).
+function onCombatAck(cb) {
+  if (!combatQueue.length) cb();
+  else combatAckWaiters.push(cb);
 }
 
 // ============================================================
@@ -2284,9 +2347,13 @@ function runAITurn(fk) {
     const combat = (result === 'won' || result === 'repelled');
     if (result === 'won') aiCaptures++;
     if (result !== 'won' || aiCaptures >= 3) { actsLeft--; aiCaptures = 0; }   // wins chain; 3-capture cap or repel spends action
-    setTimeout(step, combat ? 3400 : 450);
+    // A combat that involved the local player put an OK popup on screen — the AI waits
+    // for the acknowledgment before its next action. AI-vs-AI fights keep the old pacing.
+    if (combat && combatQueue.length) onCombatAck(() => setTimeout(step, 400));
+    else setTimeout(step, combat ? 3400 : 450);
   };
-  setTimeout(step, 250);
+  // A Tyrant "sic" strike just above may already have a popup up — wait for it first.
+  onCombatAck(() => setTimeout(step, 250));
 }
 
 function finishAITurn(fk) {
@@ -2706,11 +2773,29 @@ function showWin(fk, condition, detail) {
 function renderWin(w) {
   const f = G.factions[w.fk];
   const humanWon = !f.isAI;  // a human seat took it
+
+  // CONQUEST TAKEOVER: every tile on the board flips to the winner's themed hex.
+  Object.values(G.tiles).forEach(t => { t.owner = w.fk; t.troops = 0; t.heldRounds = 0; });
+  switchScreen('game-screen');
+  selectedTile = null; currentAction = null;
+  renderMap(); renderSidebar();
+  disablePlayerActions();
+  document.getElementById('phase-label').textContent = `ROUND ${w.round} · GAME OVER`;
+  const lbl = document.getElementById('turn-label');
+  lbl.className = 'turn-indicator';
+  lbl.textContent = `${f.icon} ${f.name}`;
+
+  // Banner over the conquered board.
   document.getElementById('win-title').textContent   = humanWon ? '⚡ VICTORY!' : '💀 AI WINS';
   document.getElementById('win-title').style.color   = humanWon ? 'var(--node-glow)' : 'var(--syndicate)';
-  document.getElementById('win-subtitle').textContent = `${f.icon} ${f.name} — ${w.condition}`;
+  const head = document.getElementById('conquest-headline');
+  head.textContent  = `${f.icon} ${f.name} CONTROLS NEXUS GRID!`;
+  head.style.color  = f.color;
+  document.getElementById('win-subtitle').textContent = w.condition;
   document.getElementById('win-detail').textContent   = w.detail + ` (Round ${w.round})`;
-  switchScreen('win-screen');
+  const banner = document.querySelector('.conquest-banner');
+  if (banner) banner.style.borderColor = f.color;
+  document.getElementById('conquest-overlay').classList.add('show');
   document.getElementById('rules-btn').style.display = 'none';
 }
 
@@ -3037,4 +3122,5 @@ Object.assign(window, {
   setMyName, setMyTrait,
   acceptTyrantPact, refuseTyrantPact,
   tyrantModalConfirm, tyrantModalCancel,
+  acknowledgeCombat,
 });

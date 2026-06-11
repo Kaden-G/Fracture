@@ -77,6 +77,12 @@ function killFaction(state, fk, log) {
     }
   }
   state.factions[fk].eliminated = true;
+  // Death voids diplomacy: clear the fallen faction's pacts so stale entries never
+  // count toward anything (e.g. the Tyrant's pact tally). Grudges expire on their own.
+  for (const pk of Object.keys(state.pacts || {})) {
+    const [a, b] = pk.split('|');
+    if (a === fk || b === fk) delete state.pacts[pk];
+  }
   log.push(`💀 ${state.factions[fk].name} ELIMINATED!`);
 }
 
