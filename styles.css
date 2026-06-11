@@ -975,7 +975,15 @@
 
   .rules-panel ul { padding-left: 16px; }
 
-  /* ===== COMBAT RESULT FLASH ===== */
+  /* ===== COMBAT RESULT POPUP (must be acknowledged with OK) ===== */
+  /* Full-screen blocker behind the result — nothing else is clickable until OK. */
+  .combat-ack-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 299;
+  }
+
   .combat-flash {
     position: fixed;
     top: 50%;
@@ -986,11 +994,25 @@
     padding: 22px 36px;
     z-index: 300;
     text-align: center;
-    animation: flashIn 0.2s ease, flashOut 0.3s ease 1.2s forwards;
-    pointer-events: none;
+    animation: flashIn 0.2s ease;
     box-shadow: 0 0 40px rgba(241,196,15,0.3);
     min-width: 320px;
   }
+
+  .combat-flash .combat-ok-btn {
+    margin-top: 14px;
+    padding: 8px 36px;
+    font-family: 'Bangers', cursive;
+    font-size: 20px;
+    letter-spacing: 2px;
+    color: #0a0a0a;
+    background: var(--node-glow);
+    border: 3px solid var(--ink);
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .combat-flash .combat-ok-btn:hover  { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+  .combat-flash .combat-ok-btn:active { transform: translate(2px, 2px);  box-shadow: 1px 1px 0 var(--ink); }
 
   .combat-flash .combat-side {
     display: flex;
@@ -1040,9 +1062,6 @@
   @keyframes flashIn {
     from { opacity: 0; transform: translate(-50%,-50%) scale(0.7); }
     to   { opacity: 1; transform: translate(-50%,-50%) scale(1); }
-  }
-  @keyframes flashOut {
-    to { opacity: 0; transform: translate(-50%,-60%) scale(0.9); }
   }
 
   /* ===== SEAT CONFIG (setup) ===== */
