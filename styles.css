@@ -458,6 +458,23 @@
     color: var(--card-text);
   }
 
+  /* Faction rows framed by their themed card artwork (assets/card_*.png, 9-slice). */
+  .faction-row.card-framed {
+    border: 12px solid transparent;   /* border-image (set inline per faction) paints this */
+    background: none;
+    padding: 1px 2px;
+    min-height: 38px;
+  }
+  .fr-scrim {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    background: rgba(8, 8, 14, 0.55);  /* keeps text readable on light card interiors */
+    border-radius: 3px;
+    padding: 3px 7px;
+  }
+
   .faction-dot {
     width: 15px;
     height: 15px;

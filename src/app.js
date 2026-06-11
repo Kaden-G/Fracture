@@ -115,6 +115,15 @@ const FACTION_IMAGES = {
   tyrant:    'assets/faction_tyrant.png',
 };
 
+// Themed card frames for the sidebar faction status rows (built by tools/make_cards.py).
+const FACTION_CARDS = {
+  grid:      'assets/card_grid.png',
+  syndicate: 'assets/card_syndicate.png',
+  commune:   'assets/card_commune.png',
+  ghost:     'assets/card_ghost.png',
+  tyrant:    'assets/card_tyrant.png',
+};
+
 // ---- REGIONS: a pinwheel split of the 5×5 grid into N/S/E/W (6 tiles each) + a neutral CORE.
 const REGION_NAMES  = { N:'NORTH', S:'SOUTH', E:'EAST', W:'WEST', C:'CORE' };
 const REGION_COLORS = { N:'#5dade2', S:'#e74c3c', E:'#2ecc71', W:'#f1c40f', C:'#888' };
@@ -816,20 +825,21 @@ function renderSidebar() {
       const nodes = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       const isActive = k===activeFk();
       const isMe = mySeats.includes(k);
+      // Each faction's row sits in its themed card frame (9-slice via border-image).
       return `
-        <div class="faction-row" style="
-          border: 2px solid ${f.color}${isActive?'':'55'};
-          background: ${f.color}${isActive?'28':'10'};
-          border-radius: 6px;
-          ${isActive?`box-shadow: 0 0 10px ${f.color}44;`:''}
-          ${f.eliminated?'opacity:0.35;':''}
+        <div class="faction-row card-framed" style="
+          border-image: url('${FACTION_CARDS[k]}') 80 fill / 12px stretch;
+          ${isActive?`box-shadow: 0 0 12px ${f.color}aa; filter:brightness(1.12);`:''}
+          ${f.eliminated?'opacity:0.35; filter:grayscale(0.7);':''}
         ">
-          <div class="faction-dot" style="background:${f.color}"></div>
-          <div style="flex:1">
-            <div style="font-family:'Bangers'; font-size:13px; letter-spacing:1px; color:${f.color}">
-              ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${isMe?' 👤':''}${isActive?' ◄ TURN':''}
+          <div class="fr-scrim">
+            <div class="faction-dot" style="background:${f.color}"></div>
+            <div style="flex:1">
+              <div style="font-family:'Bangers'; font-size:13px; letter-spacing:1px; color:${f.color}">
+                ${f.icon} ${f.name} ${f.isAI?'(AI)':'(HUMAN)'}${isMe?' 👤':''}${isActive?' ◄ TURN':''}
+              </div>
+              <div class="faction-row-sub">${tiles} tiles · ${nodes}★ nodes · ${f.resources} res ${f.eliminated?'· DEAD':''}</div>
             </div>
-            <div class="faction-row-sub">${tiles} tiles · ${nodes}★ nodes · ${f.resources} res ${f.eliminated?'· DEAD':''}</div>
           </div>
         </div>`;
     }).join('');
