@@ -450,12 +450,14 @@ function runReckoning(conspirator) {
 // ============================================================
 function showTitle() {
   if (typeof resetNet === 'function') resetNet();
+  document.getElementById('conquest-overlay')?.classList.remove('show');
   switchScreen('title-screen');
   document.getElementById('rules-btn').style.display = 'none';
 }
 
 function showSetup() {
   if (typeof resetNet === 'function') resetNet();
+  document.getElementById('conquest-overlay')?.classList.remove('show');
   switchScreen('setup-screen');
   G = {};
   renderSetup();
@@ -2761,11 +2763,29 @@ function showWin(fk, condition, detail) {
 function renderWin(w) {
   const f = G.factions[w.fk];
   const humanWon = !f.isAI;  // a human seat took it
+
+  // CONQUEST TAKEOVER: every tile on the board flips to the winner's themed hex.
+  Object.values(G.tiles).forEach(t => { t.owner = w.fk; t.troops = 0; t.heldRounds = 0; });
+  switchScreen('game-screen');
+  selectedTile = null; currentAction = null;
+  renderMap(); renderSidebar();
+  disablePlayerActions();
+  document.getElementById('phase-label').textContent = `ROUND ${w.round} · GAME OVER`;
+  const lbl = document.getElementById('turn-label');
+  lbl.className = 'turn-indicator';
+  lbl.textContent = `${f.icon} ${f.name}`;
+
+  // Banner over the conquered board.
   document.getElementById('win-title').textContent   = humanWon ? '⚡ VICTORY!' : '💀 AI WINS';
   document.getElementById('win-title').style.color   = humanWon ? 'var(--node-glow)' : 'var(--syndicate)';
-  document.getElementById('win-subtitle').textContent = `${f.icon} ${f.name} — ${w.condition}`;
+  const head = document.getElementById('conquest-headline');
+  head.textContent  = `${f.icon} ${f.name} CONTROLS NEXUS GRID!`;
+  head.style.color  = f.color;
+  document.getElementById('win-subtitle').textContent = w.condition;
   document.getElementById('win-detail').textContent   = w.detail + ` (Round ${w.round})`;
-  switchScreen('win-screen');
+  const banner = document.querySelector('.conquest-banner');
+  if (banner) banner.style.borderColor = f.color;
+  document.getElementById('conquest-overlay').classList.add('show');
   document.getElementById('rules-btn').style.display = 'none';
 }
 

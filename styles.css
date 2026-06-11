@@ -299,9 +299,10 @@
     top: 50%;
     transform: translate(-50%, -50%);
     transform-origin: center center;
-    /* Cardinal-region backdrop: painted map with N/S/E/W biomes (faint so hexes dominate) */
+    /* Cardinal-region backdrop: painted map with N/S/E/W biomes — a light wash keeps
+       the hexes dominant while letting the artwork pop through */
     background-image:
-      linear-gradient(rgba(13, 17, 23, 0.4), rgba(13, 17, 23, 0.4)),
+      linear-gradient(rgba(13, 17, 23, 0.22), rgba(13, 17, 23, 0.22)),
       url('assets/map_regions.png');
     background-size: cover, cover;
     background-position: center, center;
@@ -826,25 +827,37 @@
     box-shadow: 0 4px 14px rgba(127,209,59,0.5);
   }
 
-  /* ===== WIN SCREEN ===== */
-  #win-screen {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+  /* ===== CONQUEST WIN — banner over the board, which flips to the winner's tiles ===== */
+  #conquest-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 180;               /* below the Tyrant modals (200) & combat OK (299) */
     align-items: center;
     justify-content: center;
     padding: 20px;
+    background: rgba(10, 10, 18, 0.25);   /* light dim — the conquered board stays visible */
   }
+  #conquest-overlay.show { display: flex; }
 
-  .win-panel {
-    background: var(--card-bg);
-    border: 6px solid var(--node-glow);
-    padding: 40px;
+  .conquest-banner {
+    background: rgba(26, 26, 46, 0.93);
+    border: 6px solid var(--node-glow);   /* recolored to the winner's faction at runtime */
+    padding: 36px 44px;
     text-align: center;
-    box-shadow: 12px 12px 0 var(--syndicate);
-    max-width: 500px;
+    box-shadow: 12px 12px 0 rgba(0, 0, 0, 0.55);
+    max-width: 560px;
     animation: winBurst 0.5s ease;
     color: var(--card-text);
+  }
+
+  .conquest-headline {
+    font-family: 'Bangers', cursive;
+    font-size: clamp(26px, 5vw, 44px);
+    letter-spacing: 3px;
+    line-height: 1.15;
+    margin-top: 8px;
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
   }
 
   @keyframes winBurst {
