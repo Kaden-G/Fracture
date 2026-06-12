@@ -2890,7 +2890,10 @@ function checkWin() {
     }
   }
   // The Tyrant wins by diplomacy: a (secret) pact with EVERY surviving rival = no enemies left.
-  if (tyrantAlive()) {
+  // NEVER in a single-human game — the lone human must always keep a path to the Reckoning,
+  // so the Tyrant can't win by ally-default even after eliminations shrink the field.
+  const soloHuman = (G.humans ? G.humans.length : 0) === 1;
+  if (tyrantAlive() && !soloHuman) {
     const others = livingKeys().filter(k => k !== TYRANT_KEY);
     if (others.length > 0 && others.every(k => hasPact(TYRANT_KEY, k))) {
       showWin(TYRANT_KEY, 'NO ENEMIES LEFT', 'The Tyrant bought peace with every rival — and rules Nexus by default.');
