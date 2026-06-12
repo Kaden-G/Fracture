@@ -612,6 +612,13 @@ describe('Tyrant pact cap', () => {
     const { state: next } = reduce(state, { type: 'TYRANT_COURT', target: 'ghost' });
     assert.ok(hasPact(next, TYRANT_KEY, 'ghost'), '4th pact allowed in multi-human games');
   });
+
+  it('conquest Tyrant never re-instigates: TYRANT_COURT is a no-op', () => {
+    const state = tyrantState(['grid', 'syndicate']);
+    state.tyrantConquest = true;
+    const { state: next } = reduce(state, { type: 'TYRANT_COURT', target: 'ghost' });
+    assert.ok(!hasPact(next, TYRANT_KEY, 'ghost'), 'a conquest Tyrant does not court');
+  });
 });
 
 // ============================================================
