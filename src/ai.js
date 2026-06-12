@@ -213,7 +213,7 @@ export function chooseAction(state, fk) {
       const adjTile = myT().find(m => adjacent(m, nodeTarget) && m.troops < nodeTarget.troops);
       const donor = myT().filter(t => t.id !== adjTile?.id && t.troops >= 3).sort((a,b) => b.troops - a.troops)[0];
       if (adjTile && donor) {
-        return { type: 'AIRLIFT', src: donor.id, dst: adjTile.id };
+        return { type: 'AIRLIFT', src: donor.id, dst: adjTile.id, count: Math.min(3, donor.troops - 1) };
       }
     }
   }

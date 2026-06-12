@@ -673,13 +673,15 @@ export function reduce(inputState, action) {
       const f = state.factions[fk];
       const src = state.tiles[action.src];
       const dst = state.tiles[action.dst];
+      // Up to 3 troops, always leaving a garrison of 1 behind. Default to the max.
+      const n = Math.max(1, Math.min(3, action.count ?? 3, src.troops - 1));
       f.resources -= airliftCost(state, fk);   // 0 while holding 🚇 TRANSIT
-      src.troops -= 2;
-      dst.troops += 2;
+      src.troops -= n;
+      dst.troops += n;
       state.actionsUsed++;
       state.assaultOn = false;
       state.assaultCaptures = 0;
-      log.push(`✈️ ${f.icon} airlifted 2 troops: ${src.name} → ${dst.name}`);
+      log.push(`✈️ ${f.icon} airlifted ${n} troop${n > 1 ? 's' : ''}: ${src.name} → ${dst.name}`);
       effects.push({kind:'refresh', tiles:[action.src, action.dst]});
       break;
     }

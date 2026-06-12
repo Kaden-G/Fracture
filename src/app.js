@@ -1641,7 +1641,7 @@ function setAction(action) {
     reinforce: 'REINFORCE: Click YOUR tile to add troops (cost varies by faction/nodes).',
     pact:      "PACT: Click a rival's tile to propose a non-aggression pact (free, no action).",
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
-    airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.`,
+    airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (2+ troops), then ANY other tile you own — move up to 3 troops.`,
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
     sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −1 troop. First sabotage each turn vs a 2+ stack siphons +1 to your weakest frontline tile.',
     bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
@@ -1746,32 +1746,44 @@ function handleTileClick(id) {
     refreshHex(id); renderSidebar(); return;
   }
 
-  // ---- AIRLIFT (universal, 3 res): redeploy 2 troops between any two of YOUR tiles ----
+  // ---- AIRLIFT (universal, 3 res): redeploy up to 3 troops between any two of YOUR tiles ----
   if (currentAction === 'airlift') {
     const cost = airliftCost(G.playerFaction);   // 0 while holding 🚇 TRANSIT
     if (!selectedTile || selectedTile===id) {
-      if (tile.owner===G.playerFaction && tile.troops>=3) {
+      if (tile.owner===G.playerFaction && tile.troops>=2) {
         if (f.resources < cost) { setActionLog(`Airlift costs ${cost} resources.`); return; }
         selectedTile = id;
         renderMap();
         document.getElementById('hex-'+id)?.classList.add('selected');
         setActionLog(`Airlift FROM ${tile.name}. Click ANY other tile you own.`);
-      } else { setActionLog('Airlift needs YOUR tile with 3+ troops.'); }
+      } else { setActionLog('Airlift needs YOUR tile with 2+ troops.'); }
       return;
     }
     const src = G.tiles[selectedTile];
     if (tile.owner !== G.playerFaction) { setActionLog('Airlift only to YOUR tiles.'); return; }
     if (tile.id === src.id)             { setActionLog('Pick a different destination.'); return; }
     if (f.resources < cost)             { setActionLog(`Airlift costs ${cost} resources.`); return; }
-    f.resources -= cost;
-    src.troops -= 2; tile.troops += 2;
-    G.actionsUsed++;
-    currentAction = null;
-    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    addLog(`✈️ ${f.name} airlifted 2 troops: ${src.name} → ${tile.name}`);
-    setActionLog(`Airlifted! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
-    refreshHex(selectedTile); refreshHex(id);
-    selectedTile=null; renderSidebar(); return;
+    const maxN = Math.min(3, src.troops - 1);   // leave a garrison of 1
+    const dstId = id;
+    const doAirlift = (n) => {
+      f.resources -= cost;
+      src.troops -= n; G.tiles[dstId].troops += n;
+      G.actionsUsed++;
+      currentAction = null;
+      document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+      addLog(`✈️ ${f.name} airlifted ${n} troop${n>1?'s':''}: ${src.name} → ${G.tiles[dstId].name}`);
+      setActionLog(`Airlifted! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
+      refreshHex(selectedTile); refreshHex(dstId);
+      selectedTile=null; renderSidebar(); syncPush();
+    };
+    if (maxN <= 1) { doAirlift(1); return; }   // only one to spare — no need to ask
+    showQtyPicker({
+      title: `Airlift to ${tile.name} — how many troops?`,
+      min: 1, max: maxN, def: maxN, confirmLabel: '✈️ AIRLIFT',
+      onPick: doAirlift,
+      onCancel: () => { setActionLog('Airlift cancelled.'); },
+    });
+    return;
   }
 
   // ---- ENTRENCH (universal, 2 res): buy a dig-in level on a garrisoned tile ----
@@ -2590,8 +2602,9 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
       const adjTile = myTiles().find(m => adjacent(m, nodeTarget) && m.troops < nodeTarget.troops);
       const donor = myTiles().filter(t => t.id !== adjTile.id && t.troops >= 3).sort((a,b)=>b.troops-a.troops)[0];
       if (adjTile && donor) {
-        f.resources -= aCost; donor.troops -= 2; adjTile.troops += 2;
-        addLog(`✈️ ${f.icon} ${f.name} airlifted to ${adjTile.name}`);
+        const n = Math.min(3, donor.troops - 1);
+        f.resources -= aCost; donor.troops -= n; adjTile.troops += n;
+        addLog(`✈️ ${f.icon} ${f.name} airlifted ${n} troop${n>1?'s':''} to ${adjTile.name}`);
         refreshHex(donor.id); refreshHex(adjTile.id);
         return true;
       }

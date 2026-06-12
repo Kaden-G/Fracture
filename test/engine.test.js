@@ -230,7 +230,7 @@ describe('Reducer', () => {
     assert.equal(next.tiles[dstId].owner, 'grid');
   });
 
-  it('AIRLIFT moves 2 troops at cost of 3 res', () => {
+  it('AIRLIFT moves up to 3 troops at cost of 3 res', () => {
     const state = makeTestState();
     state.factions.grid.resources = 10;
     const srcId = 'tile_0_0';
@@ -240,10 +240,36 @@ describe('Reducer', () => {
     state.tiles[dstId].owner = 'grid';
     state.tiles[dstId].troops = 2;
 
-    const { state: next } = reduce(state, { type: 'AIRLIFT', src: srcId, dst: dstId });
-    assert.equal(next.tiles[srcId].troops, 3);
-    assert.equal(next.tiles[dstId].troops, 4);
-    assert.equal(next.factions.grid.resources, 7);
+    // Explicit count of 2
+    const { state: a } = reduce(state, { type: 'AIRLIFT', src: srcId, dst: dstId, count: 2 });
+    assert.equal(a.tiles[srcId].troops, 3);
+    assert.equal(a.tiles[dstId].troops, 4);
+    assert.equal(a.factions.grid.resources, 7);
+
+    // Default (no count) moves the max of 3
+    const { state: b } = reduce(state, { type: 'AIRLIFT', src: srcId, dst: dstId });
+    assert.equal(b.tiles[srcId].troops, 2, 'default airlift moves 3');
+    assert.equal(b.tiles[dstId].troops, 5);
+  });
+
+  it('AIRLIFT clamps to 3 and always leaves a garrison of 1', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 10;
+    state.tiles['tile_0_0'].owner = 'grid'; state.tiles['tile_0_0'].troops = 10;
+    state.tiles['tile_6_6'].owner = 'grid'; state.tiles['tile_6_6'].troops = 1;
+    // Request 5 → capped at 3
+    const { state: c } = reduce(state, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_6_6', count: 5 });
+    assert.equal(c.tiles['tile_0_0'].troops, 7, 'no more than 3 moved');
+    assert.equal(c.tiles['tile_6_6'].troops, 4);
+
+    // A 2-stack can only spare 1 (leave a garrison), even if 3 requested
+    const s2 = makeTestState();
+    s2.factions.grid.resources = 10;
+    s2.tiles['tile_0_0'].owner = 'grid'; s2.tiles['tile_0_0'].troops = 2;
+    s2.tiles['tile_6_6'].owner = 'grid'; s2.tiles['tile_6_6'].troops = 1;
+    const { state: d } = reduce(s2, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_6_6', count: 3 });
+    assert.equal(d.tiles['tile_0_0'].troops, 1, 'leaves 1 behind');
+    assert.equal(d.tiles['tile_6_6'].troops, 2);
   });
 
   it('elimination grants +3 resources bounty', () => {
@@ -750,15 +776,15 @@ describe('TRANSIT airlift perk', () => {
     base.tiles['tile_0_1'].owner = 'grid'; base.tiles['tile_0_1'].troops = 1;
     base.currentTurnIdx = 0;
 
-    const { state: s1 } = reduce(base, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_0_1' });
+    const { state: s1 } = reduce(base, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_0_1', count: 2 });
     assert.equal(s1.factions.grid.resources, 7, 'costs 3 without TRANSIT');
 
     const withT = JSON.parse(JSON.stringify(base));
     const transit = Object.values(withT.tiles).find(t => t.nodeId === 'node_transit');
     transit.owner = 'grid'; transit.troops = 1;
-    const { state: s2 } = reduce(withT, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_0_1' });
+    const { state: s2 } = reduce(withT, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_0_1', count: 2 });
     assert.equal(s2.factions.grid.resources, 10, 'free while holding TRANSIT');
-    assert.equal(s2.tiles['tile_0_1'].troops, 3, 'still moves 2 troops');
+    assert.equal(s2.tiles['tile_0_1'].troops, 3, 'moves the requested 2 troops');
     assert.equal(s2.actionsUsed, 1, 'still costs an action');
   });
 
