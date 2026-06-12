@@ -1312,9 +1312,10 @@ function tyrantInteract(fk) {
   }
   // 2. Otherwise the Tyrant may offer a secret non-aggression pact — at most TWICE per
   //    player, spaced 3+ rounds apart. No offer once it has hit its concurrent-pact cap
-  //    (single-human games: 3). A player may still petition the Tyrant themselves (PACT
-  //    action on a Tyrant tile) after its offers are spent.
-  if (tyrantAlive() && !hasPact(TYRANT_KEY, fk) && !tyrantAtPactCap()) {
+  //    (single-human games: 3), and NONE once it has flipped to CONQUEST — a conquest Tyrant
+  //    never re-instigates diplomacy. A player may still petition it (PACT action on a Tyrant
+  //    tile), and it may accept; it simply never reaches out first again.
+  if (tyrantAlive() && !G.tyrantConquest && !hasPact(TYRANT_KEY, fk) && !tyrantAtPactCap()) {
     if (!G.tyrantLastOffer)  G.tyrantLastOffer  = {};   // Firebase strips empty objects; rebuild defensively
     if (!G.tyrantOfferCount) G.tyrantOfferCount = {};
     const last = G.tyrantLastOffer[fk] || -99;
@@ -2490,21 +2491,25 @@ function runAITurn(fk) {
   if (fk === TYRANT_KEY) {
     tyrantSpread(fk);   // virus expansion before its normal actions
     // Court every un-allied rival (AIs decide now; humans are offered on their own turn).
-    // Courting stops once the Tyrant hits its concurrent-pact cap (single-human games: 3).
+    // Courting stops once the Tyrant hits its concurrent-pact cap (single-human games: 3),
+    // and entirely once it has flipped to CONQUEST — a conquest Tyrant never re-instigates
+    // diplomacy (it may still ACCEPT a pact petitioned to it, handled on the petitioner's turn).
     let newAlly = false;
     let allAIsRefused = true;
     const courtBlocked = tyrantAtPactCap();
-    livingKeys().filter(k => k!==TYRANT_KEY && G.factions[k].isAI && !hasPact(TYRANT_KEY,k))
-      .forEach(k => {
-        if (tyrantAtPactCap()) return;
-        if (aiConsiderPact(k, TYRANT_KEY)) {
-          formPact(TYRANT_KEY, k);
-          G.factions[k].boon = aiPickBoon(k);
-          newAlly = true;
-          allAIsRefused = false;
-        }
-      });
-    if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
+    if (!G.tyrantConquest) {
+      livingKeys().filter(k => k!==TYRANT_KEY && G.factions[k].isAI && !hasPact(TYRANT_KEY,k))
+        .forEach(k => {
+          if (tyrantAtPactCap()) return;
+          if (aiConsiderPact(k, TYRANT_KEY)) {
+            formPact(TYRANT_KEY, k);
+            G.factions[k].boon = aiPickBoon(k);
+            newAlly = true;
+            allAIsRefused = false;
+          }
+        });
+      if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
+    }
 
     // Part 2 Step 5: Tyrant betrayal flip — streak-based, requires 3 consecutive rounds
     // (a cap-blocked round made no offers, so it neither builds nor resets the streak)

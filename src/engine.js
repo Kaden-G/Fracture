@@ -874,6 +874,7 @@ export function reduce(inputState, action) {
     case 'TYRANT_COURT': {
       const target = action.target;
       if (!state.tyrantOn || !state.factions[TYRANT_KEY] || state.factions[TYRANT_KEY].eliminated) break;
+      if (state.tyrantConquest) break;   // a conquest Tyrant never re-instigates diplomacy
       if (hasPact(state, TYRANT_KEY, target)) break;
       if (tyrantAtPactCap(state)) break;   // concurrent-pact cap (single-human games: 3)
       formPact(state, TYRANT_KEY, target);
