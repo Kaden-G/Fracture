@@ -31,6 +31,10 @@ const FACTIONS = {
 const TYRANT_KEY = 'tyrant';
 const THRALLDOM_CAP = 13; // at this corruption → auto-loss
 const MOON_BAND = 2;     // moon band = CAP-MOON_BAND .. CAP-1
+// Step 3: COALITION SURGE — human-only counterplay vs the Tyrant (mirrors engine.js).
+// Never fires in all-AI/single-human games; magnitude is tune-by-play (these two consts).
+const COALITION_PER_FACTION = 1;  // attack-vs-Tyrant bonus per coalition member beyond the first (TUNE BY PLAY)
+const COALITION_MAX         = 4;  // safety cap on the surge
 const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'reinforce',
                      perk:'Virus: spreads into adjacent tiles every turn · harbored allies can revive it' };
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
@@ -342,6 +346,32 @@ function tyrantAtPactCap() { return tyrantAllies().length >= tyrantPactCap(); }
 // All pacts are secret — visible only to the two parties involved.
 function pactVisibleTo(a, b, viewer){ return a===viewer || b===viewer; }
 
+// ---- Step 3: coalition surge (human-only counterplay vs the Tyrant) ----
+// A faction is "coalition-hostile" if it drew blood on the Tyrant this round or
+// last round (one-round memory = sustained pressure). Tyrant allies excluded.
+function coalitionHostile(k) {
+  return k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k)
+      && G.tyrantStruck && G.tyrantStruck[k] >= G.round - 1;
+}
+function coalitionSize() { return livingKeys().filter(coalitionHostile).length; }
+// Attack-roll bonus for attackerFk striking defOwner's tile: only vs the Tyrant,
+// only in 2+ human games, only for an earned True-Pact faction. Scales with the
+// visible coalition size (size 1 → 0, then +PER_FACTION per extra member).
+function tyrantSurgeBonus(attackerFk, defOwner) {
+  if (!tyrantOn() || defOwner !== TYRANT_KEY) return 0;
+  if ((G.humans ? G.humans.length : 0) < 2) return 0;   // HUMAN-ONLY
+  if (!coalitionHostile(attackerFk)) return 0;           // must have earned it; allies excluded
+  const size = coalitionSize();
+  return Math.min(COALITION_MAX, Math.max(0, (size - 1) * COALITION_PER_FACTION));
+}
+// Record a True-Pact faction drawing blood on the Tyrant (earns surge next turn).
+function recordTyrantStrike(attackerFk, defOwner) {
+  if (!tyrantOn() || defOwner !== TYRANT_KEY) return;
+  if (attackerFk === TYRANT_KEY || hasPact(TYRANT_KEY, attackerFk)) return;
+  if (!G.tyrantStruck) G.tyrantStruck = {};
+  G.tyrantStruck[attackerFk] = G.round;
+}
+
 // All elimination flows route through here so the Tyrant can get its harbor reprieve.
 function killFaction(fk){
   if (fk === TYRANT_KEY && tyrantAllies().length > 0 && !G.tyrantHarbor) {
@@ -591,6 +621,7 @@ function startGame() {
     tyrantOn: !!G.setup.tyrant,
     tyrantHarbor: 0,        // round the harbor reprieve expires (0 = not harbored)
     tyrantLastOffer: {},    // fk -> round the Tyrant last offered them a pact
+    tyrantStruck: {},       // Step 3: fk -> last round it drew blood on the Tyrant (coalition surge)
     tyrantConquest: false,  // Part 2: Tyrant switched from diplomacy to conquest
     nodesHeldSince: {},     // fk -> round they first held 3+ nodes (for 2-round win check)
     tiles: {},
@@ -1877,6 +1908,7 @@ function handleTileClick(id) {
       }
       f.resources -= 1;
       const sabPrev = tile.owner;
+      recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
       const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
       const sabDrop = 1;  // Siphon: −1 enemy troop
       if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
@@ -2044,9 +2076,11 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const grudgeD = grudgeDefBonus(attackerFk, tgt.owner);
   // 8. TOTAL WAR event: every attacker swings +1 this round
   const war = totalWar ? 1 : 0;
+  // 9. Step 3 coalition surge — human-only attack bonus vs the Tyrant (0 otherwise)
+  const surge = tyrantSurgeBonus(attackerFk, tgt.owner);
 
   // Raw modifier totals (before clamping)
-  let attMods = attForce + comms + coalition + grudgeA + war;
+  let attMods = attForce + comms + coalition + grudgeA + war + surge;
   let defMods = defForce + entrench + lastStand + data + grudgeD + overextend;
   // Clamp net modifier swing to ±4 — no combination of perks fully removes chance
   const modSwing = attMods - defMods;
@@ -2061,11 +2095,14 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
 
   turnAttacks++;  // this attack now counts toward overextension on the NEXT strike
 
+  // Step 3: record the strike (earns surge next turn) — tgt.owner is still the Tyrant here.
+  recordTyrantStrike(attackerFk, tgt.owner);
+
   // Flash the result whenever the human is involved — attacking OR defending
   const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
-      { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
+      { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, surge, total: attTotal },
       { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
@@ -2123,7 +2160,7 @@ function renderCombatFlash() {
   const { att, def, win, playerIsAttacker, af, df, captured } = combatQueue[0];
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
   const diceStr = (arr) => arr.map(d => faces[d-1]).join('');
-  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
@@ -2568,6 +2605,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
     if (target) {
       const prev = target.owner;
       f.resources -= 1;
+      recordTyrantStrike(fk, prev);   // Step 3: AI sabotaging the blob joins the coalition
       const aiPreTroops = target.troops;  // before the hit (D)
       const aiSabDrop = 1;  // Siphon: −1 enemy troop
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
@@ -2967,6 +3005,7 @@ function loadRemoteState(s) {
   clean.grudges        = clean.grudges        || {};
   clean.log            = clean.log            || [];
   clean.tyrantLastOffer = clean.tyrantLastOffer || {};
+  clean.tyrantStruck    = clean.tyrantStruck    || {};
   clean.nodesHeldSince  = clean.nodesHeldSince  || {};
   if (clean.pendingChoiceEvent) clean.pendingChoiceEvent.choicesMade = clean.pendingChoiceEvent.choicesMade || {};
   G = clean;
@@ -3210,7 +3249,7 @@ function buildOnlineGame(seats, tyrant) {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
-    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantConquest: false, nodesHeldSince: {},
+    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false, nodesHeldSince: {},
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;

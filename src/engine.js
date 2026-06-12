@@ -22,6 +22,43 @@ import { roll2d6, nextInt, nextFloat, shuffleWithRng } from './rng.js';
 // ---- Deep clone (JSON round-trip — state is JSON-serializable) ----
 function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
+// ============================================================
+// COALITION SURGE (Step 3) — HUMAN-ONLY counterplay vs the Tyrant.
+// A reward for the honest table uniting to burn the blob out. It NEVER fires
+// in all-AI sims (gated on 2+ humans) and so is calibrated by play, not the
+// harness. Magnitude is the two tunables below — tune these, not the rhythm.
+// ============================================================
+const COALITION_PER_FACTION = 1;  // attack-vs-Tyrant bonus per coalition member beyond the first (TUNE BY PLAY)
+const COALITION_MAX         = 4;  // safety cap on the surge
+
+// A faction is "coalition-hostile" if it drew blood on the Tyrant this round or
+// last round (a one-round memory = sustained pressure). Tyrant allies excluded.
+function coalitionHostile(state, k) {
+  return k !== TYRANT_KEY && !hasPact(state, TYRANT_KEY, k)
+      && state.tyrantStruck && state.tyrantStruck[k] >= state.round - 1;
+}
+function coalitionSize(state) {
+  return livingKeys(state).filter(k => coalitionHostile(state, k)).length;
+}
+// Attack-roll bonus for `attackerFk` striking a tile owned by `defOwner`.
+// Only vs the Tyrant, only in 2+ human games, only for a True-Pact faction
+// that earned it (drew blood within the window). Scales with coalition size:
+// size 1 → 0 (a lone poke is negligible), then +PER_FACTION per extra member.
+function tyrantSurgeBonus(state, attackerFk, defOwner) {
+  if (!state.tyrantOn || defOwner !== TYRANT_KEY) return 0;
+  if ((state.humans ? state.humans.length : 0) < 2) return 0;   // HUMAN-ONLY
+  if (!coalitionHostile(state, attackerFk)) return 0;           // must have earned it; allies excluded
+  const size = coalitionSize(state);
+  return Math.min(COALITION_MAX, Math.max(0, (size - 1) * COALITION_PER_FACTION));
+}
+// Record that a True-Pact faction drew blood on the Tyrant (earns surge next turn).
+function recordTyrantStrike(state, attackerFk, defOwner) {
+  if (!state.tyrantOn || defOwner !== TYRANT_KEY) return;
+  if (attackerFk === TYRANT_KEY || hasPact(state, TYRANT_KEY, attackerFk)) return;  // allies don't contribute
+  if (!state.tyrantStruck) state.tyrantStruck = {};
+  state.tyrantStruck[attackerFk] = state.round;
+}
+
 // ---- Helper: region tiles from state ----
 function regionTiles(state, reg) {
   return Object.values(state.tiles).filter(t => t.region === reg);
@@ -349,8 +386,10 @@ function resolveCombat(state, attackerFk, srcId, tgtId, turnAttacks) {
   const grudgeA = grudgeAtkBonus(state, attackerFk, tgt.owner);
   const grudgeD = grudgeDefBonus(state, attackerFk, tgt.owner);
   const war = state.totalWar ? 1 : 0;
+  // Step 3: coalition surge — human-only attack bonus vs the Tyrant (0 otherwise).
+  const surge = tyrantSurgeBonus(state, attackerFk, tgt.owner);
 
-  let attMods = attForce + comms + coalition + grudgeA + war;
+  let attMods = attForce + comms + coalition + grudgeA + war + surge;
   let defMods = defForce + entrench + lastStand + data + grudgeD + overextend;
   const modSwing = attMods - defMods;
   if (modSwing > 4)       attMods -= (modSwing - 4);
@@ -361,10 +400,13 @@ function resolveCombat(state, attackerFk, srcId, tgtId, turnAttacks) {
   const attWins = attTotal >= defTotal + fortifyVal;
   const captured = attWins && tgt.troops <= 1;
 
+  // Step 3: record the strike (earns surge next turn) — defender is still the Tyrant here.
+  recordTyrantStrike(state, attackerFk, tgt.owner);
+
   // Combat effect for UI rendering
   effects.push({
     kind: 'combat', src: srcId, tgt: tgtId, won: attWins, captured,
-    att: { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
+    att: { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, surge, total: attTotal },
     def: { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify: fortifyVal, data, grudge: grudgeD, overextend, total: defTotal },
     attackerFk, defenderFk: tgt.owner,
   });
@@ -742,6 +784,7 @@ export function reduce(inputState, action) {
           const tile = state.tiles[action.target];
           f.resources -= 1;
           const sabPrev = tile.owner;
+          recordTyrantStrike(state, fk, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
           const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
           const drop = 1;  // Siphon: −1 enemy troop
           if (tile.troops > drop) { tile.troops -= drop; }
