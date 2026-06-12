@@ -462,9 +462,14 @@ function checkWinCondition(state, log) {
       log.push(`📢 ${f.name} lost node dominance — hold timer reset.`);
     }
   }
-  // Tyrant diplomacy win
+  // Tyrant diplomacy win ("ally default") — the Tyrant rules when every surviving
+  // rival is bound to it. NEVER allowed in a single-human game: the lone human must
+  // always keep a path to the Reckoning, so the Tyrant can't win by ally-default even
+  // after eliminations shrink the field to its allies. (All-AI sims & 2+ human games
+  // keep it as a legitimate outcome.)
   const tyrantAlive = state.tyrantOn && state.factions[TYRANT_KEY] && !state.factions[TYRANT_KEY].eliminated;
-  if (tyrantAlive) {
+  const soloHuman = (state.humans ? state.humans.length : 0) === 1;
+  if (tyrantAlive && !soloHuman) {
     const others = livingKeys(state).filter(k => k !== TYRANT_KEY);
     if (others.length > 0 && others.every(k => hasPact(state, TYRANT_KEY, k))) {
       return { fk: TYRANT_KEY, condition: 'NO ENEMIES LEFT',

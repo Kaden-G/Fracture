@@ -773,3 +773,30 @@ describe('TRANSIT airlift perk', () => {
     assert.equal(s1.tiles['tile_0_1'].troops, 1, 'default move is 1 troop even with TRANSIT');
   });
 });
+
+// ============================================================
+// Single-human Tyrant ally-default win is IMPOSSIBLE
+// ============================================================
+describe('Tyrant ally-default win gating', () => {
+  function allAllied(humans) {
+    const state = makeTestState();
+    state.tyrantOn = true;
+    state.humans = humans;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, humans.length === 0, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    for (const k of Object.keys(FACTIONS)) state.pacts[pairKey(TYRANT_KEY, k)] = 1;  // Tyrant bound to all rivals
+    return state;
+  }
+  it('1-human game: ally-default (NO ENEMIES LEFT) win never fires', () => {
+    const win = checkWinCondition(allAllied(['grid']), []);
+    assert.ok(!win || win.condition !== 'NO ENEMIES LEFT', 'lone human keeps a path to the Reckoning');
+  });
+  it('still fires in all-AI games (sim outcome preserved)', () => {
+    const win = checkWinCondition(allAllied([]), []);
+    assert.ok(win && win.fk === TYRANT_KEY && win.condition === 'NO ENEMIES LEFT');
+  });
+  it('still fires in 2+ human games', () => {
+    const win = checkWinCondition(allAllied(['grid', 'syndicate']), []);
+    assert.ok(win && win.fk === TYRANT_KEY && win.condition === 'NO ENEMIES LEFT');
+  });
+});
