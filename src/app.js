@@ -96,7 +96,7 @@ const NODE_TILES = [
 const NODE_BONUSES = {
   node_power:   'Reinforce −1 cost',
   node_water:   '+1 income / round',
-  node_transit: 'Move 2 troops',
+  node_transit: 'Airlifts cost 0 res',
   node_comms:   '+1 attack rolls',
   node_data:    '+1 defense rolls',
 };
@@ -221,7 +221,7 @@ function reinforceCost(fk){
   return Math.max(1, c);
 }
 function reinforceAmount(fk){ return 2; }  // all factions reinforce +2; GRID's perk is the cost discount
-function moveTroopCount(fk){ return controlsNode(fk,'node_transit') ? 2 : 1; }          // 🚇 TRANSIT
+function airliftCost(fk){ return controlsNode(fk,'node_transit') ? 0 : 3; }             // 🚇 TRANSIT: free airlifts
 function moveRange(fk){
   const f = G.factions[fk];
   if (!f) return 1;
@@ -1608,7 +1608,7 @@ function setAction(action) {
     reinforce: 'REINFORCE: Click YOUR tile to add troops (cost varies by faction/nodes).',
     pact:      "PACT: Click a rival's tile to propose a non-aggression pact (free, no action).",
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
-    airlift:   'AIRLIFT (3 res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.',
+    airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (3+ troops), then ANY other tile you own — move 2 troops.`,
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
     sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −1 troop. First sabotage each turn vs a 2+ stack siphons +1 to your weakest frontline tile.',
     bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
@@ -1710,7 +1710,7 @@ function handleTileClick(id) {
 
   // ---- AIRLIFT (universal, 3 res): redeploy 2 troops between any two of YOUR tiles ----
   if (currentAction === 'airlift') {
-    const cost = 3;
+    const cost = airliftCost(G.playerFaction);   // 0 while holding 🚇 TRANSIT
     if (!selectedTile || selectedTile===id) {
       if (tile.owner===G.playerFaction && tile.troops>=3) {
         if (f.resources < cost) { setActionLog(`Airlift costs ${cost} resources.`); return; }
@@ -2544,14 +2544,15 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
     return aiAttackWithAdvance(fk, best.atk, best.def);
   }
 
-  // 1b. AIRLIFT to concentrate force before a node assault.
-  if (f.resources >= 3 && myTiles().length >= 2) {
+  // 1b. AIRLIFT to concentrate force before a node assault (free with 🚇 TRANSIT).
+  const aCost = airliftCost(fk);
+  if (f.resources >= aCost && myTiles().length >= 2) {
     const nodeTarget = enemyTiles().find(t => t.isNode && myTiles().some(m => adjacent(m,t) && m.troops < t.troops));
     if (nodeTarget) {
       const adjTile = myTiles().find(m => adjacent(m, nodeTarget) && m.troops < nodeTarget.troops);
       const donor = myTiles().filter(t => t.id !== adjTile.id && t.troops >= 3).sort((a,b)=>b.troops-a.troops)[0];
       if (adjTile && donor) {
-        f.resources -= 3; donor.troops -= 2; adjTile.troops += 2;
+        f.resources -= aCost; donor.troops -= 2; adjTile.troops += 2;
         addLog(`✈️ ${f.icon} ${f.name} airlifted to ${adjTile.name}`);
         refreshHex(donor.id); refreshHex(adjTile.id);
         return true;

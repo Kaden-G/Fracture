@@ -58,7 +58,7 @@ export const NODE_TILES = [
 export const NODE_BONUSES = {
   node_power:   'Reinforce −1 cost',
   node_water:   '+1 income / round',
-  node_transit: 'Move 2 troops',
+  node_transit: 'Airlifts cost 0 res',
   node_comms:   '+1 attack rolls',
   node_data:    '+1 defense rolls',
 };
@@ -201,8 +201,11 @@ export function reinforceCost(state, fk) {
   return Math.max(1, c);
 }
 export function reinforceAmount(_fk) { return 2; }
-export function moveTroopCount(state, fk) {
-  return controlsNode(state, fk, 'node_transit') ? 2 : 1;
+// Legacy default for engine MOVE without an explicit count (players/AI now choose).
+export function moveTroopCount(_state, _fk) { return 1; }
+// ✈️ AIRLIFT — free while holding the 🚇 TRANSIT node (still costs an action).
+export function airliftCost(state, fk) {
+  return controlsNode(state, fk, 'node_transit') ? 0 : 3;
 }
 export function moveRange(state, fk) {
   const f = state.factions[fk];
