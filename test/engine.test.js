@@ -587,3 +587,75 @@ describe('Tyrant pact cap', () => {
     assert.ok(hasPact(next, TYRANT_KEY, 'ghost'), '4th pact allowed in multi-human games');
   });
 });
+
+// ============================================================
+// STEP 1 — MOVE carry count & post-capture ADVANCE
+// ============================================================
+describe('Movement & advance', () => {
+  function moveState(seed) {
+    const state = makeTestState(seed ? { seed } : {});
+    state.tiles['tile_0_0'].owner = 'grid';
+    state.tiles['tile_0_1'].owner = null;
+    state.tiles['tile_0_1'].troops = 0;
+    state.currentTurnIdx = 0;   // grid's turn
+    return state;
+  }
+
+  it('MOVE with count carries the chosen number', () => {
+    const state = moveState();
+    state.tiles['tile_0_0'].troops = 6;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1', count: 5 });
+    assert.equal(s1.tiles['tile_0_0'].troops, 1, 'garrison of 1 stays');
+    assert.equal(s1.tiles['tile_0_1'].troops, 5, '5 troops carried');
+  });
+
+  it('MOVE count clamps to stack−1 (never abandons the source)', () => {
+    const state = moveState();
+    state.tiles['tile_0_0'].troops = 4;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1', count: 99 });
+    assert.equal(s1.tiles['tile_0_0'].troops, 1);
+    assert.equal(s1.tiles['tile_0_1'].troops, 3);
+    assert.equal(s1.tiles['tile_0_0'].owner, 'grid', 'source stays owned');
+  });
+
+  it('MOVE without count keeps the legacy default (1 troop)', () => {
+    const state = moveState();
+    state.tiles['tile_0_0'].troops = 6;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1' });
+    assert.equal(s1.tiles['tile_0_0'].troops, 5);
+    assert.equal(s1.tiles['tile_0_1'].troops, 1);
+  });
+
+  it('ATTACK advance moves extra troops into a captured tile, clamped to stack−1', () => {
+    for (let seed = 1; seed < 80; seed++) {
+      const state = makeTestState({ seed });
+      state.tiles['tile_0_0'].owner = 'grid';      state.tiles['tile_0_0'].troops = 10;
+      state.tiles['tile_0_1'].owner = 'syndicate'; state.tiles['tile_0_1'].troops = 1;
+      state.tiles['tile_0_1'].heldRounds = 0;
+      state.currentTurnIdx = 0;
+      const { state: s1, effects } = reduce(state,
+        { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1', attackerFk: 'grid', advance: 99 });
+      if (effects.some(e => e.kind === 'capture')) {
+        assert.equal(s1.tiles['tile_0_1'].owner, 'grid');
+        assert.equal(s1.tiles['tile_0_0'].troops, 1, 'advance clamps so 1 stays behind');
+        assert.equal(s1.tiles['tile_0_1'].troops, 9, 'occupier + 8 advanced');
+        return;
+      }
+    }
+    assert.fail('no capture across 80 seeds — should be near-certain at 10v1');
+  });
+
+  it('ATTACK advance does nothing when the attack does not capture', () => {
+    for (let seed = 1; seed < 30; seed++) {
+      const state = makeTestState({ seed });
+      state.tiles['tile_0_0'].owner = 'grid';      state.tiles['tile_0_0'].troops = 6;
+      state.tiles['tile_0_1'].owner = 'syndicate'; state.tiles['tile_0_1'].troops = 8;
+      state.currentTurnIdx = 0;
+      const { state: s1, effects } = reduce(state,
+        { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1', attackerFk: 'grid', advance: 99 });
+      assert.ok(!effects.some(e => e.kind === 'capture'), 'no capture at 6v8 single strike');
+      assert.equal(s1.tiles['tile_0_1'].owner, 'syndicate', 'tile holds');
+      assert.ok(s1.tiles['tile_0_0'].troops >= 1, 'source never emptied');
+    }
+  });
+});

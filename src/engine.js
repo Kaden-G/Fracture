@@ -538,7 +538,10 @@ export function reduce(inputState, action) {
       const src = state.tiles[action.src];
       const dst = state.tiles[action.dst];
       const fk = state.turnOrder[state.currentTurnIdx];
-      const moveN = Math.min(moveTroopCount(state, fk), src.troops - 1);
+      // Carry up to stack−1 (chosen via action.count); without a count, fall back to
+      // the legacy default (1 troop, or 2 with the TRANSIT node).
+      const want = (typeof action.count === 'number') ? action.count : moveTroopCount(state, fk);
+      const moveN = Math.max(1, Math.min(want, src.troops - 1));
       src.troops -= moveN;
       if (src.troops <= 0) { src.owner = null; src.troops = 0; }
       dst.owner = fk;
@@ -562,6 +565,24 @@ export function reduce(inputState, action) {
       if (result.captured) state.assaultCaptures = (state.assaultCaptures || 0) + 1;
       log.push(...result.log);
       effects.push(...result.effects);
+
+      // On a capture, advance a chosen number of extra troops (up to stack−1) into the
+      // captured tile in the SAME action — no second Reinforce needed. Committing hard
+      // empties the source (which also ends any assault chain from it): that tradeoff,
+      // plus the unchanged rally escalation, is the anti-doom-stack brake.
+      if (result.captured && typeof action.advance === 'number' && action.advance > 0) {
+        const aSrc = state.tiles[action.src];
+        const aTgt = state.tiles[action.tgt];
+        if (aSrc && aTgt && aTgt.owner === fk && aSrc.owner === fk) {
+          const adv = Math.min(action.advance, aSrc.troops - 1);
+          if (adv > 0) {
+            aSrc.troops -= adv;
+            aTgt.troops += adv;
+            log.push(`${state.factions[fk].icon} advanced ${adv} troop${adv>1?'s':''} into ${aTgt.name}`);
+            effects.push({kind:'refresh', tiles:[action.src, action.tgt]});
+          }
+        }
+      }
 
       // Check win after attack
       const win = checkWinCondition(state, log);

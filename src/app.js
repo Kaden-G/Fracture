@@ -1368,6 +1368,37 @@ function tyrantModalCancel() {
   if (cb && cb.onCancel) cb.onCancel();
 }
 
+// ---- Troop quantity picker (move carry / post-capture advance) ----
+let _qtyCb = null;
+function showQtyPicker({ title, min = 1, max, def, confirmLabel = 'CONFIRM', onPick, onCancel }) {
+  const r = document.getElementById('qty-range');
+  r.min = min; r.max = max; r.value = Math.max(min, Math.min(def ?? max, max));
+  document.getElementById('qty-title').textContent = title;
+  document.getElementById('qty-value').textContent = r.value;
+  document.getElementById('qty-ok').textContent = confirmLabel;
+  _qtyCb = { onPick, onCancel };
+  document.getElementById('qty-overlay').classList.add('show');
+}
+function qtySync() {
+  document.getElementById('qty-value').textContent = document.getElementById('qty-range').value;
+}
+function qtyAdj(d) {
+  const r = document.getElementById('qty-range');
+  r.value = Math.max(+r.min, Math.min(+r.max, +r.value + d));
+  qtySync();
+}
+function qtyConfirm() {
+  const cb = _qtyCb; _qtyCb = null;
+  const n = +document.getElementById('qty-range').value;
+  document.getElementById('qty-overlay').classList.remove('show');
+  if (cb && cb.onPick) cb.onPick(n);
+}
+function qtyCancel() {
+  const cb = _qtyCb; _qtyCb = null;
+  document.getElementById('qty-overlay').classList.remove('show');
+  if (cb && cb.onCancel) cb.onCancel();
+}
+
 // ---- Custom Tyrant pact offer modal (replaces system confirm dialogs) ----
 let tyrantOfferFk = null;
 
@@ -1711,17 +1742,35 @@ function handleTileClick(id) {
       setActionLog(r > 1 ? `Out of range — max ${r} tiles.` : 'Not adjacent! Try again.');
       selectedTile=null; renderMap(); return;
     }
-    const moveN = Math.min(moveTroopCount(G.playerFaction), src.troops - 1);  // 🚇 TRANSIT moves 2
-    src.troops -= moveN;
-    if (src.troops <= 0) { src.owner = null; src.troops = 0; }
-    tile.owner = G.playerFaction; tile.troops += moveN;
-    G.actionsUsed++;
-    currentAction = null;
-    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${src.name} → ${tile.name}`);
-    setActionLog(`Moved! ${3-G.actionsUsed} action(s) left.`);
-    refreshHex(selectedTile); refreshHex(id);
-    selectedTile=null; renderSidebar(); return;
+    // Carry up to stack−1 (player-chosen; default leaves 1 behind as a garrison).
+    const mvSrcId = selectedTile;
+    const maxCarry = src.troops - 1;
+    const doMove = (n) => {
+      const s = G.tiles[mvSrcId];
+      if (!s || s.owner !== G.playerFaction || s.troops < 2 ||
+          (tile.owner && tile.owner !== G.playerFaction)) {
+        setActionLog('Move fizzled — the situation changed.'); return;
+      }
+      const moveN = Math.max(1, Math.min(n, s.troops - 1));
+      s.troops -= moveN;
+      tile.owner = G.playerFaction; tile.troops += moveN;
+      G.actionsUsed++;
+      currentAction = null;
+      document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+      addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${s.name} → ${tile.name}`);
+      setActionLog(`Moved! ${3-G.actionsUsed} action(s) left.`);
+      refreshHex(mvSrcId); refreshHex(id);
+      selectedTile=null; renderSidebar(); syncPush();
+    };
+    if (maxCarry <= 1) { doMove(1); return; }
+    showQtyPicker({
+      title: `MOVE HOW MANY TO ${tile.name}?`,
+      min: 1, max: maxCarry, def: maxCarry,   // default: bring everyone but the garrison
+      confirmLabel: '🚶 MOVE',
+      onPick: doMove,
+      onCancel: () => setActionLog('Move cancelled.'),
+    });
+    return;
   }
 
   // ---- ATTACK ----
@@ -1754,19 +1803,45 @@ function handleTileClick(id) {
       if (won && captured) assaultCaptures++;
       renderSidebar();
       if (checkWin()) return;
-      // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
-      // Hard cap: 3 captures per assault chain.
-      if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
-        selectedTile = srcId;   // keep the assault source selected for the next strike
-        setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
-        renderMap();
-        document.getElementById('hex-'+srcId)?.classList.add('selected');
+      const contAssault = () => {
+        // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
+        // Hard cap: 3 captures per assault chain.
+        if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
+          selectedTile = srcId;   // keep the assault source selected for the next strike
+          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
+          renderMap();
+          document.getElementById('hex-'+srcId)?.classList.add('selected');
+          return;
+        }
+        // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
+        assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
+        document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+        renderMap(); renderSidebar();
+      };
+      // On a capture, advance a chosen number of extra troops (up to stack−1) into the
+      // captured tile in the SAME action. Committing hard empties the source (ending the
+      // assault chain from it) — that tradeoff plus rally escalation is the brake.
+      const advSrc = G.tiles[srcId];
+      const maxAdv = (won && captured && advSrc && advSrc.owner === G.playerFaction) ? advSrc.troops - 1 : 0;
+      if (maxAdv >= 1) {
+        showQtyPicker({
+          title: `ADVANCE HOW MANY INTO ${tile.name}?`,
+          min: 0, max: maxAdv, def: maxAdv,
+          confirmLabel: '⚔️ ADVANCE',
+          onPick: (n) => {
+            const s = G.tiles[srcId];
+            if (n > 0 && s && s.owner === G.playerFaction && tile.owner === G.playerFaction && s.troops > n) {
+              s.troops -= n; tile.troops += n;
+              addLog(`${G.factions[G.playerFaction].icon} advanced ${n} troop${n>1?'s':''} into ${tile.name}`);
+              refreshHex(srcId); refreshHex(id); renderSidebar(); syncPush();
+            }
+            contAssault();
+          },
+          onCancel: contAssault,   // cancel = hold position (advance 0)
+        });
         return;
       }
-      // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
-      assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
-      document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-      renderMap(); renderSidebar();
+      contAssault();
     };
     if (hasPact(G.playerFaction, tile.owner)) {
       if (tile.owner === TYRANT_KEY) {
@@ -2128,6 +2203,36 @@ function bfsFromTiles(sources) {
 
 // AI node-seeking: capture an adjacent unclaimed Node, else march a troop toward the nearest Node.
 // This is what makes the AI actually contest the board's objectives (nodes start unowned).
+// AI advance/carry sizing — commit force forward, keep a rear guard when threatened.
+// (Mirrors carryCount/advanceFor in src/ai.js so live games match the sim.)
+function aiTileThreatened(fk, tile) {
+  return Object.values(G.tiles).some(t => t.owner && t.owner !== fk && adjacent(tile, t));
+}
+function aiCarryCount(fk, src) {
+  const movable = Math.max(1, src.troops - 1);
+  return aiTileThreatened(fk, src) ? Math.max(1, Math.floor(movable / 2)) : movable;
+}
+function aiAdvanceFor(fk, atk, def) {
+  if (def.isNode) return aiTileThreatened(fk, atk) ? Math.max(1, Math.floor(atk.troops / 2)) : atk.troops;
+  return Math.floor(Math.max(0, atk.troops - 1) / 2);
+}
+// Attack + post-capture advance in one action (engine clamps to stack-1).
+function aiAttackWithAdvance(fk, atk, def) {
+  const willCapture = def.troops <= 1;
+  const wantAdv = aiAdvanceFor(fk, atk, def);
+  const won = resolveAttack(fk, atk.id, def.id, false);
+  if (won && willCapture && G.tiles[def.id].owner === fk) {
+    const s = G.tiles[atk.id];
+    const adv = (s && s.owner === fk) ? Math.min(wantAdv, s.troops - 1) : 0;
+    if (adv > 0) {
+      s.troops -= adv; G.tiles[def.id].troops += adv;
+      addLog(`${G.factions[fk].icon} ${G.factions[fk].name} advanced ${adv} troop${adv>1?'s':''} into ${def.name}`);
+      refreshHex(atk.id); refreshHex(def.id);
+    }
+  }
+  return won ? 'won' : 'repelled';
+}
+
 function aiNodePush(fk) {
   const tiles   = Object.values(G.tiles);
   const movable = tiles.filter(t => t.owner === fk && t.troops >= 2);
@@ -2142,7 +2247,8 @@ function aiNodePush(fk) {
   for (const src of movable) {
     const node = targets.find(n => !n.owner && moveReachable(fk, src, n));
     if (node) {
-      src.troops--; node.owner = fk; node.troops = (node.troops || 0) + 1; node.heldRounds = 0;
+      const carry = aiCarryCount(fk, src);
+      src.troops -= carry; node.owner = fk; node.troops = (node.troops || 0) + carry; node.heldRounds = 0;
       addLog(`${f.icon} ${f.name} seized ${node.name}`);
       refreshHex(src.id); refreshHex(node.id);
       return true;
@@ -2177,9 +2283,10 @@ function aiNodePush(fk) {
     }
   }
   if (mv) {
-    mv.src.troops--;
-    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = 1; mv.to.heldRounds = 0; }
-    else mv.to.troops++;
+    const carry = aiCarryCount(fk, mv.src);
+    mv.src.troops -= carry;
+    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = carry; mv.to.heldRounds = 0; }
+    else mv.to.troops += carry;
     addLog(`${f.icon} ${f.name} advanced toward a Node`);
     refreshHex(mv.src.id); refreshHex(mv.to.id);
     return true;
@@ -2397,7 +2504,7 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
   if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
-    return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
+    return aiAttackWithAdvance(fk, best.atk, best.def);
   }
 
   // 1b. AIRLIFT to concentrate force before a node assault.
@@ -2421,7 +2528,7 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 3. Take any other favorable attack.
   if (attackable && best.atk.troops > best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
-    return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
+    return aiAttackWithAdvance(fk, best.atk, best.def);
   }
   // 4. Use special ability opportunistically.
   if (aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
@@ -3123,4 +3230,5 @@ Object.assign(window, {
   acceptTyrantPact, refuseTyrantPact,
   tyrantModalConfirm, tyrantModalCancel,
   acknowledgeCombat,
+  qtySync, qtyAdj, qtyConfirm, qtyCancel,
 });

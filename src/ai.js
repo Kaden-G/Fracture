@@ -54,6 +54,22 @@ function findBestAttack(state, fk, turnAttacks) {
   return best;
 }
 
+// ---- Advance/carry sizing ----
+// Commit force forward, but keep a rear guard when the source tile is threatened.
+function tileThreatened(state, fk, tile) {
+  return Object.values(state.tiles).some(t => t.owner && t.owner !== fk && adjacent(tile, t));
+}
+function carryCount(state, fk, src) {
+  const movable = Math.max(1, src.troops - 1);
+  return tileThreatened(state, fk, src) ? Math.max(1, Math.floor(movable / 2)) : movable;
+}
+// Post-capture advance: commit hard for a node, advance half into a plain tile
+// (keeps the source able to press the assault). Engine clamps to stack−1.
+function advanceFor(state, fk, atk, def) {
+  if (def.isNode) return tileThreatened(state, fk, atk) ? Math.max(1, Math.floor(atk.troops / 2)) : atk.troops;
+  return Math.floor(Math.max(0, atk.troops - 1) / 2);
+}
+
 // ---- Node push: seize unclaimed node or march toward nearest ----
 function aiNodePush(state, fk) {
   const tiles = Object.values(state.tiles);
@@ -67,7 +83,7 @@ function aiNodePush(state, fk) {
   // Step onto adjacent unclaimed/own node (or 2-tile reach for phantom/ghost_step)
   for (const src of movable) {
     const node = targets.find(n => !n.owner && moveReachable(state, fk, src, n));
-    if (node) return { type: 'MOVE', src: src.id, dst: node.id };
+    if (node) return { type: 'MOVE', src: src.id, dst: node.id, count: carryCount(state, fk, src) };
   }
 
   // March toward nearest node — phantom can consider 2-tile jumps through enemy tiles
@@ -96,7 +112,7 @@ function aiNodePush(state, fk) {
       }
     }
   }
-  if (mv) return { type: 'MOVE', src: mv.src, dst: mv.dst };
+  if (mv) return { type: 'MOVE', src: mv.src, dst: mv.dst, count: carryCount(state, fk, state.tiles[mv.src]) };
   return null;
 }
 
@@ -184,7 +200,8 @@ export function chooseAction(state, fk) {
 
   // 1. Seize enemy-held NODE
   if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
-    const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk };
+    const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk,
+                     advance: advanceFor(state, fk, best.atk, best.def) };
     if (best.betray) action.breakPact = { betrayer: fk, victim: best.def.owner };
     return action;
   }
@@ -207,7 +224,8 @@ export function chooseAction(state, fk) {
 
   // 3. Any favorable attack
   if (attackable && best.atk.troops > best.def.troops) {
-    const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk };
+    const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk,
+                     advance: advanceFor(state, fk, best.atk, best.def) };
     if (best.betray) action.breakPact = { betrayer: fk, victim: best.def.owner };
     return action;
   }
