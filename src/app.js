@@ -1265,18 +1265,9 @@ function beginTurnFor(fk) {
     renderMap(); renderSidebar();
     setActionLog(`${f.name}: pick an action, then click a tile. 3 actions. Res: ${f.resources}`);
     if (tyrantOn()) tyrantInteract(fk);   // secret deal offer / harbor request (private to this player)
-    // Pending pact proposal from another human player?
-    if (G.pactProposal && G.pactProposal.to === fk) {
-      const from = G.pactProposal.from;
-      const fromF = G.factions[from];
-      if (fromF && !fromF.eliminated && !hasPact(from, fk)) {
-        const accepted = confirm(`🤝 ${fromF.name} proposes a non-aggression pact!\n\nWhile it holds, neither of you attacks the other.\nOK = accept   ·   Cancel = refuse`);
-        if (accepted) { formPact(from, fk); addLog('🤝 A non-aggression pact was formed.'); }
-        else          { addLog('✋ A pact proposal was refused.'); }
-      }
-      G.pactProposal = null;
-      syncPush(); renderSidebar();
-    }
+    // Pact offers are delivered the moment they sync (maybeShowPactOffer in onRemoteState);
+    // this is a safety net in case that sync was missed (e.g. a refresh mid-offer).
+    maybeShowPactOffer();
   };
 
   // Hot-seat with several humans on one device: gate behind a pass-the-device screen.
@@ -1397,6 +1388,48 @@ function tyrantModalCancel() {
   const cb = _tyrantModalCb; _tyrantModalCb = null;
   document.getElementById('tyrant-confirm-overlay').classList.remove('show');
   if (cb && cb.onCancel) cb.onCancel();
+}
+
+// ---- Pact-offer modal (shared overlay) — used hot-seat and online ----
+function pactOfferModal(from, to, { onAccept, onRefuse }) {
+  const fromF = G.factions[from], toF = G.factions[to];
+  tyrantModal({
+    type: 'DIPLOMACY',
+    title: '🤝 NON-AGGRESSION PACT?',
+    body: `<b>${fromF.name}</b> proposes a non-aggression pact with <b>${toF.name}</b>.<br><br>` +
+          `While it holds, neither side can attack the other. Betraying it hands the victim <b>+2</b> against the traitor.`,
+    confirmLabel: '🤝 ACCEPT',
+    cancelLabel: '✋ REFUSE',
+    onConfirm: onAccept,
+    onCancel: onRefuse,
+  });
+}
+
+// Online: deliver a pending human→human pact offer to the recipient the moment it
+// syncs — no waiting for their turn. Idempotent: re-invoked on every remote snapshot,
+// shows nothing while another modal is up (retries on the next sync), and clears
+// offers that died in transit (elimination / pact already formed).
+function maybeShowPactOffer() {
+  const p = G.pactProposal;
+  if (!p || !online || !mySeats.includes(p.to)) return;
+  if (document.getElementById('tyrant-confirm-overlay').classList.contains('show')) return;
+  const fromF = G.factions[p.from], toF = G.factions[p.to];
+  if (!fromF || fromF.eliminated || !toF || toF.eliminated || hasPact(p.from, p.to)) {
+    G.pactProposal = null; syncPush(); renderSidebar(); return;
+  }
+  pactOfferModal(p.from, p.to, {
+    onAccept: () => {
+      formPact(p.from, p.to);
+      addLog('🤝 A non-aggression pact was formed.');
+      G.pactProposal = null;
+      syncPush(); renderSidebar();
+    },
+    onRefuse: () => {
+      addLog('✋ A pact proposal was refused.');
+      G.pactProposal = null;
+      syncPush(); renderSidebar();
+    },
+  });
 }
 
 // ---- Troop quantity picker (move carry / post-capture advance) ----
@@ -1650,24 +1683,29 @@ function handleTileClick(id) {
         setActionLog(`${G.factions[other].name} REFUSED — they don't need you yet.`);
       }
     }
-    // Human opponent, hot-seat: ask them directly
+    // Human opponent, hot-seat: ask them directly via the pact modal
     else if (!online) {
-      const accepted = confirm(`🤝 ${G.factions[G.playerFaction].name} proposes a non-aggression pact with ${G.factions[other].name}.\n\nDoes ${G.factions[other].name} accept?\nOK = accept   ·   Cancel = refuse`);
-      if (accepted) {
-        formPact(G.playerFaction, other);
-        addLog('🤝 A non-aggression pact was formed.');
-        setActionLog(`${G.factions[other].name} ACCEPTED your pact!`);
-      } else {
-        addLog('✋ A pact proposal was refused.');
-        setActionLog(`${G.factions[other].name} REFUSED your pact.`);
-      }
+      const me = G.playerFaction;
+      pactOfferModal(me, other, {
+        onAccept: () => {
+          formPact(me, other);
+          addLog('🤝 A non-aggression pact was formed.');
+          setActionLog(`${G.factions[other].name} ACCEPTED your pact!`);
+          renderSidebar();
+        },
+        onRefuse: () => {
+          addLog('✋ A pact proposal was refused.');
+          setActionLog(`${G.factions[other].name} REFUSED your pact.`);
+          renderSidebar();
+        },
+      });
     }
     // Human opponent, online: queue proposal for their turn
     else {
       if (G.pactProposal) { setActionLog('A pact proposal is already pending — wait for their response.'); renderSidebar(); return; }
       G.pactProposal = { from: G.playerFaction, to: other };
       addLog('🤝 A pact has been proposed.');
-      setActionLog(`Pact proposed to ${G.factions[other].name}! They'll see it on their turn.`);
+      setActionLog(`Pact proposed to ${G.factions[other].name} — they've been notified.`);
       syncPush();
     }
     renderSidebar(); return;
@@ -1703,7 +1741,7 @@ function handleTileClick(id) {
     const amt  = reinforceAmount(G.playerFaction);
     if (f.resources < cost) { setActionLog(`Need ${cost} resources.`); return; }
     f.resources -= cost; tile.troops += amt; G.actionsUsed++;
-    addLog(`You reinforced ${tile.name} (+${amt} troops)`);
+    addLog(`🛡️ ${f.name} reinforced ${tile.name} (+${amt} troops)`);
     setActionLog(`Reinforced! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
@@ -1730,7 +1768,7 @@ function handleTileClick(id) {
     G.actionsUsed++;
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    addLog(`✈️ You airlifted 2 troops: ${src.name} → ${tile.name}`);
+    addLog(`✈️ ${f.name} airlifted 2 troops: ${src.name} → ${tile.name}`);
     setActionLog(`Airlifted! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(selectedTile); refreshHex(id);
     selectedTile=null; renderSidebar(); return;
@@ -1749,7 +1787,7 @@ function handleTileClick(id) {
     G.actionsUsed++;
     currentAction = null;
     document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    addLog(`🏰 You entrenched ${tile.name} (dug in +${tile.heldRounds})`);
+    addLog(`🏰 ${f.name} entrenched ${tile.name} (dug in +${tile.heldRounds})`);
     setActionLog(`Entrenched +${tile.heldRounds}! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
@@ -1788,7 +1826,7 @@ function handleTileClick(id) {
       G.actionsUsed++;
       currentAction = null;
       document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-      addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${s.name} → ${tile.name}`);
+      addLog(`🚶 ${f.name} moved ${moveN} troop${moveN>1?'s':''}: ${s.name} → ${tile.name}`);
       setActionLog(`Moved! ${3-G.actionsUsed} action(s) left.`);
       refreshHex(mvSrcId); refreshHex(id);
       selectedTile=null; renderSidebar(); syncPush();
@@ -1925,7 +1963,7 @@ function handleTileClick(id) {
       G.actionsUsed++;
       const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
       const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
-      addLog(`👁️ You sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
+      addLog(`👁️ ${f.name} sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
       setActionLog(`Sabotage hit!${gainMsg}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
       refreshHex(id); flashHex(id); renderSidebar(); checkWin();
       syncPush();   // broadcast so online opponents see the troop drop immediately
@@ -1971,7 +2009,7 @@ function handleTileClick(id) {
         if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) killFaction(bribedPrev);
       }
       G.actionsUsed++;
-      addLog(`💰 You bribed ${tile.name}!`);
+      addLog(`💰 ${f.name} bribed ${tile.name}!`);
       setActionLog(`Bribed! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
       refreshHex(id); renderSidebar(); checkWin();
     };
@@ -3035,6 +3073,10 @@ function onRemoteState(s) {
   ensureGameScreen();
   renderMap(); renderSidebar();
 
+  // Deliver a pending human→human pact offer immediately — the recipient responds
+  // out of turn, like the online choice events below.
+  maybeShowPactOffer();
+
   // Show this round's event card here too, so every player sees it (not just the driver).
   if (G.eventCard && G.eventCard.n > lastShownEventN) {
     lastShownEventN = G.eventCard.n;
@@ -3143,6 +3185,11 @@ function setMyTrait(v) { myTrait = v; renderLobby(lastRoomData); }
 
 function claimSeat(fk) {
   if (!myName.trim() || !myTrait) { alert('Enter your name and pick a trait first.'); return; }
+  if ((TRAIT_EXCLUSIONS[fk] || []).includes(myTrait)) {
+    const t = TRAITS.find(t => t.id === myTrait);
+    alert(`${t ? t.name : myTrait} is not available to ${FACTIONS[fk].name} — pick a different trait for this seat.`);
+    return;
+  }
   const seats = lastRoomData.seats || {};
   const updates = {};
   Object.keys(seats).forEach(k => { if (seats[k].by === myClientId) updates['seats/' + k] = { type: 'human', by: null, name: '', trait: '' }; });
@@ -3199,7 +3246,11 @@ function renderLobby(data) {
       <input class="input-field" maxlength="16" placeholder="Your name..." value="${(myName || '').replace(/"/g, '&quot;')}" oninput="setMyName(this.value)">
       <label>PASSIVE TRAIT</label>
       <div class="trait-select" style="margin-bottom:12px;">
-        ${TRAITS.map(t => `<div class="trait-option ${myTrait === t.id ? 'selected' : ''}" onclick="setMyTrait('${t.id}')"><strong>${t.name}:</strong> ${t.desc}</div>`).join('')}
+        ${TRAITS.map(t => {
+          const barred = Object.entries(TRAIT_EXCLUSIONS).filter(([, ids]) => ids.includes(t.id)).map(([k]) => FACTIONS[k].name);
+          const note = barred.length ? ` <span style="color:#e74c3c;">(not available to ${barred.join(', ')})</span>` : '';
+          return `<div class="trait-option ${myTrait === t.id ? 'selected' : ''}" onclick="setMyTrait('${t.id}')"><strong>${t.name}:</strong> ${t.desc}${note}</div>`;
+        }).join('')}
       </div>
       ${rows}
       <div class="faction-row" style="justify-content:space-between; gap:8px; margin-top:8px; border-color:${TYRANT_DEF.color};">
@@ -3221,6 +3272,8 @@ function hostStart() {
   const seats = JSON.parse(JSON.stringify(lastRoomData.seats));
   // Unclaimed human seats fall back to AI.
   Object.keys(seats).forEach(k => { if (seats[k].type === 'human' && !seats[k].by) seats[k] = { type: 'ai', by: null, name: '', trait: '' }; });
+  // A claim from before an exclusion check (or a tampered write) falls back to a legal random trait.
+  Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
   if (!Object.values(seats).some(s => s.type === 'human')) { alert('Claim at least one seat before starting.'); return; }
 
   buildOnlineGame(seats, !!lastRoomData.tyrant);
