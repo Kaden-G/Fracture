@@ -13,7 +13,7 @@ import {
   factionDef, regionOf, adjacent,
   tilesOf, nodesOf, countNodes, controlsNode, livingKeys,
   hasPact, pairKey,
-  reinforceCost, reinforceAmount, moveTroopCount, moveRange, moveReachable,
+  reinforceCost, reinforceAmount, moveTroopCount, moveRange, moveReachable, airliftCost,
   grudgeAtkBonus, grudgeDefBonus, coalitionAtkBonus, mkFaction,
 } from './state.js';
 
@@ -668,7 +668,7 @@ export function reduce(inputState, action) {
       const f = state.factions[fk];
       const src = state.tiles[action.src];
       const dst = state.tiles[action.dst];
-      f.resources -= 3;
+      f.resources -= airliftCost(state, fk);   // 0 while holding 🚇 TRANSIT
       src.troops -= 2;
       dst.troops += 2;
       state.actionsUsed++;

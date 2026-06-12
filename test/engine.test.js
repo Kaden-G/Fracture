@@ -738,3 +738,38 @@ describe('Coalition surge', () => {
     assert.equal(next.tyrantStruck.grid, 5, 'strike recorded at current round');
   });
 });
+
+// ============================================================
+// TRANSIT perk — airlifts cost no resources
+// ============================================================
+describe('TRANSIT airlift perk', () => {
+  it('AIRLIFT costs 3 without TRANSIT, 0 with it', () => {
+    const base = makeTestState();
+    base.factions.grid.resources = 10;
+    base.tiles['tile_0_0'].owner = 'grid'; base.tiles['tile_0_0'].troops = 5;
+    base.tiles['tile_0_1'].owner = 'grid'; base.tiles['tile_0_1'].troops = 1;
+    base.currentTurnIdx = 0;
+
+    const { state: s1 } = reduce(base, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_0_1' });
+    assert.equal(s1.factions.grid.resources, 7, 'costs 3 without TRANSIT');
+
+    const withT = JSON.parse(JSON.stringify(base));
+    const transit = Object.values(withT.tiles).find(t => t.nodeId === 'node_transit');
+    transit.owner = 'grid'; transit.troops = 1;
+    const { state: s2 } = reduce(withT, { type: 'AIRLIFT', src: 'tile_0_0', dst: 'tile_0_1' });
+    assert.equal(s2.factions.grid.resources, 10, 'free while holding TRANSIT');
+    assert.equal(s2.tiles['tile_0_1'].troops, 3, 'still moves 2 troops');
+    assert.equal(s2.actionsUsed, 1, 'still costs an action');
+  });
+
+  it('legacy MOVE default no longer grants TRANSIT 2-troop moves', () => {
+    const state = makeTestState();
+    state.tiles['tile_0_0'].owner = 'grid'; state.tiles['tile_0_0'].troops = 6;
+    state.tiles['tile_0_1'].owner = null;   state.tiles['tile_0_1'].troops = 0;
+    const transit = Object.values(state.tiles).find(t => t.nodeId === 'node_transit');
+    transit.owner = 'grid'; transit.troops = 1;
+    state.currentTurnIdx = 0;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1' });
+    assert.equal(s1.tiles['tile_0_1'].troops, 1, 'default move is 1 troop even with TRANSIT');
+  });
+});

@@ -8,7 +8,7 @@ import {
   TYRANT_KEY, THRALLDOM_CAP, MOON_BAND,
   adjacent, tilesOf, nodesOf, countNodes, controlsNode,
   livingKeys, hasPact, pairKey,
-  reinforceCost, reinforceAmount, moveReachable, moveRange,
+  reinforceCost, reinforceAmount, moveReachable, moveRange, airliftCost,
 } from './state.js';
 
 // ---- BFS from a set of source tiles ----
@@ -206,8 +206,8 @@ export function chooseAction(state, fk) {
     return action;
   }
 
-  // 1b. AIRLIFT to concentrate force before node assault
-  if (f.resources >= 3 && myT().length >= 2) {
+  // 1b. AIRLIFT to concentrate force before node assault (free with 🚇 TRANSIT)
+  if (f.resources >= airliftCost(state, fk) && myT().length >= 2) {
     const nodeTarget = enemyT().find(t => t.isNode && myT().some(m => adjacent(m,t) && m.troops < t.troops));
     if (nodeTarget) {
       const adjTile = myT().find(m => adjacent(m, nodeTarget) && m.troops < nodeTarget.troops);
