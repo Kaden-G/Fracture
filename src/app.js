@@ -1722,7 +1722,7 @@ function setAction(action) {
     airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (2+ troops), then ANY other tile you own — move up to 3 troops.`,
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
     sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −1 troop. First sabotage each turn vs a 2+ stack siphons +1 to your weakest frontline tile.',
-    bribe:     'BRIBE (1 res): Click an enemy tile ADJACENT to your territory.',
+    bribe:     'BRIBE (1 res): Click an adjacent enemy tile — a troop defects to you (−1 them, +1 you).',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
   };
@@ -2101,13 +2101,19 @@ function handleTileClick(id) {
       }
       f.resources -= 1;
       const bribedPrev = tile.owner;
+      // The bribed troop DEFECTS to an adjacent Syndicate tile (the staging tile) — a 2-point
+      // swing (−1 them, +1 you). Pick it before any capture so it's never the seized tile.
+      const defectTo = Object.values(G.tiles)
+        .filter(t => t.owner === G.playerFaction && adjacent(t, tile))
+        .sort((a, b) => b.troops - a.troops)[0];
       tile.troops--;
+      if (defectTo) { defectTo.troops++; refreshHex(defectTo.id); }
       if (tile.troops<=0) {
         tile.owner=G.playerFaction; tile.troops=1;
         if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) killFaction(bribedPrev);
       }
       G.actionsUsed++;
-      addLog(`💰 ${f.name} bribed ${tile.name}!`);
+      addLog(`💰 ${f.name} bribed ${tile.name} — a troop defects!`);
       setActionLog(`Bribed! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
       refreshHex(id); renderSidebar(); checkWin();
     };
@@ -2762,19 +2768,19 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       return true;
     }
   }
-  // BRIBE: steal from an adjacent enemy
+  // BRIBE: steal from an adjacent enemy — the bribed troop defects to the staging tile (mt)
   if (f.ability==='bribe' && f.resources>=1) {
     for (const mt of myTiles()) {
       const tgt = enemyTiles().find(e=>adjacent(mt,e) && !hasPact(fk,e.owner));
       if (tgt) {
         const prev = tgt.owner;
-        f.resources-=1; tgt.troops--;
+        f.resources-=1; tgt.troops--; mt.troops++;   // −1 them, +1 you (2-point swing)
         if (tgt.troops<=0) {
           tgt.owner=fk; tgt.troops=1;
           if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
         }
-        addLog(`💰 ${f.name} bribed ${tgt.name}`);
-        refreshHex(tgt.id);
+        addLog(`💰 ${f.name} bribed ${tgt.name} — a troop defects!`);
+        refreshHex(tgt.id); refreshHex(mt.id);
         return true;
       }
     }

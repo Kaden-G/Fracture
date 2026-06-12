@@ -272,6 +272,35 @@ describe('Reducer', () => {
     assert.equal(d.tiles['tile_6_6'].troops, 2);
   });
 
+  it('BRIBE defects a troop: −1 enemy, +1 to the staging tile', () => {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('syndicate');
+    state.factions.syndicate.resources = 5;
+    state.tiles['tile_0_0'].owner = 'syndicate'; state.tiles['tile_0_0'].troops = 2;
+    state.tiles['tile_0_1'].owner = 'commune';   state.tiles['tile_0_1'].troops = 3;
+
+    const { state: next } = reduce(state, { type: 'ABILITY', kind: 'bribe', target: 'tile_0_1' });
+    assert.equal(next.tiles['tile_0_1'].troops, 2, 'target loses 1');
+    assert.equal(next.tiles['tile_0_0'].troops, 3, 'staging tile gains the defector');
+    assert.equal(next.factions.syndicate.resources, 4, 'costs 1 res');
+  });
+
+  it('BRIBE that empties the target captures it and still lands the defector', () => {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('syndicate');
+    state.factions.syndicate.resources = 5;
+    state.tiles['tile_0_0'].owner = 'syndicate'; state.tiles['tile_0_0'].troops = 4;
+    state.tiles['tile_0_1'].owner = 'commune';   state.tiles['tile_0_1'].troops = 1;
+    state.tiles['tile_0_2'].owner = 'commune';   state.tiles['tile_0_2'].troops = 2;  // commune survives
+
+    const { state: next } = reduce(state, { type: 'ABILITY', kind: 'bribe', target: 'tile_0_1' });
+    assert.equal(next.tiles['tile_0_1'].owner, 'syndicate', 'emptied target is captured');
+    assert.equal(next.tiles['tile_0_1'].troops, 1, 'captured tile set to 1');
+    assert.equal(next.tiles['tile_0_0'].troops, 5, 'staging tile still gets the defector');
+  });
+
   it('elimination grants +3 resources bounty', () => {
     const state = makeTestState({ seed: 42 });
     const srcId = 'tile_0_0';
