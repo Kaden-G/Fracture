@@ -842,7 +842,7 @@ export function reduce(inputState, action) {
             if (tilesOf(state, bribedPrev).length === 0) killFaction(state, bribedPrev, log);
           }
           state.actionsUsed++;
-          log.push(`💰 ${f.icon} bribed ${tile.name} — a troop defects!`);
+          log.push(`💰 ${f.icon} bribed ${tile.name} — a troop defects${defectTo ? ' to ' + defectTo.name : ''}!`);
           effects.push({kind:'refresh', tiles: defectTo ? [action.target, defectTo.id] : [action.target]});
           const win = checkWinCondition(state, log);
           if (win) {

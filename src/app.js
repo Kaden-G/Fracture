@@ -1081,6 +1081,7 @@ function startRound() {
       if (myTiles.length > 0) {
         const weakest = myTiles.reduce((a, b) => a.troops <= b.troops ? a : b);
         weakest.troops--;
+        addLog(`🦠 The Tyrant skims a troop from ${G.factions[k].name} (${weakest.name})`);
         refreshHex(weakest.id);
       }
     }
@@ -1244,7 +1245,7 @@ function beginTurnFor(fk) {
     document.getElementById('phase-label').textContent = `ROUND ${G.round} · ${f.name}`;
     setActionLog(`${f.name} is planning...`);
     disablePlayerActions();
-    setTimeout(() => runAITurn(fk), online ? 700 : 900);
+    setTimeout(() => runAITurn(fk), online ? 400 : 500);
     return;
   }
 
@@ -2113,7 +2114,7 @@ function handleTileClick(id) {
         if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) killFaction(bribedPrev);
       }
       G.actionsUsed++;
-      addLog(`💰 ${f.name} bribed ${tile.name} — a troop defects!`);
+      addLog(`💰 ${f.name} bribed ${tile.name} — a troop defects${defectTo ? ' to ' + defectTo.name : ''}!`);
       setActionLog(`Bribed! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
       refreshHex(id); renderSidebar(); checkWin();
     };
@@ -2640,7 +2641,7 @@ function runAITurn(fk) {
     // A combat that involved the local player put an OK popup on screen — the AI waits
     // for the acknowledgment before its next action. AI-vs-AI fights keep the old pacing.
     if (combat && combatQueue.length) onCombatAck(() => setTimeout(step, 400));
-    else setTimeout(step, combat ? 3400 : 450);
+    else setTimeout(step, combat ? 900 : 250);   // AI-vs-AI fights show no popup — keep it brisk
   };
   // A Tyrant "sic" strike just above may already have a popup up — wait for it first.
   onCombatAck(() => setTimeout(step, 250));
@@ -2652,7 +2653,7 @@ function finishAITurn(fk) {
   syncPush();                 // broadcast the AI's completed turn (no-op offline)
   if (checkWin()) return;
   G.currentTurnIdx++;
-  setTimeout(doNextTurn, online ? 400 : 500);
+  setTimeout(doNextTurn, online ? 250 : 300);
 }
 
 // One AI action. Returns 'combat' if it fought, true for any other action, false if nothing to do.
@@ -2779,7 +2780,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
           tgt.owner=fk; tgt.troops=1;
           if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
         }
-        addLog(`💰 ${f.name} bribed ${tgt.name} — a troop defects!`);
+        addLog(`💰 ${f.name} bribed ${tgt.name} — a troop defects to ${mt.name}!`);
         refreshHex(tgt.id); refreshHex(mt.id);
         return true;
       }
@@ -3429,8 +3430,7 @@ function buildOnlineGame(seats, tyrant) {
 // (ES modules scope all declarations; inline handlers need globals)
 // ============================================================
 Object.assign(window, {
-  showSetup, showTitle, goOnline, startGame, openRules, closeRules,
-  setAction, endTurn, dismissEvent, toggleTyrant,
+  showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant,
   setSeatType, setSeatName, setSeatTrait,
   hostRoom, joinRoomPrompt, claimSeat, hostSetSeat, hostSetTyrant, hostStart,
   setMyName, setMyTrait,
@@ -3439,3 +3439,5 @@ Object.assign(window, {
   acknowledgeCombat,
   qtySync, qtyAdj, qtyConfirm, qtyCancel,
 });
+// Read-only test handle: lets the headless harness inspect live game state.
+Object.defineProperty(window, '__G', { get: () => G });
