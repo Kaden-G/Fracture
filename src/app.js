@@ -1038,7 +1038,20 @@ function startRound() {
   for (const k of Object.keys(G.pacts)) {
     const [a,b] = k.split('|');
     if (a===TYRANT_KEY || b===TYRANT_KEY) continue;
-    if (G.round - G.pacts[k] >= 4) { delete G.pacts[k]; addLog('📜 A non-aggression pact has lapsed'); }
+    if (G.round - G.pacts[k] >= 4) {
+      if (!G.pactRenewals) G.pactRenewals = {};
+      if (G.pactRenewals[k]) continue;   // renewal vote already pending — pact holds in the meantime
+      const humanParties = [a,b].filter(x => G.factions[x] && !G.factions[x].isAI && !G.factions[x].eliminated);
+      if (!humanParties.length) {        // AI↔AI: lapse silently, as before
+        delete G.pacts[k]; addLog('📜 A non-aggression pact has lapsed');
+        continue;
+      }
+      // Queue a renewal vote: AI parties decide now, humans get a popup (modal below / on sync).
+      const votes = {};
+      for (const x of [a,b]) if (G.factions[x].isAI) votes[x] = aiConsiderPact(x, x===a ? b : a);
+      G.pactRenewals[k] = { round: G.round, votes };
+      addLog('📜 A non-aggression pact is up for renewal…');
+    }
   }
   for (const k of Object.keys(G.grudges)) { if (G.grudges[k] < G.round) delete G.grudges[k]; }
 
@@ -1120,6 +1133,7 @@ function startRound() {
   }
   document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
   processTributeQueue(tributeQueue, fireRoundEvent);
+  maybeShowPactRenewals();
 }
 
 // Sequentially ask each local human owing tribute via the Tyrant-themed modal, then continue.
@@ -1268,6 +1282,7 @@ function beginTurnFor(fk) {
     // Pact offers are delivered the moment they sync (maybeShowPactOffer in onRemoteState);
     // this is a safety net in case that sync was missed (e.g. a refresh mid-offer).
     maybeShowPactOffer();
+    maybeShowPactRenewals();
   };
 
   // Hot-seat with several humans on one device: gate behind a pass-the-device screen.
@@ -1295,13 +1310,17 @@ function tyrantInteract(fk) {
     });
     return;
   }
-  // 2. Otherwise the Tyrant may offer a secret non-aggression pact (re-offers every couple rounds).
-  //    No offer once it has hit its concurrent-pact cap (single-human games: 3).
+  // 2. Otherwise the Tyrant may offer a secret non-aggression pact — at most TWICE per
+  //    player, spaced 3+ rounds apart. No offer once it has hit its concurrent-pact cap
+  //    (single-human games: 3). A player may still petition the Tyrant themselves (PACT
+  //    action on a Tyrant tile) after its offers are spent.
   if (tyrantAlive() && !hasPact(TYRANT_KEY, fk) && !tyrantAtPactCap()) {
-    if (!G.tyrantLastOffer) G.tyrantLastOffer = {};   // Firebase strips empty objects; rebuild defensively
+    if (!G.tyrantLastOffer)  G.tyrantLastOffer  = {};   // Firebase strips empty objects; rebuild defensively
+    if (!G.tyrantOfferCount) G.tyrantOfferCount = {};
     const last = G.tyrantLastOffer[fk] || -99;
-    if (G.round - last >= 3) {
+    if ((G.tyrantOfferCount[fk] || 0) < 2 && G.round - last >= 3) {
       G.tyrantLastOffer[fk] = G.round;
+      G.tyrantOfferCount[fk] = (G.tyrantOfferCount[fk] || 0) + 1;
       showTyrantPactOffer(fk);   // custom themed modal — accept/refuse handled in callbacks
     }
   }
@@ -1405,6 +1424,48 @@ function pactOfferModal(from, to, { onAccept, onRefuse }) {
   });
 }
 
+// ---- Pact renewal (pacts lapse after 4 rounds): each human party votes RENEW or LAPSE.
+// AI parties voted at queue time (aiConsiderPact). Unanimous = renewed for another 4 rounds;
+// any refusal = clean lapse, no grudge. The pact stays in force while the vote is pending.
+function maybeShowPactRenewals() {
+  if (!G.pactRenewals) return;
+  if (document.getElementById('tyrant-confirm-overlay').classList.contains('show')) return;
+  for (const k of Object.keys(G.pactRenewals)) {
+    const r = G.pactRenewals[k]; r.votes = r.votes || {};   // Firebase strips empty objects
+    if (!G.pacts[k]) { delete G.pactRenewals[k]; continue; }   // pact died in the meantime (betrayal/renounce)
+    const [a, b] = k.split('|');
+    const me = [a, b].find(x => G.factions[x] && !G.factions[x].isAI && !G.factions[x].eliminated
+                             && r.votes[x] === undefined && (!online || mySeats.includes(x)));
+    if (!me) { resolvePactRenewal(k); continue; }
+    const other = me === a ? b : a;
+    tyrantModal({
+      type: 'DIPLOMACY',
+      title: '📜 PACT EXPIRING',
+      body: `<b>${G.factions[me].name}</b>: your non-aggression pact with <b>${G.factions[other].name}</b> has run its course.<br><br>` +
+            `Renew it for another 4 rounds — or let it lapse and walk away clean (no grudge)?`,
+      confirmLabel: '🤝 RENEW',
+      cancelLabel: '📜 LET IT LAPSE',
+      onConfirm: () => { r.votes[me] = true;  resolvePactRenewal(k); syncPush(); renderSidebar(); maybeShowPactRenewals(); },
+      onCancel:  () => { r.votes[me] = false; resolvePactRenewal(k); syncPush(); renderSidebar(); maybeShowPactRenewals(); },
+    });
+    return;   // one modal at a time — the rest follow as each is answered
+  }
+}
+function resolvePactRenewal(k) {
+  const r = G.pactRenewals && G.pactRenewals[k];
+  if (!r) return;
+  const parties = k.split('|').filter(x => G.factions[x] && !G.factions[x].eliminated);
+  if (!parties.every(x => (r.votes || {})[x] !== undefined)) return;   // still waiting on someone
+  delete G.pactRenewals[k];
+  if (parties.length >= 2 && parties.every(x => r.votes[x])) {
+    G.pacts[k] = G.round;
+    addLog('🤝 A non-aggression pact was renewed.');
+  } else {
+    delete G.pacts[k];
+    addLog('📜 A non-aggression pact has lapsed');
+  }
+}
+
 // Online: deliver a pending human→human pact offer to the recipient the moment it
 // syncs — no waiting for their turn. Idempotent: re-invoked on every remote snapshot,
 // shows nothing while another modal is up (retries on the next sync), and clears
@@ -1465,14 +1526,20 @@ function qtyCancel() {
 
 // ---- Custom Tyrant pact offer modal (replaces system confirm dialogs) ----
 let tyrantOfferFk = null;
+let tyrantOfferIsPetition = false;   // true when the PLAYER came to the Tyrant
 
-function showTyrantPactOffer(fk) {
+function showTyrantPactOffer(fk, petition = false) {
   tyrantOfferFk = fk;
+  tyrantOfferIsPetition = !!petition;
   const body = document.getElementById('tyrant-offer-body');
   if (body) {
-    body.innerHTML = `It offers <b>${G.factions[fk].name}</b> a <b>secret non-aggression pact</b>. ` +
-      `While it holds, neither of you attacks the other — and no rival will know. ` +
-      `<span style="color:#d98fd9;">But your corruption festers each round you stay bound.</span>`;
+    body.innerHTML = petition
+      ? `<b>${G.factions[fk].name}</b> comes to the Tyrant seeking a <b>secret non-aggression pact</b>. ` +
+        `It grins. While the pact holds, neither of you attacks the other — and no rival will know. ` +
+        `<span style="color:#d98fd9;">But your corruption festers each round you stay bound.</span>`
+      : `It offers <b>${G.factions[fk].name}</b> a <b>secret non-aggression pact</b>. ` +
+        `While it holds, neither of you attacks the other — and no rival will know. ` +
+        `<span style="color:#d98fd9;">But your corruption festers each round you stay bound.</span>`;
   }
   document.getElementById('tyrant-overlay').classList.add('show');
 }
@@ -1480,6 +1547,7 @@ function showTyrantPactOffer(fk) {
 function closeTyrantPactOffer() {
   document.getElementById('tyrant-overlay').classList.remove('show');
   tyrantOfferFk = null;
+  tyrantOfferIsPetition = false;
 }
 
 function acceptTyrantPact(boon) {
@@ -1495,13 +1563,22 @@ function acceptTyrantPact(boon) {
 
 function refuseTyrantPact() {
   const fk = tyrantOfferFk;
+  const petition = tyrantOfferIsPetition;
+  tyrantOfferIsPetition = false;
   closeTyrantPactOffer();
   if (!fk) return;
-  // Human refused — increment refusal streak, check for conquest flip
+  if (petition) { setActionLog('You think better of it and walk away.'); return; }
+  // Human refused — increment refusal streak, check for conquest flip.
+  // Flip when spurned 3 times, or when its two asks are spent on every living
+  // non-allied human (the 2-offer cap would otherwise make the flip unreachable).
   if (!G.tyrantConquest) {
     if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
     G.tyrantRefusalStreak++;
-    if (G.tyrantRefusalStreak >= 3) {
+    const oc = G.tyrantOfferCount || {};
+    const spurned = livingKeys().filter(k =>
+      k !== TYRANT_KEY && !G.factions[k].isAI && !hasPact(TYRANT_KEY, k));
+    const exhausted = spurned.length > 0 && spurned.every(k => (oc[k] || 0) >= 2);
+    if (G.tyrantRefusalStreak >= 3 || exhausted) {
       const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
       if (unAllied.length > 0) {
         G.tyrantConquest = true;
@@ -1672,6 +1749,14 @@ function handleTileClick(id) {
     const other = tile.owner;
     if (hasPact(G.playerFaction, other)) { setActionLog(`You already have a pact with ${G.factions[other].name}.`); return; }
     if ((G.renouncedThisTurn||{})[other]) { setActionLog(`Can't re-propose to ${G.factions[other].name} — you renounced this turn.`); return; }
+    // Petitioning THE TYRANT: route through the proper secret-pact modal — boon choice,
+    // corruption warning, and the concurrent-pact cap all apply, same as its own offers.
+    if (other === TYRANT_KEY) {
+      if (tyrantAtPactCap()) { setActionLog('The Tyrant has all the allies it needs — it refuses you.'); return; }
+      showTyrantPactOffer(G.playerFaction, true);
+      setActionLog('You petition the Tyrant in the shadows…');
+      return;
+    }
     // AI opponent: AI decides instantly
     if (G.factions[other].isAI) {
       if (aiConsiderPact(other, G.playerFaction)) {
@@ -3061,6 +3146,7 @@ function loadRemoteState(s) {
   clean.log            = clean.log            || [];
   clean.tyrantLastOffer = clean.tyrantLastOffer || {};
   clean.tyrantStruck    = clean.tyrantStruck    || {};
+  clean.pactRenewals    = clean.pactRenewals    || {};
   clean.nodesHeldSince  = clean.nodesHeldSince  || {};
   if (clean.pendingChoiceEvent) clean.pendingChoiceEvent.choicesMade = clean.pendingChoiceEvent.choicesMade || {};
   G = clean;
@@ -3086,9 +3172,10 @@ function onRemoteState(s) {
   ensureGameScreen();
   renderMap(); renderSidebar();
 
-  // Deliver a pending human→human pact offer immediately — the recipient responds
+  // Deliver pending pact offers and expiry votes immediately — the recipient responds
   // out of turn, like the online choice events below.
   maybeShowPactOffer();
+  maybeShowPactRenewals();
 
   // Show this round's event card here too, so every player sees it (not just the driver).
   if (G.eventCard && G.eventCard.n > lastShownEventN) {
