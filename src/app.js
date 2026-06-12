@@ -427,7 +427,7 @@ function runReckoning(conspirator) {
   for (let r = 0; r < 3 && tWins < 2 && cWins < 2; r++) {
     const tRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + tEssence + fallenForTyrant;
     const cRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + cEssence + fallenForCon;
-    if (tRoll >= cRoll) { tWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Tyrant wins`); }
+    if (tRoll > cRoll) { tWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Tyrant wins`); }   // ties go to the conspirator
     else               { cWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Conspirator wins`); }
   }
 

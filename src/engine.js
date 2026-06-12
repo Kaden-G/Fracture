@@ -125,7 +125,7 @@ function runReckoningEngine(state, conspirator) {
       tRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + tEssence + fallenForTyrant;
       cRoll = Math.floor(Math.random()*6)+1 + Math.floor(Math.random()*6)+1 + cEssence + fallenForCon;
     }
-    if (tRoll >= cRoll) tWins++; else cWins++;
+    if (tRoll > cRoll) tWins++; else cWins++;   // ties go to the conspirator
   }
   return tWins >= 2;
 }
