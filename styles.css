@@ -1184,6 +1184,41 @@
   }
   .handoff-hint { font-size:13px; color:#777; margin-top:14px; }
 
+  /* ===== LAPTOP TIERS — keep the board big on 13–15" screens =====
+     The board auto-scales to fill #map-area (fitBoard), so every pixel the
+     sidebar / event feed / action panel give back goes straight to the hexes. */
+  @media (max-width: 1700px) {
+    #game-screen { grid-template-columns: 1fr 420px; }
+  }
+  @media (max-width: 1450px) {
+    #game-screen { grid-template-columns: 1fr 350px; }
+    .sidebar-section { padding: 9px 10px; }
+    .sidebar-section h4 { font-size: 20px; margin-bottom: 7px; }
+    .faction-row { font-size: 16px; padding: 7px 9px; }
+    .faction-row-sub { font-size: 13px; }
+    .node-item { font-size: 15px; padding: 6px 9px; }
+    .res-chip { font-size: 18px; padding: 5px 10px; }
+    .quick-ref { font-size: 13px; }
+  }
+  @media (max-height: 940px) {
+    .game-header { padding: 5px 16px; }
+    .game-title-small { font-size: 24px; }
+    .turn-indicator { font-size: 17px; }
+    #map-area { padding: 8px; }
+    #event-strip { height: 96px; padding: 6px 14px; }
+    #action-panel { padding: 6px 12px; gap: 6px; }
+    #player-stats { padding: 2px 2px 5px; margin-bottom: 2px; }
+    .action-btn, .action-btn.active-action { font-size: 15px; padding: 8px 12px; }
+    .action-log { font-size: 13px; padding: 5px 10px; }
+    .end-turn-btn { font-size: 17px; padding: 9px 18px; }
+  }
+  @media (max-height: 820px) {
+    #event-strip { height: 76px; }
+    .action-btn, .action-btn.active-action { font-size: 14px; padding: 7px 10px; }
+    #player-stats .ps-chip { font-size: 12px; padding: 3px 8px; }
+    #player-stats .ps-name { font-size: 15px; }
+  }
+
   @media (max-width: 900px) {
     #game-screen {
       grid-template-columns: 1fr;
