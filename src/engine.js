@@ -829,14 +829,21 @@ export function reduce(inputState, action) {
           const tile = state.tiles[action.target];
           f.resources -= 1;
           const bribedPrev = tile.owner;
+          // The bribed troop DEFECTS: it joins an adjacent Syndicate tile (the staging tile)
+          // rather than just vanishing — a 2-point swing (−1 them, +1 you). Pick the staging
+          // tile before any capture so it's never the tile we're about to seize.
+          const defectTo = Object.values(state.tiles)
+            .filter(t => t.owner === fk && adjacent(t, tile))
+            .sort((a, b) => b.troops - a.troops)[0];
           tile.troops--;
+          if (defectTo) defectTo.troops++;
           if (tile.troops <= 0) {
             tile.owner = fk; tile.troops = 1;
             if (tilesOf(state, bribedPrev).length === 0) killFaction(state, bribedPrev, log);
           }
           state.actionsUsed++;
-          log.push(`💰 ${f.icon} bribed ${tile.name}!`);
-          effects.push({kind:'refresh', tiles:[action.target]});
+          log.push(`💰 ${f.icon} bribed ${tile.name} — a troop defects!`);
+          effects.push({kind:'refresh', tiles: defectTo ? [action.target, defectTo.id] : [action.target]});
           const win = checkWinCondition(state, log);
           if (win) {
             const rWin = maybeReckoning(state, win.fk, log);
