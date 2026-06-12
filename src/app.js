@@ -113,7 +113,7 @@ const NODE_IMAGES = {
 // Themed frame artwork for each faction's owned (non-node) tiles.
 const FACTION_IMAGES = {
   grid:      'assets/faction_grid.png',
-  syndicate: 'assets/faction_syndicate.png',
+  syndicate: 'assets/faction_syndicate.png?v=2',
   commune:   'assets/faction_commune.png',
   ghost:     'assets/faction_ghost.png',
   tyrant:    'assets/faction_tyrant.png',
@@ -121,11 +121,16 @@ const FACTION_IMAGES = {
 
 // Themed card frames for the sidebar faction status rows (built by tools/make_cards.py).
 const FACTION_CARDS = {
-  grid:      'assets/card_grid.png',
-  syndicate: 'assets/card_syndicate.png',
-  commune:   'assets/card_commune.png',
-  ghost:     'assets/card_ghost.png',
+  grid:      'assets/card_grid.png?v=2',
+  syndicate: 'assets/card_syndicate.png?v=2',
+  commune:   'assets/card_commune.png?v=2',
+  ghost:     'assets/card_ghost.png?v=2',
   tyrant:    'assets/card_tyrant.png',
+};
+// border-image slice (source px to the frame's inner edge) — per card, since the
+// art assets differ in size. Tyrant keeps the original square card's 80.
+const FACTION_CARD_SLICE = {
+  grid: 120, syndicate: 115, commune: 106, ghost: 118, tyrant: 80,
 };
 
 // ---- REGIONS: a pinwheel split of the 5×5 grid into N/S/E/W (6 tiles each) + a neutral CORE.
@@ -859,7 +864,7 @@ function renderSidebar() {
       // Each faction's row sits in its themed card frame (9-slice via border-image).
       return `
         <div class="faction-row card-framed" style="
-          border-image: url('${FACTION_CARDS[k]}') 80 fill / 12px stretch;
+          border-image: url('${FACTION_CARDS[k]}') ${FACTION_CARD_SLICE[k]||80} fill / 12px stretch;
           ${isActive?`box-shadow: 0 0 12px ${f.color}aa; filter:brightness(1.12);`:''}
           ${f.eliminated?'opacity:0.35; filter:grayscale(0.7);':''}
         ">
