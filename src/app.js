@@ -31,6 +31,10 @@ const FACTIONS = {
 const TYRANT_KEY = 'tyrant';
 const THRALLDOM_CAP = 13; // at this corruption → auto-loss
 const MOON_BAND = 2;     // moon band = CAP-MOON_BAND .. CAP-1
+// Step 3: COALITION SURGE — human-only counterplay vs the Tyrant (mirrors engine.js).
+// Never fires in all-AI/single-human games; magnitude is tune-by-play (these two consts).
+const COALITION_PER_FACTION = 1;  // attack-vs-Tyrant bonus per coalition member beyond the first (TUNE BY PLAY)
+const COALITION_MAX         = 4;  // safety cap on the surge
 const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'reinforce',
                      perk:'Virus: spreads into adjacent tiles every turn · harbored allies can revive it' };
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
@@ -342,6 +346,32 @@ function tyrantAtPactCap() { return tyrantAllies().length >= tyrantPactCap(); }
 // All pacts are secret — visible only to the two parties involved.
 function pactVisibleTo(a, b, viewer){ return a===viewer || b===viewer; }
 
+// ---- Step 3: coalition surge (human-only counterplay vs the Tyrant) ----
+// A faction is "coalition-hostile" if it drew blood on the Tyrant this round or
+// last round (one-round memory = sustained pressure). Tyrant allies excluded.
+function coalitionHostile(k) {
+  return k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k)
+      && G.tyrantStruck && G.tyrantStruck[k] >= G.round - 1;
+}
+function coalitionSize() { return livingKeys().filter(coalitionHostile).length; }
+// Attack-roll bonus for attackerFk striking defOwner's tile: only vs the Tyrant,
+// only in 2+ human games, only for an earned True-Pact faction. Scales with the
+// visible coalition size (size 1 → 0, then +PER_FACTION per extra member).
+function tyrantSurgeBonus(attackerFk, defOwner) {
+  if (!tyrantOn() || defOwner !== TYRANT_KEY) return 0;
+  if ((G.humans ? G.humans.length : 0) < 2) return 0;   // HUMAN-ONLY
+  if (!coalitionHostile(attackerFk)) return 0;           // must have earned it; allies excluded
+  const size = coalitionSize();
+  return Math.min(COALITION_MAX, Math.max(0, (size - 1) * COALITION_PER_FACTION));
+}
+// Record a True-Pact faction drawing blood on the Tyrant (earns surge next turn).
+function recordTyrantStrike(attackerFk, defOwner) {
+  if (!tyrantOn() || defOwner !== TYRANT_KEY) return;
+  if (attackerFk === TYRANT_KEY || hasPact(TYRANT_KEY, attackerFk)) return;
+  if (!G.tyrantStruck) G.tyrantStruck = {};
+  G.tyrantStruck[attackerFk] = G.round;
+}
+
 // All elimination flows route through here so the Tyrant can get its harbor reprieve.
 function killFaction(fk){
   if (fk === TYRANT_KEY && tyrantAllies().length > 0 && !G.tyrantHarbor) {
@@ -427,7 +457,7 @@ function runReckoning(conspirator) {
   for (let r = 0; r < 3 && tWins < 2 && cWins < 2; r++) {
     const tRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + tEssence + fallenForTyrant;
     const cRoll = Math.floor(Math.random() * 6) + 1 + Math.floor(Math.random() * 6) + 1 + cEssence + fallenForCon;
-    if (tRoll >= cRoll) { tWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Tyrant wins`); }
+    if (tRoll > cRoll) { tWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Tyrant wins`); }   // ties go to the conspirator
     else               { cWins++; rounds.push(`R${r+1}: Tyrant ${tRoll} vs ${cRoll} — Conspirator wins`); }
   }
 
@@ -591,6 +621,7 @@ function startGame() {
     tyrantOn: !!G.setup.tyrant,
     tyrantHarbor: 0,        // round the harbor reprieve expires (0 = not harbored)
     tyrantLastOffer: {},    // fk -> round the Tyrant last offered them a pact
+    tyrantStruck: {},       // Step 3: fk -> last round it drew blood on the Tyrant (coalition surge)
     tyrantConquest: false,  // Part 2: Tyrant switched from diplomacy to conquest
     nodesHeldSince: {},     // fk -> round they first held 3+ nodes (for 2-round win check)
     tiles: {},
@@ -1368,6 +1399,37 @@ function tyrantModalCancel() {
   if (cb && cb.onCancel) cb.onCancel();
 }
 
+// ---- Troop quantity picker (move carry / post-capture advance) ----
+let _qtyCb = null;
+function showQtyPicker({ title, min = 1, max, def, confirmLabel = 'CONFIRM', onPick, onCancel }) {
+  const r = document.getElementById('qty-range');
+  r.min = min; r.max = max; r.value = Math.max(min, Math.min(def ?? max, max));
+  document.getElementById('qty-title').textContent = title;
+  document.getElementById('qty-value').textContent = r.value;
+  document.getElementById('qty-ok').textContent = confirmLabel;
+  _qtyCb = { onPick, onCancel };
+  document.getElementById('qty-overlay').classList.add('show');
+}
+function qtySync() {
+  document.getElementById('qty-value').textContent = document.getElementById('qty-range').value;
+}
+function qtyAdj(d) {
+  const r = document.getElementById('qty-range');
+  r.value = Math.max(+r.min, Math.min(+r.max, +r.value + d));
+  qtySync();
+}
+function qtyConfirm() {
+  const cb = _qtyCb; _qtyCb = null;
+  const n = +document.getElementById('qty-range').value;
+  document.getElementById('qty-overlay').classList.remove('show');
+  if (cb && cb.onPick) cb.onPick(n);
+}
+function qtyCancel() {
+  const cb = _qtyCb; _qtyCb = null;
+  document.getElementById('qty-overlay').classList.remove('show');
+  if (cb && cb.onCancel) cb.onCancel();
+}
+
 // ---- Custom Tyrant pact offer modal (replaces system confirm dialogs) ----
 let tyrantOfferFk = null;
 
@@ -1711,17 +1773,35 @@ function handleTileClick(id) {
       setActionLog(r > 1 ? `Out of range — max ${r} tiles.` : 'Not adjacent! Try again.');
       selectedTile=null; renderMap(); return;
     }
-    const moveN = Math.min(moveTroopCount(G.playerFaction), src.troops - 1);  // 🚇 TRANSIT moves 2
-    src.troops -= moveN;
-    if (src.troops <= 0) { src.owner = null; src.troops = 0; }
-    tile.owner = G.playerFaction; tile.troops += moveN;
-    G.actionsUsed++;
-    currentAction = null;
-    document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-    addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${src.name} → ${tile.name}`);
-    setActionLog(`Moved! ${3-G.actionsUsed} action(s) left.`);
-    refreshHex(selectedTile); refreshHex(id);
-    selectedTile=null; renderSidebar(); return;
+    // Carry up to stack−1 (player-chosen; default leaves 1 behind as a garrison).
+    const mvSrcId = selectedTile;
+    const maxCarry = src.troops - 1;
+    const doMove = (n) => {
+      const s = G.tiles[mvSrcId];
+      if (!s || s.owner !== G.playerFaction || s.troops < 2 ||
+          (tile.owner && tile.owner !== G.playerFaction)) {
+        setActionLog('Move fizzled — the situation changed.'); return;
+      }
+      const moveN = Math.max(1, Math.min(n, s.troops - 1));
+      s.troops -= moveN;
+      tile.owner = G.playerFaction; tile.troops += moveN;
+      G.actionsUsed++;
+      currentAction = null;
+      document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+      addLog(`You moved ${moveN} troop${moveN>1?'s':''}: ${s.name} → ${tile.name}`);
+      setActionLog(`Moved! ${3-G.actionsUsed} action(s) left.`);
+      refreshHex(mvSrcId); refreshHex(id);
+      selectedTile=null; renderSidebar(); syncPush();
+    };
+    if (maxCarry <= 1) { doMove(1); return; }
+    showQtyPicker({
+      title: `MOVE HOW MANY TO ${tile.name}?`,
+      min: 1, max: maxCarry, def: maxCarry,   // default: bring everyone but the garrison
+      confirmLabel: '🚶 MOVE',
+      onPick: doMove,
+      onCancel: () => setActionLog('Move cancelled.'),
+    });
+    return;
   }
 
   // ---- ATTACK ----
@@ -1754,19 +1834,45 @@ function handleTileClick(id) {
       if (won && captured) assaultCaptures++;
       renderSidebar();
       if (checkWin()) return;
-      // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
-      // Hard cap: 3 captures per assault chain.
-      if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
-        selectedTile = srcId;   // keep the assault source selected for the next strike
-        setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
-        renderMap();
-        document.getElementById('hex-'+srcId)?.classList.add('selected');
+      const contAssault = () => {
+        // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
+        // Hard cap: 3 captures per assault chain.
+        if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
+          selectedTile = srcId;   // keep the assault source selected for the next strike
+          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
+          renderMap();
+          document.getElementById('hex-'+srcId)?.classList.add('selected');
+          return;
+        }
+        // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
+        assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
+        document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
+        renderMap(); renderSidebar();
+      };
+      // On a capture, advance a chosen number of extra troops (up to stack−1) into the
+      // captured tile in the SAME action. Committing hard empties the source (ending the
+      // assault chain from it) — that tradeoff plus rally escalation is the brake.
+      const advSrc = G.tiles[srcId];
+      const maxAdv = (won && captured && advSrc && advSrc.owner === G.playerFaction) ? advSrc.troops - 1 : 0;
+      if (maxAdv >= 1) {
+        showQtyPicker({
+          title: `ADVANCE HOW MANY INTO ${tile.name}?`,
+          min: 0, max: maxAdv, def: maxAdv,
+          confirmLabel: '⚔️ ADVANCE',
+          onPick: (n) => {
+            const s = G.tiles[srcId];
+            if (n > 0 && s && s.owner === G.playerFaction && tile.owner === G.playerFaction && s.troops > n) {
+              s.troops -= n; tile.troops += n;
+              addLog(`${G.factions[G.playerFaction].icon} advanced ${n} troop${n>1?'s':''} into ${tile.name}`);
+              refreshHex(srcId); refreshHex(id); renderSidebar(); syncPush();
+            }
+            contAssault();
+          },
+          onCancel: contAssault,   // cancel = hold position (advance 0)
+        });
         return;
       }
-      // Repelled, source spent, capture cap hit, or nothing left — the assault is over.
-      assaultOn = false; assaultCaptures = 0; selectedTile=null; currentAction=null;
-      document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
-      renderMap(); renderSidebar();
+      contAssault();
     };
     if (hasPact(G.playerFaction, tile.owner)) {
       if (tile.owner === TYRANT_KEY) {
@@ -1802,6 +1908,7 @@ function handleTileClick(id) {
       }
       f.resources -= 1;
       const sabPrev = tile.owner;
+      recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
       const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
       const sabDrop = 1;  // Siphon: −1 enemy troop
       if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
@@ -1969,9 +2076,11 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const grudgeD = grudgeDefBonus(attackerFk, tgt.owner);
   // 8. TOTAL WAR event: every attacker swings +1 this round
   const war = totalWar ? 1 : 0;
+  // 9. Step 3 coalition surge — human-only attack bonus vs the Tyrant (0 otherwise)
+  const surge = tyrantSurgeBonus(attackerFk, tgt.owner);
 
   // Raw modifier totals (before clamping)
-  let attMods = attForce + comms + coalition + grudgeA + war;
+  let attMods = attForce + comms + coalition + grudgeA + war + surge;
   let defMods = defForce + entrench + lastStand + data + grudgeD + overextend;
   // Clamp net modifier swing to ±4 — no combination of perks fully removes chance
   const modSwing = attMods - defMods;
@@ -1986,11 +2095,14 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
 
   turnAttacks++;  // this attack now counts toward overextension on the NEXT strike
 
+  // Step 3: record the strike (earns surge next turn) — tgt.owner is still the Tyrant here.
+  recordTyrantStrike(attackerFk, tgt.owner);
+
   // Flash the result whenever the human is involved — attacking OR defending
   const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
-      { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, total: attTotal },
+      { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, surge, total: attTotal },
       { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
@@ -2048,7 +2160,7 @@ function renderCombatFlash() {
   const { att, def, win, playerIsAttacker, af, df, captured } = combatQueue[0];
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
   const diceStr = (arr) => arr.map(d => faces[d-1]).join('');
-  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'}]);
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
@@ -2128,6 +2240,36 @@ function bfsFromTiles(sources) {
 
 // AI node-seeking: capture an adjacent unclaimed Node, else march a troop toward the nearest Node.
 // This is what makes the AI actually contest the board's objectives (nodes start unowned).
+// AI advance/carry sizing — commit force forward, keep a rear guard when threatened.
+// (Mirrors carryCount/advanceFor in src/ai.js so live games match the sim.)
+function aiTileThreatened(fk, tile) {
+  return Object.values(G.tiles).some(t => t.owner && t.owner !== fk && adjacent(tile, t));
+}
+function aiCarryCount(fk, src) {
+  const movable = Math.max(1, src.troops - 1);
+  return aiTileThreatened(fk, src) ? Math.max(1, Math.floor(movable / 2)) : movable;
+}
+function aiAdvanceFor(fk, atk, def) {
+  if (def.isNode) return aiTileThreatened(fk, atk) ? Math.max(1, Math.floor(atk.troops / 2)) : atk.troops;
+  return Math.floor(Math.max(0, atk.troops - 1) / 2);
+}
+// Attack + post-capture advance in one action (engine clamps to stack-1).
+function aiAttackWithAdvance(fk, atk, def) {
+  const willCapture = def.troops <= 1;
+  const wantAdv = aiAdvanceFor(fk, atk, def);
+  const won = resolveAttack(fk, atk.id, def.id, false);
+  if (won && willCapture && G.tiles[def.id].owner === fk) {
+    const s = G.tiles[atk.id];
+    const adv = (s && s.owner === fk) ? Math.min(wantAdv, s.troops - 1) : 0;
+    if (adv > 0) {
+      s.troops -= adv; G.tiles[def.id].troops += adv;
+      addLog(`${G.factions[fk].icon} ${G.factions[fk].name} advanced ${adv} troop${adv>1?'s':''} into ${def.name}`);
+      refreshHex(atk.id); refreshHex(def.id);
+    }
+  }
+  return won ? 'won' : 'repelled';
+}
+
 function aiNodePush(fk) {
   const tiles   = Object.values(G.tiles);
   const movable = tiles.filter(t => t.owner === fk && t.troops >= 2);
@@ -2142,7 +2284,8 @@ function aiNodePush(fk) {
   for (const src of movable) {
     const node = targets.find(n => !n.owner && moveReachable(fk, src, n));
     if (node) {
-      src.troops--; node.owner = fk; node.troops = (node.troops || 0) + 1; node.heldRounds = 0;
+      const carry = aiCarryCount(fk, src);
+      src.troops -= carry; node.owner = fk; node.troops = (node.troops || 0) + carry; node.heldRounds = 0;
       addLog(`${f.icon} ${f.name} seized ${node.name}`);
       refreshHex(src.id); refreshHex(node.id);
       return true;
@@ -2177,9 +2320,10 @@ function aiNodePush(fk) {
     }
   }
   if (mv) {
-    mv.src.troops--;
-    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = 1; mv.to.heldRounds = 0; }
-    else mv.to.troops++;
+    const carry = aiCarryCount(fk, mv.src);
+    mv.src.troops -= carry;
+    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = carry; mv.to.heldRounds = 0; }
+    else mv.to.troops += carry;
     addLog(`${f.icon} ${f.name} advanced toward a Node`);
     refreshHex(mv.src.id); refreshHex(mv.to.id);
     return true;
@@ -2397,7 +2541,7 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
   if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
-    return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
+    return aiAttackWithAdvance(fk, best.atk, best.def);
   }
 
   // 1b. AIRLIFT to concentrate force before a node assault.
@@ -2421,7 +2565,7 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 3. Take any other favorable attack.
   if (attackable && best.atk.troops > best.def.troops) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
-    return resolveAttack(fk, best.atk.id, best.def.id, false) ? 'won' : 'repelled';
+    return aiAttackWithAdvance(fk, best.atk, best.def);
   }
   // 4. Use special ability opportunistically.
   if (aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
@@ -2461,6 +2605,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
     if (target) {
       const prev = target.owner;
       f.resources -= 1;
+      recordTyrantStrike(fk, prev);   // Step 3: AI sabotaging the blob joins the coalition
       const aiPreTroops = target.troops;  // before the hit (D)
       const aiSabDrop = 1;  // Siphon: −1 enemy troop
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
@@ -2860,6 +3005,7 @@ function loadRemoteState(s) {
   clean.grudges        = clean.grudges        || {};
   clean.log            = clean.log            || [];
   clean.tyrantLastOffer = clean.tyrantLastOffer || {};
+  clean.tyrantStruck    = clean.tyrantStruck    || {};
   clean.nodesHeldSince  = clean.nodesHeldSince  || {};
   if (clean.pendingChoiceEvent) clean.pendingChoiceEvent.choicesMade = clean.pendingChoiceEvent.choicesMade || {};
   G = clean;
@@ -3103,7 +3249,7 @@ function buildOnlineGame(seats, tyrant) {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
-    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantConquest: false, nodesHeldSince: {},
+    tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false, nodesHeldSince: {},
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
@@ -3123,4 +3269,5 @@ Object.assign(window, {
   acceptTyrantPact, refuseTyrantPact,
   tyrantModalConfirm, tyrantModalCancel,
   acknowledgeCombat,
+  qtySync, qtyAdj, qtyConfirm, qtyCancel,
 });

@@ -145,6 +145,23 @@
   </div>
 </div>
 
+<!-- TROOP QUANTITY PICKER (move carry / post-capture advance) -->
+<div id="qty-overlay">
+  <div class="qty-card">
+    <div class="qty-title" id="qty-title">MOVE TROOPS</div>
+    <div class="qty-row">
+      <button class="qty-step" onclick="qtyAdj(-1)">−</button>
+      <input type="range" id="qty-range" min="1" max="9" value="9" oninput="qtySync()">
+      <button class="qty-step" onclick="qtyAdj(1)">+</button>
+      <span class="qty-value" id="qty-value">9</span>
+    </div>
+    <div class="qty-actions">
+      <button class="btn btn-secondary" id="qty-cancel" onclick="qtyCancel()">CANCEL</button>
+      <button class="btn btn-primary" id="qty-ok" onclick="qtyConfirm()">CONFIRM</button>
+    </div>
+  </div>
+</div>
+
 <!-- TYRANT PACT OFFER -->
 <div id="tyrant-overlay">
   <div class="tyrant-card">

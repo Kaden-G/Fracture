@@ -587,3 +587,154 @@ describe('Tyrant pact cap', () => {
     assert.ok(hasPact(next, TYRANT_KEY, 'ghost'), '4th pact allowed in multi-human games');
   });
 });
+
+// ============================================================
+// STEP 1 — MOVE carry count & post-capture ADVANCE
+// ============================================================
+describe('Movement & advance', () => {
+  function moveState(seed) {
+    const state = makeTestState(seed ? { seed } : {});
+    state.tiles['tile_0_0'].owner = 'grid';
+    state.tiles['tile_0_1'].owner = null;
+    state.tiles['tile_0_1'].troops = 0;
+    state.currentTurnIdx = 0;   // grid's turn
+    return state;
+  }
+
+  it('MOVE with count carries the chosen number', () => {
+    const state = moveState();
+    state.tiles['tile_0_0'].troops = 6;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1', count: 5 });
+    assert.equal(s1.tiles['tile_0_0'].troops, 1, 'garrison of 1 stays');
+    assert.equal(s1.tiles['tile_0_1'].troops, 5, '5 troops carried');
+  });
+
+  it('MOVE count clamps to stack−1 (never abandons the source)', () => {
+    const state = moveState();
+    state.tiles['tile_0_0'].troops = 4;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1', count: 99 });
+    assert.equal(s1.tiles['tile_0_0'].troops, 1);
+    assert.equal(s1.tiles['tile_0_1'].troops, 3);
+    assert.equal(s1.tiles['tile_0_0'].owner, 'grid', 'source stays owned');
+  });
+
+  it('MOVE without count keeps the legacy default (1 troop)', () => {
+    const state = moveState();
+    state.tiles['tile_0_0'].troops = 6;
+    const { state: s1 } = reduce(state, { type: 'MOVE', src: 'tile_0_0', dst: 'tile_0_1' });
+    assert.equal(s1.tiles['tile_0_0'].troops, 5);
+    assert.equal(s1.tiles['tile_0_1'].troops, 1);
+  });
+
+  it('ATTACK advance moves extra troops into a captured tile, clamped to stack−1', () => {
+    for (let seed = 1; seed < 80; seed++) {
+      const state = makeTestState({ seed });
+      state.tiles['tile_0_0'].owner = 'grid';      state.tiles['tile_0_0'].troops = 10;
+      state.tiles['tile_0_1'].owner = 'syndicate'; state.tiles['tile_0_1'].troops = 1;
+      state.tiles['tile_0_1'].heldRounds = 0;
+      state.currentTurnIdx = 0;
+      const { state: s1, effects } = reduce(state,
+        { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1', attackerFk: 'grid', advance: 99 });
+      if (effects.some(e => e.kind === 'capture')) {
+        assert.equal(s1.tiles['tile_0_1'].owner, 'grid');
+        assert.equal(s1.tiles['tile_0_0'].troops, 1, 'advance clamps so 1 stays behind');
+        assert.equal(s1.tiles['tile_0_1'].troops, 9, 'occupier + 8 advanced');
+        return;
+      }
+    }
+    assert.fail('no capture across 80 seeds — should be near-certain at 10v1');
+  });
+
+  it('ATTACK advance does nothing when the attack does not capture', () => {
+    for (let seed = 1; seed < 30; seed++) {
+      const state = makeTestState({ seed });
+      state.tiles['tile_0_0'].owner = 'grid';      state.tiles['tile_0_0'].troops = 6;
+      state.tiles['tile_0_1'].owner = 'syndicate'; state.tiles['tile_0_1'].troops = 8;
+      state.currentTurnIdx = 0;
+      const { state: s1, effects } = reduce(state,
+        { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1', attackerFk: 'grid', advance: 99 });
+      assert.ok(!effects.some(e => e.kind === 'capture'), 'no capture at 6v8 single strike');
+      assert.equal(s1.tiles['tile_0_1'].owner, 'syndicate', 'tile holds');
+      assert.ok(s1.tiles['tile_0_0'].troops >= 1, 'source never emptied');
+    }
+  });
+});
+
+// ============================================================
+// STEP 3 — Coalition surge (human-only, vs-Tyrant-only)
+// ============================================================
+describe('Coalition surge', () => {
+  function surgeState(humans) {
+    const state = makeTestState({ seed: 7 });
+    state.tyrantOn = true;
+    state.humans = humans;
+    state.round = 5;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, false, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    // A Tyrant tile adjacent to grid & syndicate tiles
+    state.tiles['tile_0_0'].owner = 'grid';      state.tiles['tile_0_0'].troops = 8;
+    state.tiles['tile_0_1'].owner = TYRANT_KEY;  state.tiles['tile_0_1'].troops = 3; state.tiles['tile_0_1'].heldRounds = 0;
+    state.tiles['tile_1_1'].owner = 'syndicate'; state.tiles['tile_1_1'].troops = 8;
+    return state;
+  }
+  // Read the surge value off the combat effect by attacking the Tyrant from grid.
+  function surgeOf(state) {
+    const { effects } = reduce(state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1', attackerFk: 'grid' });
+    return effects.find(e => e.kind === 'combat').att.surge;
+  }
+
+  it('does nothing in <2 human games (sim-safe)', () => {
+    const state = surgeState([]);            // all-AI
+    state.tyrantStruck = { grid: 4, syndicate: 4 };
+    assert.equal(surgeOf(state), 0, 'no surge with 0 humans');
+    const solo = surgeState(['grid']);       // single human
+    solo.tyrantStruck = { grid: 4, syndicate: 4 };
+    assert.equal(surgeOf(solo), 0, 'no surge with 1 human');
+  });
+
+  it('scales with coalition size: 1→0, 2→+1, 3→+2', () => {
+    const s1 = surgeState(['grid', 'syndicate']);
+    s1.tyrantStruck = { grid: 4 };                          // only grid hostile → size 1
+    assert.equal(surgeOf(s1), 0, 'lone poke = no surge');
+    const s2 = surgeState(['grid', 'syndicate']);
+    s2.tyrantStruck = { grid: 4, syndicate: 4 };            // size 2
+    assert.equal(surgeOf(s2), 1);
+    const s3 = surgeState(['grid', 'syndicate']);
+    s3.tyrantStruck = { grid: 4, syndicate: 4, commune: 4 };// size 3
+    assert.equal(surgeOf(s3), 2);
+  });
+
+  it('requires earning it (struck within the window)', () => {
+    const stale = surgeState(['grid', 'syndicate']);
+    stale.tyrantStruck = { grid: 1, syndicate: 1 };  // round 5, struck round 1 → out of window
+    assert.equal(surgeOf(stale), 0, 'stale hostility does not qualify');
+  });
+
+  it('excludes Tyrant allies from the coalition', () => {
+    const state = surgeState(['grid', 'syndicate']);
+    state.tyrantStruck = { grid: 4, syndicate: 4, commune: 4 };
+    state.pacts[pairKey(TYRANT_KEY, 'syndicate')] = 4;   // syndicate is bound → not counted, grid+commune = size 2
+    assert.equal(surgeOf(state), 1);
+    // And a bound attacker gets nothing even if it strikes
+    const ally = surgeState(['grid', 'syndicate']);
+    ally.tyrantStruck = { grid: 4 };
+    ally.pacts[pairKey(TYRANT_KEY, 'grid')] = 4;
+    assert.equal(surgeOf(ally), 0, 'bound attacker earns no surge');
+  });
+
+  it('applies only against the Tyrant, not other factions', () => {
+    const state = surgeState(['grid', 'syndicate']);
+    state.tyrantStruck = { grid: 4, syndicate: 4 };
+    // grid attacks syndicate (a normal rival) instead of the Tyrant
+    state.tiles['tile_1_0'].owner = 'syndicate'; state.tiles['tile_1_0'].troops = 2;
+    const { effects } = reduce(state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_1_0', attackerFk: 'grid' });
+    assert.equal(effects.find(e => e.kind === 'combat').att.surge, 0, 'no surge vs non-Tyrant');
+  });
+
+  it('attacking the Tyrant records the strike (earns surge next turn)', () => {
+    const state = surgeState(['grid', 'syndicate']);
+    state.tyrantStruck = {};
+    const { state: next } = reduce(state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1', attackerFk: 'grid' });
+    assert.equal(next.tyrantStruck.grid, 5, 'strike recorded at current round');
+  });
+});

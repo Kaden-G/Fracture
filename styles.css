@@ -844,6 +844,50 @@
     box-shadow: 0 4px 14px rgba(127,209,59,0.5);
   }
 
+  /* ===== TROOP QUANTITY PICKER ===== */
+  #qty-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 250;               /* above conquest banner, below combat OK (299) */
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  #qty-overlay.show { display: flex; }
+
+  .qty-card {
+    background: var(--card-bg);
+    border: 4px solid var(--node-glow);
+    padding: 20px 26px;
+    min-width: 340px;
+    text-align: center;
+    color: var(--card-text);
+    box-shadow: 0 0 30px rgba(241,196,15,0.25);
+  }
+  .qty-title {
+    font-family: 'Bangers', cursive;
+    font-size: 20px;
+    letter-spacing: 1.5px;
+    margin-bottom: 14px;
+  }
+  .qty-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .qty-row input[type=range] { flex: 1; accent-color: var(--node-glow); }
+  .qty-step {
+    width: 34px; height: 34px;
+    font-size: 20px; font-weight: 900;
+    background: #1c1c2c; color: var(--card-text);
+    border: 2px solid #3a3a4e; cursor: pointer;
+  }
+  .qty-value {
+    font-family: 'Bangers', cursive;
+    font-size: 26px;
+    color: var(--node-glow);
+    min-width: 40px;
+  }
+  .qty-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .qty-actions .btn { font-size: 15px; padding: 8px 18px; }
+
   /* ===== CONQUEST WIN — banner over the board, which flips to the winner's tiles ===== */
   #conquest-overlay {
     display: none;
