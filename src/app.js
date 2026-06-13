@@ -190,6 +190,7 @@ let lobbyIsHost    = false;
 let myClientId     = null;
 let myName         = '';
 let myTrait        = '';
+let lobbyStep      = 1;       // online lobby wizard: 1 name · 2 faction · 3 passive · 4 review · 5 ready/roster
 let fbInited       = false;
 let db             = null;    // Firebase Realtime Database handle (set by online layer)
 
@@ -762,6 +763,8 @@ function renderMap() {
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__fitResize) {
     window.__fitResize = true;
     window.addEventListener('resize', () => fitBoard());
+    // Mobile: re-fit after an orientation flip / address-bar resize once layout settles.
+    window.addEventListener('orientationchange', () => setTimeout(fitBoard, 250));
   }
 }
 
@@ -3265,12 +3268,13 @@ function genCode() {
 
 function hostRoom() {
   lobbyIsHost = true;
+  lobbyStep = 1;
   roomCode = genCode();
   roomRef = db.ref('rooms/' + roomCode);
   stateRef = roomRef.child('state');
   // All seats OPEN by default so anyone can claim one; unclaimed seats become AI at START.
   const seats = {};
-  Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'human', by: null, name: '', trait: '' });
+  Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'human', by: null, name: '', trait: '', ready: false });
   roomRef.set({ host: myClientId, started: false, seats, tyrant: false })
     .then(() => roomRef.on('value', onRoom))
     .catch(e => alert('Could not create room: ' + e.message));
@@ -3279,7 +3283,7 @@ function hostRoom() {
 function joinRoomPrompt() {
   const code = (document.getElementById('join-code').value || '').trim().toUpperCase();
   if (code.length < 4) { alert('Enter the 4-letter room code.'); return; }
-  roomCode = code; lobbyIsHost = false;
+  roomCode = code; lobbyIsHost = false; lobbyStep = 1;
   roomRef = db.ref('rooms/' + roomCode);
   stateRef = roomRef.child('state');
   roomRef.once('value').then(snap => {
@@ -3297,101 +3301,226 @@ function onRoom(snap) {
   else renderLobby(data);
 }
 
-function setMyName(v) { myName = v; }
-function setMyTrait(v) { myTrait = v; renderLobby(lastRoomData); }
-
-function claimSeat(fk) {
-  if (!myName.trim() || !myTrait) { alert('Enter your name and pick a trait first.'); return; }
-  if ((TRAIT_EXCLUSIONS[fk] || []).includes(myTrait)) {
-    const t = TRAITS.find(t => t.id === myTrait);
-    alert(`${t ? t.name : myTrait} is not available to ${FACTIONS[fk].name} — pick a different trait for this seat.`);
-    return;
-  }
-  const seats = lastRoomData.seats || {};
-  const updates = {};
-  Object.keys(seats).forEach(k => { if (seats[k].by === myClientId) updates['seats/' + k] = { type: 'human', by: null, name: '', trait: '' }; });
-  updates['seats/' + fk] = { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait };
-  roomRef.update(updates);
+function setMyName(v) {
+  myName = v;
+  const b = document.getElementById('wiz-next');
+  if (b) { const ok = !!v.trim(); b.style.opacity = ok ? '' : '0.4'; b.style.pointerEvents = ok ? '' : 'none'; }
 }
-
-function hostSetSeat(fk, kind) {  // 'ai' or 'open'
-  if (!lobbyIsHost) return;
-  roomRef.child('seats/' + fk).set(kind === 'ai'
-    ? { type: 'ai', by: null, name: '', trait: '' }
-    : { type: 'human', by: null, name: '', trait: '' });
-}
-
 function hostSetTyrant() {
   if (!lobbyIsHost) return;
   roomRef.update({ tyrant: !(lastRoomData && lastRoomData.tyrant) });
 }
 
+// ============================================================
+// ONLINE LOBBY — guided wizard: name → faction → passive → ready
+// Works the same on laptop and mobile (single centered card, big tap targets).
+// ============================================================
+function mySeatKey(data) {
+  const s = (data && data.seats) || {};
+  return Object.keys(s).find(k => s[k] && s[k].by === myClientId) || null;
+}
+const esc = (v) => String(v || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+// One seat write, optimistically mirrored into lastRoomData so the UI is instant.
+function writeSeat(fk, seat) {
+  if (lastRoomData) { lastRoomData.seats = lastRoomData.seats || {}; lastRoomData.seats[fk] = seat; }
+  if (roomRef) roomRef.child('seats/' + fk).set(seat);
+}
+function clearMyOtherSeats(exceptFk) {
+  const seats = (lastRoomData && lastRoomData.seats) || {};
+  Object.keys(seats).forEach(k => {
+    if (k !== exceptFk && seats[k].by === myClientId) writeSeat(k, { type: 'human', by: null, name: '', trait: '', ready: false });
+  });
+}
+
+function lobbyNext() {
+  if (lobbyStep === 1) { if (!myName.trim()) { alert('Enter your name to continue.'); return; } lobbyStep = 2; }
+  else if (lobbyStep === 2) { if (!mySeatKey(lastRoomData)) { alert('Tap a faction to claim your seat.'); return; } lobbyStep = 3; }
+  else if (lobbyStep === 3) { if (!myTrait) { alert('Choose a passive trait.'); return; } lobbyStep = 4; }
+  renderLobby(lastRoomData);
+}
+function lobbyBack() { if (lobbyStep > 1) { lobbyStep--; renderLobby(lastRoomData); } }
+function lobbyEdit() { lobbyStep = 2; const k = mySeatKey(lastRoomData); if (k) writeSeat(k, { ...lastRoomData.seats[k], ready: false }); renderLobby(lastRoomData); }
+
+function lobbyPickFaction(fk) {
+  const seats = (lastRoomData && lastRoomData.seats) || {};
+  const taken = seats[fk] && seats[fk].by && seats[fk].by !== myClientId;
+  if (taken) return;
+  clearMyOtherSeats(fk);
+  // Keep my trait only if it's still legal for the new faction.
+  if (myTrait && (TRAIT_EXCLUSIONS[fk] || []).includes(myTrait)) myTrait = '';
+  writeSeat(fk, { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait || '', ready: false });
+  renderLobby(lastRoomData);
+}
+function lobbyPickTrait(id) {
+  const fk = mySeatKey(lastRoomData);
+  if (!fk) { lobbyStep = 2; renderLobby(lastRoomData); return; }
+  if ((TRAIT_EXCLUSIONS[fk] || []).includes(id)) return;
+  myTrait = id;
+  writeSeat(fk, { ...lastRoomData.seats[fk], trait: id, ready: false });
+  renderLobby(lastRoomData);
+}
+function lobbyReady() {
+  const fk = mySeatKey(lastRoomData);
+  if (!fk) { lobbyStep = 2; renderLobby(lastRoomData); return; }
+  if (!myTrait) { lobbyStep = 3; renderLobby(lastRoomData); return; }
+  writeSeat(fk, { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait, ready: true });
+  lobbyStep = 5;
+  renderLobby(lastRoomData);
+}
+
+function wizShell(stepTitle, stepNum, bodyHTML, footHTML) {
+  const dots = [1, 2, 3, 4].map(n =>
+    `<span style="width:9px;height:9px;border-radius:50%;display:inline-block;
+       background:${n < stepNum ? 'var(--node-glow)' : (n === stepNum ? 'var(--node-glow)' : '#444')};
+       ${n === stepNum ? 'box-shadow:0 0 6px var(--node-glow);' : ''}"></span>`).join('<span style="width:14px;height:2px;background:#333;display:inline-block;vertical-align:middle;margin:0 2px;"></span>');
+  return `
+    <div class="setup-card wizard-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:11px;color:#888;letter-spacing:1px;">ROOM <b style="color:var(--node-glow);letter-spacing:3px;">${roomCode}</b></span>
+        <span style="display:flex;align-items:center;gap:0;">${dots}</span>
+      </div>
+      <h3 style="margin-bottom:14px;">${stepTitle}</h3>
+      ${bodyHTML}
+      <div class="wizard-foot">${footHTML}</div>
+    </div>`;
+}
+
 function renderLobby(data) {
+  if (!data) return;
+  const mine = mySeatKey(data);
+  // Sync local fields from the authoritative seat (covers reconnect / Firebase echo).
+  if (mine) { if (!myName) myName = data.seats[mine].name || ''; if (!myTrait) myTrait = data.seats[mine].trait || ''; }
+  // If I've already readied (and the game hasn't started), park on the roster view.
+  if (mine && data.seats[mine].ready && lobbyStep < 5) lobbyStep = 5;
+  if (lobbyStep >= 5 && (!mine || !data.seats[mine].ready)) lobbyStep = 4;  // un-readied elsewhere
+
+  let html;
+  if (lobbyStep === 1) html = renderStepName(data);
+  else if (lobbyStep === 2) html = renderStepFaction(data);
+  else if (lobbyStep === 3) html = renderStepPassive(data);
+  else if (lobbyStep === 4) html = renderStepReview(data);
+  else html = renderRoster(data);
+  document.getElementById('lobby-body').innerHTML = html;
+  if (lobbyStep === 1) setMyName(myName);  // sync NEXT button enabled-state
+}
+
+function renderStepName(data) {
+  return wizShell('What should we call you?', 1, `
+    <input class="input-field" id="wiz-name" maxlength="16" placeholder="Your name…"
+      value="${esc(myName)}" oninput="setMyName(this.value)"
+      onkeydown="if(event.key==='Enter')lobbyNext()" style="font-size:18px;">
+    <p style="font-size:12px;color:#888;margin-top:6px;">Other players in the room will see this name.</p>
+  `, `
+    <button class="btn btn-secondary" style="font-size:15px;" onclick="leaveLobby()">← LEAVE</button>
+    <button class="btn btn-primary" id="wiz-next" style="flex:1;font-size:18px;" onclick="lobbyNext()">NEXT →</button>
+  `);
+}
+
+function renderStepFaction(data) {
   const seats = data.seats || {};
-  const rows = Object.entries(FACTIONS).map(([k, f]) => {
-    const s = seats[k] || { type: 'ai' };
-    let status;
-    if (s.type === 'ai') status = '🤖 AI';
-    else if (s.by) status = (s.by === myClientId ? '⭐ YOU — ' : '🎮 ') + (s.name || 'Player');
-    else status = '🟢 OPEN';
-    let actions = '';
-    if (lobbyIsHost) {
-      actions = `<button class="seat-mini" onclick="hostSetSeat('${k}','ai')">AI</button>
-                 <button class="seat-mini" onclick="hostSetSeat('${k}','open')">OPEN</button>
-                 <button class="seat-mini" onclick="claimSeat('${k}')">PLAY</button>`;
-    } else if (s.type === 'human' && !s.by) {
-      actions = `<button class="seat-mini" onclick="claimSeat('${k}')">CLAIM</button>`;
-    } else if (s.by === myClientId) {
-      actions = `<button class="seat-mini" onclick="claimSeat('${k}')">↻</button>`;
-    }
-    return `<div class="faction-row" style="justify-content:space-between; gap:8px;">
-        <span style="color:${f.color};font-family:'Bangers';letter-spacing:1px;min-width:96px;">${f.icon} ${f.name}</span>
-        <span style="font-size:12px;flex:1;text-align:center;color:#ccc;">${status}</span>
-        <span style="display:flex;gap:4px;">${actions}</span>
+  const mine = mySeatKey(data);
+  const cards = Object.entries(FACTIONS).map(([k, f]) => {
+    const s = seats[k] || {};
+    const takenByOther = s.by && s.by !== myClientId;
+    const isMine = s.by === myClientId;
+    const who = takenByOther ? `🔒 ${esc(s.name) || 'Taken'}` : (isMine ? '✓ YOUR PICK' : 'Tap to choose');
+    return `<div class="wiz-faction ${isMine ? 'selected' : ''} ${takenByOther ? 'taken' : ''}"
+        style="border-color:${isMine ? f.color : '#444'};"
+        ${takenByOther ? '' : `onclick="lobbyPickFaction('${k}')"`}>
+        <div style="font-family:'Bangers';font-size:20px;letter-spacing:1px;color:${f.color};">${f.icon} ${f.name}</div>
+        <div style="font-size:11px;color:#bbb;margin:3px 0;">${f.perk}</div>
+        <div style="font-size:11px;color:${isMine ? f.color : (takenByOther ? '#e74c3c' : '#888')};font-weight:700;">${who}</div>
       </div>`;
   }).join('');
+  return wizShell('Choose your faction', 2, `<div class="wiz-faction-grid">${cards}</div>`, `
+    <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
+    <button class="btn btn-primary" style="flex:1;font-size:18px;${mine ? '' : 'opacity:.4;pointer-events:none;'}" onclick="lobbyNext()">NEXT →</button>
+  `);
+}
 
-  const iHaveSeat = Object.values(seats).some(s => s.by === myClientId);
-  const canStart = lobbyIsHost && iHaveSeat;
-  document.getElementById('lobby-body').innerHTML = `
-    <div class="setup-card" style="max-width:500px; margin:0 auto;">
-      <h3>ROOM CODE: <span style="color:var(--node-glow);letter-spacing:4px;">${roomCode}</span></h3>
-      <p style="font-size:12px;color:#999;margin-bottom:10px;line-height:1.5;">
-        ${lobbyIsHost ? 'Share the code. Set each seat to AI or OPEN, claim one with PLAY, then START.' : 'Claim an OPEN seat, then wait for the host to start.'}
-      </p>
-      <label>YOUR NAME</label>
-      <input class="input-field" maxlength="16" placeholder="Your name..." value="${(myName || '').replace(/"/g, '&quot;')}" oninput="setMyName(this.value)">
-      <label>PASSIVE TRAIT</label>
-      <div class="trait-select" style="margin-bottom:12px;">
-        ${TRAITS.map(t => {
-          const barred = Object.entries(TRAIT_EXCLUSIONS).filter(([, ids]) => ids.includes(t.id)).map(([k]) => FACTIONS[k].name);
-          const note = barred.length ? ` <span style="color:#e74c3c;">(not available to ${barred.join(', ')})</span>` : '';
-          return `<div class="trait-option ${myTrait === t.id ? 'selected' : ''}" onclick="setMyTrait('${t.id}')"><strong>${t.name}:</strong> ${t.desc}${note}</div>`;
-        }).join('')}
+function renderStepPassive(data) {
+  const fk = mySeatKey(data);
+  const f = fk && FACTIONS[fk];
+  const pool = TRAITS.filter(t => !(TRAIT_EXCLUSIONS[fk] || []).includes(t.id));
+  const opts = pool.map(t =>
+    `<div class="trait-option ${myTrait === t.id ? 'selected' : ''}" onclick="lobbyPickTrait('${t.id}')">
+       <strong>${t.name}:</strong> ${t.desc}</div>`).join('');
+  return wizShell('Pick your passive', 3, `
+    <p style="font-size:12px;color:#888;margin-bottom:10px;">Playing ${f ? `<b style="color:${f.color}">${f.icon} ${f.name}</b>` : 'your faction'} — choose a trait that lasts all game.</p>
+    <div class="trait-select">${opts}</div>
+  `, `
+    <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
+    <button class="btn btn-primary" style="flex:1;font-size:18px;${myTrait ? '' : 'opacity:.4;pointer-events:none;'}" onclick="lobbyNext()">NEXT →</button>
+  `);
+}
+
+function renderStepReview(data) {
+  const fk = mySeatKey(data);
+  const f = fk && FACTIONS[fk];
+  const t = TRAITS.find(x => x.id === myTrait);
+  return wizShell('Ready to deploy?', 4, `
+    <div class="wiz-review">
+      <div><span>NAME</span><b>${esc(myName) || '—'}</b></div>
+      <div><span>FACTION</span><b style="color:${f ? f.color : '#fff'}">${f ? f.icon + ' ' + f.name : '—'}</b></div>
+      <div><span>PASSIVE</span><b>${t ? t.name : '—'}</b></div>
+    </div>
+    <p style="font-size:12px;color:#888;margin-top:10px;">Tap READY to lock in. The host starts once everyone is ready.</p>
+  `, `
+    <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
+    <button class="btn btn-primary" style="flex:1;font-size:18px;background:#27ae60;border-color:#27ae60;color:#fff;" onclick="lobbyReady()">✓ READY</button>
+  `);
+}
+
+function renderRoster(data) {
+  const seats = data.seats || {};
+  const claimed = Object.entries(seats).filter(([, s]) => s.by);
+  const rows = Object.entries(FACTIONS).map(([k, f]) => {
+    const s = seats[k] || {};
+    let status, color = '#888';
+    if (s.by === myClientId) { status = s.ready ? '✓ READY (you)' : 'YOU'; color = s.ready ? '#27ae60' : f.color; }
+    else if (s.by) { status = s.ready ? `✓ ${esc(s.name)}` : `⌛ ${esc(s.name)}`; color = s.ready ? '#27ae60' : '#ddd'; }
+    else { status = '🤖 AI (open)'; }
+    return `<div class="faction-row" style="justify-content:space-between;gap:8px;">
+        <span style="color:${f.color};font-family:'Bangers';letter-spacing:1px;min-width:90px;">${f.icon} ${f.name}</span>
+        <span style="font-size:12px;flex:1;text-align:right;color:${color};font-weight:700;">${status}</span>
+      </div>`;
+  }).join('');
+  const everyoneReady = claimed.length > 0 && claimed.every(([, s]) => s.ready);
+  const iAmReady = mySeatKey(data) && seats[mySeatKey(data)].ready;
+  const hostFoot = lobbyIsHost
+    ? `<button class="btn btn-secondary" style="font-size:14px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
+       <button class="btn btn-primary" style="flex:1;font-size:18px;${everyoneReady ? '' : 'opacity:.45;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
+    : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${everyoneReady ? 'WAITING FOR HOST…' : 'WAITING FOR PLAYERS…'}</div>`;
+  return `
+    <div class="setup-card wizard-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:11px;color:#888;letter-spacing:1px;">ROOM <b style="color:var(--node-glow);letter-spacing:3px;">${roomCode}</b></span>
+        <span style="font-size:11px;color:${iAmReady ? '#27ae60' : '#888'};font-weight:700;">${iAmReady ? '✓ YOU ARE READY' : ''}</span>
       </div>
+      <h3 style="margin-bottom:6px;">Lobby</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}</p>
       ${rows}
-      <div class="faction-row" style="justify-content:space-between; gap:8px; margin-top:8px; border-color:${TYRANT_DEF.color};">
-        <span style="color:${TYRANT_DEF.color};font-family:'Bangers';letter-spacing:1px;min-width:96px;">${TYRANT_DEF.icon} THE TYRANT</span>
-        <span style="font-size:12px;flex:1;text-align:center;color:#ccc;">${data.tyrant ? '☠ IN PLAY' : '— off —'}</span>
-        <span style="display:flex;gap:4px;">${lobbyIsHost ? `<button class="seat-mini" onclick="hostSetTyrant()">${data.tyrant ? 'REMOVE' : 'ADD'}</button>` : ''}</span>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:16px;">
-        <button class="btn btn-secondary" style="font-size:16px;" onclick="showTitle()">← LEAVE</button>
-        ${lobbyIsHost
-          ? `<button class="btn btn-primary" style="font-size:20px;flex:1;${canStart ? '' : 'opacity:.4;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
-          : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${iHaveSeat ? 'WAITING FOR HOST…' : 'CLAIM A SEAT'}</div>`}
+      <div class="wizard-foot" style="margin-top:14px;">
+        <button class="btn btn-secondary" style="font-size:13px;" onclick="lobbyEdit()">EDIT</button>
+        ${hostFoot}
       </div>
     </div>`;
 }
 
+function leaveLobby() { lobbyStep = 1; showTitle(); }
+
 function hostStart() {
   if (!lobbyIsHost) return;
   const seats = JSON.parse(JSON.stringify(lastRoomData.seats));
+  // Everyone who claimed a seat must be READY before the host can deploy.
+  const claimed = Object.values(seats).filter(s => s.by);
+  if (!claimed.length) { alert('Claim a faction before starting.'); return; }
+  if (!claimed.every(s => s.ready)) { alert('Waiting on all players to ready up.'); return; }
   // Unclaimed human seats fall back to AI.
   Object.keys(seats).forEach(k => { if (seats[k].type === 'human' && !seats[k].by) seats[k] = { type: 'ai', by: null, name: '', trait: '' }; });
   // A claim from before an exclusion check (or a tampered write) falls back to a legal random trait.
   Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
-  if (!Object.values(seats).some(s => s.type === 'human')) { alert('Claim at least one seat before starting.'); return; }
 
   buildOnlineGame(seats, !!lastRoomData.tyrant);
   isDriver = true;
@@ -3437,8 +3566,8 @@ function buildOnlineGame(seats, tyrant) {
 Object.assign(window, {
   showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant,
   setSeatType, setSeatName, setSeatTrait,
-  hostRoom, joinRoomPrompt, claimSeat, hostSetSeat, hostSetTyrant, hostStart,
-  setMyName, setMyTrait,
+  hostRoom, joinRoomPrompt, hostSetTyrant, hostStart,
+  setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
   acceptTyrantPact, refuseTyrantPact,
   tyrantModalConfirm, tyrantModalCancel,
   acknowledgeCombat,
