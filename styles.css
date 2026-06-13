@@ -1161,6 +1161,30 @@
   }
   .seat-mini:hover { border-color:var(--node-glow); color:var(--node-glow); }
 
+  /* ===== ONLINE LOBBY WIZARD (name → faction → passive → ready) ===== */
+  .wizard-card { max-width:460px; width:100%; margin:0 auto; }
+  .wizard-foot { display:flex; gap:10px; margin-top:18px; }
+  .wizard-foot .btn { padding:12px 18px; }
+  .wiz-faction-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .wiz-faction {
+    border:3px solid #444; background:#0d1117; padding:12px 12px;
+    cursor:pointer; transition:all .12s; border-radius:4px;
+  }
+  .wiz-faction:not(.taken):hover { transform:translateY(-2px); filter:brightness(1.12); }
+  .wiz-faction.selected { background:#16213a; box-shadow:0 0 12px rgba(241,196,15,.25); }
+  .wiz-faction.taken { opacity:.5; cursor:not-allowed; }
+  .wiz-review { display:flex; flex-direction:column; gap:8px; }
+  .wiz-review > div {
+    display:flex; justify-content:space-between; align-items:center;
+    background:#0d1117; border:2px solid #2a2a3e; padding:10px 14px;
+  }
+  .wiz-review span { font-size:11px; color:#888; letter-spacing:1px; }
+  .wiz-review b { font-family:'Bangers',cursive; font-size:18px; letter-spacing:1px; color:#fff; }
+  @media (max-width:520px) {
+    .wiz-faction-grid { grid-template-columns:1fr; }
+    #lobby-screen { padding:16px 12px; }
+  }
+
   /* ===== HAND-OFF (hot-seat) ===== */
   #handoff-overlay {
     display:none; position:fixed; inset:0;
@@ -1228,14 +1252,26 @@
     #player-stats .ps-name { font-size: 15px; }
   }
 
+  /* ===== MOBILE (≤900px): board-first, page scrolls =====
+     #hex-grid is position:absolute, so #map-area has no intrinsic height — on the old
+     stacked layout the board's grid row collapsed and the board vanished. Fix: give
+     #map-area an explicit height (so fitBoard has real space) and order the stack
+     board → actions → log → info, with the header pinned. */
   @media (max-width: 900px) {
+    body { overflow-x: hidden; }
     #game-screen {
       grid-template-columns: 1fr;
-      grid-template-rows: auto 1fr auto auto auto;
-      max-height: none;            /* let the page scroll on small screens */
+      grid-template-rows: auto auto auto auto auto;
+      max-height: none;
+      min-height: 100vh;
+      min-height: 100dvh;
     }
-    #sidebar { border-left: none; border-top: 4px solid var(--node-glow); max-height: 220px; }
-    #event-strip { height: 116px; }
+    .game-header { grid-row: 1; position: sticky; top: 0; z-index: 40; }
+    #map-area    { grid-row: 2; height: 56vh; height: 56dvh; min-height: 300px; padding: 6px; }
+    #action-panel{ grid-row: 3; position: sticky; bottom: 0; z-index: 30; }
+    #event-strip { grid-row: 4; height: 104px; border-left: none; border-top: 4px solid var(--node-glow); }
+    #sidebar     { grid-row: 5; max-height: none; border-left: none; border-top: 4px solid var(--node-glow); }
+    .action-log  { flex-basis: 100%; min-width: 0; order: 99; }
     .hex { width: 64px; height: 55px; }
     .hex-col:not(:first-child) { margin-left: -16px; }
     .hex-col.down { margin-top: 28px; }
