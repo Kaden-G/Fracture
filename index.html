@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRACTURE</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 <!-- Firebase SDK (compat) for online multiplayer — loaded before module scripts -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -62,6 +62,7 @@
     <div id="hex-grid"></div>
   </div>
   <div id="sidebar">
+    <div id="m-drawer-bar" onclick="closeInfoDrawer()">▼ CLOSE STANDINGS</div>
     <div class="sidebar-section">
       <h4>⚔️ FACTIONS</h4>
       <div id="faction-status"></div>
@@ -117,8 +118,10 @@
     <button class="action-btn" id="btn-rally"     onclick="setAction('rally')"    style="display:none">🌿 RALLY</button>
     <button class="action-btn" id="btn-overclock" onclick="setAction('overclock')" style="display:none">⚙️ OVERCLOCK</button>
     <div class="action-log" id="action-log">Select an action, then click a tile.</div>
+    <button class="action-btn" id="m-info-btn" onclick="toggleInfoDrawer()">📊 STANDINGS</button>
     <button class="end-turn-btn" onclick="endTurn()">END TURN →</button>
   </div>
+  <div id="m-drawer-backdrop" onclick="closeInfoDrawer()"></div>
 </div>
 
 <!-- WIN — the board behind flips every tile to the winner's colors -->

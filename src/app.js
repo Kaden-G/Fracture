@@ -3510,6 +3510,10 @@ function renderRoster(data) {
 
 function leaveLobby() { lobbyStep = 1; showTitle(); }
 
+// Mobile standings drawer (the sidebar as a pull-up bottom sheet).
+function toggleInfoDrawer() { document.body.classList.toggle('drawer-open'); }
+function closeInfoDrawer() { document.body.classList.remove('drawer-open'); }
+
 function hostStart() {
   if (!lobbyIsHost) return;
   const seats = JSON.parse(JSON.stringify(lastRoomData.seats));
@@ -3572,6 +3576,7 @@ Object.assign(window, {
   tyrantModalConfirm, tyrantModalCancel,
   acknowledgeCombat,
   qtySync, qtyAdj, qtyConfirm, qtyCancel,
+  toggleInfoDrawer, closeInfoDrawer,
 });
 // Read-only test handle: lets the headless harness inspect live game state.
 Object.defineProperty(window, '__G', { get: () => G });
