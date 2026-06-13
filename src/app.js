@@ -509,11 +509,14 @@ function showSetup() {
 }
 
 function switchScreen(id) {
+  // Each screen's ID rule sets display:flex/grid, which outranks `.screen{display:none}`
+  // (ID beats class). So we can't rely on the class alone — set inline display:none on
+  // inactive screens (inline wins over any selector) and clear it on the active one so its
+  // CSS display takes over. Without this, the setup + lobby screens stack on top of each other.
   document.querySelectorAll('.screen').forEach(s => {
-    s.classList.remove('active');
-    s.style.display = '';
+    if (s.id === id) { s.classList.add('active'); s.style.display = ''; }
+    else { s.classList.remove('active'); s.style.display = 'none'; }
   });
-  document.getElementById(id).classList.add('active');
 }
 
 // ============================================================
