@@ -937,13 +937,4 @@ describe('Tyrant diplomacy & spread', () => {
     assert.equal(next.tiles[farthest.id].owner, null, 'did not grow away from the enemy');
   });
 
-  it('SIC gnaws an ally-enemy when the Tyrant has only a 1-troop frontier tile', () => {
-    const state = tyrantWiped();
-    state.pacts[pairKey(TYRANT_KEY, 'grid')] = 1;
-    state.factions.grid.boon = 'sic';
-    state.tiles['tile_0_0'].owner = TYRANT_KEY; state.tiles['tile_0_0'].troops = 1;  // can't attack
-    state.tiles['tile_0_1'].owner = 'commune';  state.tiles['tile_0_1'].troops = 3;  // grid's enemy, adjacent
-    const { state: next } = reduce(state, { type: 'TYRANT_SPREAD' });
-    assert.equal(next.tiles['tile_0_1'].troops, 2, 'sic gnaw removed 1 troop from the ally-enemy');
-  });
 });

@@ -2604,8 +2604,9 @@ function runAITurn(fk) {
     }
 
     // Part 2: Sic boon — each turn the Tyrant lashes out at ONE enemy of each sic-ally.
-    // Prefer a real attack from its strongest 2+ tile adjacent to that enemy; if its only
-    // adjacent tile is a 1-troop frontier, the blob still GNAWS (−1) so sic always does something.
+    // Strikes from its strongest 2+ tile adjacent to that enemy. If the blob has no real
+    // adjacency yet (it spreads toward enemies — that takes a round or two), sic simply
+    // does nothing this turn rather than nibbling for guaranteed damage.
     for (const ally of livingKeys()) {
       if (ally === TYRANT_KEY || !hasPact(TYRANT_KEY, ally) || G.factions[ally].boon !== 'sic') continue;
       const foe = (t) => t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(TYRANT_KEY, t.owner);
@@ -2619,19 +2620,6 @@ function runAITurn(fk) {
         resolveAttack(TYRANT_KEY, atkSrc.id, atkTgt.id, false);
         addLog(`🦠 The Tyrant lashes out at ${atkTgt.name} (sic the blob)`);
         renderMap(); renderSidebar();
-        continue;
-      }
-      // Gnaw: −1 from any Tyrant tile adjacent to one of the ally's enemies.
-      for (const tt of Object.values(G.tiles)) {
-        if (tt.owner !== TYRANT_KEY) continue;
-        const adj = Object.values(G.tiles).find(t => foe(t) && adjacent(tt, t));
-        if (adj) {
-          const prev = adj.owner; adj.troops--;
-          if (adj.troops <= 0) { adj.owner = null; adj.troops = 0; if (tilesOf(prev).length === 0) killFaction(prev); }
-          addLog(`🦠 The Tyrant gnaws at ${adj.name} (sic the blob, −1)`);
-          refreshHex(adj.id); renderMap(); renderSidebar();
-          break;
-        }
       }
     }
   }

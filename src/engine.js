@@ -934,8 +934,9 @@ export function reduce(inputState, action) {
         spread++;
       }
       if (spread) log.push(`🦠 THE TYRANT spreads into ${spread} new tile${spread>1?'s':''}`);
-      // Part 2: Sic boon — strike ONE enemy of each sic-ally: a real attack from the strongest
-      // 2+ adjacent tile, else a guaranteed −1 gnaw from a 1-troop frontier tile.
+      // Part 2: Sic boon — strike ONE enemy of each sic-ally from the strongest 2+ tile
+      // adjacent to that enemy. If the blob hasn't reached the frontier yet, sic simply
+      // does nothing this turn (no guaranteed nibble — the blob is the threat, not free damage).
       for (const ally of livingKeys(state)) {
         if (ally === TYRANT_KEY || !hasPact(state, TYRANT_KEY, ally) || state.factions[ally].boon !== 'sic') continue;
         const foe = (t) => t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(state, TYRANT_KEY, t.owner);
@@ -953,18 +954,6 @@ export function reduce(inputState, action) {
           if (atkTgt.owner === null) {
             const prev = result.effects.find(e => e.kind === 'combat')?.defenderFk;
             if (prev && tilesOf(state, prev).length === 0) killFaction(state, prev, log);
-          }
-          continue;
-        }
-        for (const tt of Object.values(state.tiles)) {
-          if (tt.owner !== TYRANT_KEY) continue;
-          const adj = Object.values(state.tiles).find(t => foe(t) && adjacent(tt, t));
-          if (adj) {
-            const prev = adj.owner; adj.troops--;
-            if (adj.troops <= 0) { adj.owner = null; adj.troops = 0; if (tilesOf(state, prev).length === 0) killFaction(state, prev, log); }
-            log.push(`🦠 The Tyrant gnaws at ${adj.name} (sic the blob, −1)`);
-            effects.push({kind:'refresh', tiles:[adj.id]});
-            break;
           }
         }
       }
