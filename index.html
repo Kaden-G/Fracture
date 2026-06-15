@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRACTURE</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="styles.css?v=12">
 <!-- Firebase SDK (compat) for online multiplayer — loaded before module scripts -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -29,6 +29,7 @@
     Dominate. Negotiate. Betray. Survive.
   </p>
   <button class="btn btn-primary" onclick="showSetup()">⚡ NEW GAME</button>
+  <button class="btn btn-secondary" style="margin-top:12px;" onclick="startTutorial()">▶ TUTORIAL — LEARN TO PLAY</button>
   <button class="btn btn-secondary" style="margin-top:12px;" onclick="goOnline()">🌐 PLAY ONLINE</button>
 </div>
 
@@ -296,6 +297,38 @@
 
 <button class="rules-btn" id="rules-btn" onclick="openRules()" style="display:none">?</button>
 
-<script type="module" src="src/app.js?v=8"></script>
+<!-- FIRST-RUN PROMPT -->
+<div id="firstrun-overlay">
+  <div class="firstrun-card">
+    <div class="firstrun-title">⚔️ NEW TO FRACTURE?</div>
+    <p class="firstrun-body">Learn the ropes in a 2-minute guided tour — the goal, your moves, combat, and diplomacy.</p>
+    <div class="firstrun-actions">
+      <button class="btn btn-secondary" onclick="firstrunSkip()">SKIP</button>
+      <button class="btn btn-primary" onclick="firstrunStart()">▶ LEARN TO PLAY</button>
+    </div>
+  </div>
+</div>
+
+<!-- TUTORIAL COACH-MARK TOUR -->
+<div id="tutorial-overlay">
+  <div id="tut-top" class="tut-dim"></div>
+  <div id="tut-bottom" class="tut-dim"></div>
+  <div id="tut-left" class="tut-dim"></div>
+  <div id="tut-right" class="tut-dim"></div>
+  <div id="tut-ring"></div>
+  <div id="tut-card">
+    <div id="tut-step" class="tut-step">1 / 11</div>
+    <div id="tut-title" class="tut-title"></div>
+    <div id="tut-body" class="tut-body"></div>
+    <div class="tut-actions">
+      <button id="tut-skip" class="tut-btn tut-skip" onclick="endTutorial()">SKIP</button>
+      <span style="flex:1"></span>
+      <button id="tut-back" class="tut-btn" onclick="tutorialBack()">← BACK</button>
+      <button id="tut-next" class="tut-btn tut-next" onclick="tutorialNext()">NEXT →</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/app.js?v=9"></script>
 </body>
 </html>
