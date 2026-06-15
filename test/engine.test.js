@@ -13,6 +13,7 @@ import {
   hasPact, pairKey,
 } from '../src/state.js';
 import { makeRng, roll2d6, nextInt } from '../src/rng.js';
+import { chooseAction } from '../src/ai.js';
 
 // ---- Test helper: minimal game state ----
 function makeTestState(opts = {}) {
@@ -861,4 +862,79 @@ describe('Tyrant ally-default win gating', () => {
     const win = checkWinCondition(allAllied(['grid', 'syndicate']), []);
     assert.ok(win && win.fk === TYRANT_KEY && win.condition === 'NO ENEMIES LEFT');
   });
+});
+
+// ============================================================
+// COMBAT/TYRANT FIXES — rally scoping, pact honor, directional spread, sic
+// ============================================================
+describe('Rally is per-victim, not per-turn', () => {
+  it('hitting different factions does not stack rally; the same victim escalates', () => {
+    const state = makeTestState({ seed: 7 });
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('grid');
+    state.tiles['tile_0_0'].owner = 'grid';     state.tiles['tile_0_0'].troops = 20;
+    state.tiles['tile_0_1'].owner = 'commune';  state.tiles['tile_0_1'].troops = 20;  // adjacent
+    state.tiles['tile_1_0'].owner = 'ghost';    state.tiles['tile_1_0'].troops = 20;  // adjacent
+    const rallyOf = (r) => r.effects.find(e => e.kind === 'combat').def.overextend;
+
+    const a = reduce(state,   { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });  // 1st vs commune
+    assert.equal(rallyOf(a), 0, 'first strike on commune: no rally');
+    const b = reduce(a.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_1_0' });  // 1st vs ghost
+    assert.equal(rallyOf(b), 0, 'first strike on a DIFFERENT faction: still no rally');
+    const c = reduce(b.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });  // 2nd vs commune
+    assert.equal(rallyOf(c), 2, 'second strike on the SAME faction: rally +2');
+  });
+});
+
+describe('Tyrant diplomacy & spread', () => {
+  function tyrantWiped() {
+    const state = makeTestState();
+    state.tyrantOn = true;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    return state;
+  }
+
+  it('the Tyrant does NOT betray a pact to seize a node', () => {
+    const state = tyrantWiped();
+    state.pacts[pairKey(TYRANT_KEY, 'grid')] = 1;
+    const nodeId = Object.keys(state.tiles).find(id => state.tiles[id].isNode);
+    const node = state.tiles[nodeId];
+    const nbr = Object.values(state.tiles).find(t => t.id !== nodeId && adjacent(t, node));
+    node.owner = 'grid'; node.troops = 1;                 // allied node, weakly held
+    nbr.owner = TYRANT_KEY; nbr.troops = 8;               // Tyrant has a commanding edge
+    const action = chooseAction(state, TYRANT_KEY);
+    assert.ok(!(action && action.type === 'ATTACK' && action.tgt === nodeId),
+      'Tyrant must not attack its ally\'s node');
+  });
+
+  it('a normal faction STILL betrays for a node (regression)', () => {
+    const state = tyrantWiped();
+    state.pacts[pairKey('grid', 'commune')] = 1;
+    const nodeId = Object.keys(state.tiles).find(id => state.tiles[id].isNode);
+    const node = state.tiles[nodeId];
+    const nbr = Object.values(state.tiles).find(t => t.id !== nodeId && adjacent(t, node));
+    node.owner = 'commune'; node.troops = 1;
+    nbr.owner = 'grid'; nbr.troops = 8;
+    const action = chooseAction(state, 'grid');
+    assert.ok(action && action.type === 'ATTACK' && action.tgt === nodeId && action.breakPact,
+      'a normal faction may betray to seize a node');
+  });
+
+  it('spreads toward the nearest hostile faction, not the top-left empty tile', () => {
+    const state = tyrantWiped();
+    state.tiles['tile_3_3'].owner = TYRANT_KEY; state.tiles['tile_3_3'].troops = 2;
+    state.tiles['tile_6_3'].owner = 'grid';     state.tiles['tile_6_3'].troops = 2;  // enemy due south
+    const seed = state.tiles['tile_3_3'], enemy = state.tiles['tile_6_3'];
+    const d = (a, b) => Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+    const empties = Object.values(state.tiles).filter(t => !t.owner && adjacent(seed, t));
+    const closest = empties.reduce((m, t) => d(t, enemy) < d(m, enemy) ? t : m);
+    const farthest = empties.reduce((m, t) => d(t, enemy) > d(m, enemy) ? t : m);
+    assert.ok(d(closest, enemy) < d(farthest, enemy), 'test setup has a clear nearer/farther split');
+    const { state: next } = reduce(state, { type: 'TYRANT_SPREAD' });
+    assert.equal(next.tiles[closest.id].owner, TYRANT_KEY, 'grew toward the enemy');
+    assert.equal(next.tiles[farthest.id].owner, null, 'did not grow away from the enemy');
+  });
+
 });

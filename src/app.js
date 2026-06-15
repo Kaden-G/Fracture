@@ -170,7 +170,8 @@ let signalJamActive = false;
 let totalWar       = false;  // TOTAL WAR event: attackers +1 this round
 let pendingEvent   = null;
 let gameOver       = false;
-let turnAttacks    = 0;  // attacks made this turn → escalating defender "overextension" bonus
+let turnAttacks    = 0;  // total attacks this turn (informational)
+let turnStrikes    = {};  // "attacker|victimFaction" → times struck this turn → rally only escalates vs the SAME victim
 let assaultCaptures = 0;  // captures in the current assault chain — capped at 3
 let assaultOn      = false;  // a "press the assault" attack chain is in progress (player)
 let mySeats        = [];  // faction keys THIS device controls (hot-seat: all humans; online: your claimed seat)
@@ -1312,7 +1313,7 @@ function beginTurnFor(fk) {
   // A local human's turn (any human in hot-seat, or my own seat online).
   G.playerFaction = fk;
   G.actionsUsed = 0;
-  turnAttacks = 0; assaultCaptures = 0; assaultOn = false;
+  turnAttacks = 0; turnStrikes = {}; assaultCaptures = 0; assaultOn = false;
   G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
   G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
   selectedTile = null; currentAction = null;
@@ -2024,7 +2025,7 @@ function handleTileClick(id) {
         // Hard cap: 3 captures per assault chain.
         if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
           selectedTile = srcId;   // keep the assault source selected for the next strike
-          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Next strike, defenders rally +${turnAttacks*2}. Click another adjacent enemy — or pick another action to halt.`);
+          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Each repeat strike on the SAME faction rallies it +2. Click another adjacent enemy — or pick another action to halt.`);
           renderMap();
           document.getElementById('hex-'+srcId)?.classList.add('selected');
           return;
@@ -2248,9 +2249,11 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 1. Force ratio: every 4 troops = +1, capped at +2 (big stacks are resilient, not auto-win)
   const attForce = Math.min(2, Math.floor(src.troops / 4));
   const defForce = Math.min(2, Math.floor(tgt.troops / 4));
-  // 2. Overextension: each prior attack this turn rallies the defender +2.
-  //    Harder brake on press-the-assault chains.
-  const overextend = turnAttacks * 2;
+  // 2. Rally: a victim only digs in if THIS attacker has already hit it this turn (+2 per
+  //    prior strike on the same faction). Attacking different rivals once each costs nothing —
+  //    the brake is on grinding the SAME enemy (e.g. a press-the-assault chain), not on spreading.
+  const rallyKey = attackerFk + '|' + tgt.owner;
+  const overextend = (turnStrikes[rallyKey] || 0) * 2;
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
@@ -2284,7 +2287,8 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // Attacker wins ties; fortify adds a margin requirement
   const attWins = attTotal >= defTotal + fortify;
 
-  turnAttacks++;  // this attack now counts toward overextension on the NEXT strike
+  turnAttacks++;
+  turnStrikes[rallyKey] = (turnStrikes[rallyKey] || 0) + 1;  // next strike on this victim rallies +2
 
   // Step 3: record the strike (earns surge next turn) — tgt.owner is still the Tyrant here.
   recordTyrantStrike(attackerFk, tgt.owner);
@@ -2526,18 +2530,28 @@ function aiNodePush(fk) {
 function tyrantSpread(fk) {
   const tiles = Object.values(G.tiles);
   const seeds = tiles.filter(t => t.owner === fk && t.troops >= 2);
+  // Grow TOWARD hostile (non-allied) factions, not always into the first/top-left empty tile.
+  // This kills the old "always spreads NW" bias and advances the blob on the enemies a
+  // SIC-ally has pointed it at, so its strikes actually land.
+  const hostile = tiles.filter(t => t.owner && t.owner !== fk && !hasPact(fk, t.owner));
+  const dist = (a, b) => Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+  const towardHostile = (t) => hostile.length ? Math.min(...hostile.map(h => dist(t, h))) : 0;
   let spread = 0;
   for (const s of seeds) {
     if (spread >= 4) break;                       // cap per turn so it grows fast, not instantly
-    const empty = tiles.find(t => !t.owner && adjacent(s, t));
-    if (empty) { s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0; refreshHex(s.id); refreshHex(empty.id); spread++; }
+    const empties = tiles.filter(t => !t.owner && adjacent(s, t));
+    if (!empties.length) continue;
+    empties.sort((a, b) => towardHostile(a) - towardHostile(b));   // closest to a hostile tile first
+    const empty = empties[0];
+    s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0;
+    refreshHex(s.id); refreshHex(empty.id); spread++;
   }
   if (spread) addLog(`🦠 THE TYRANT spreads into ${spread} new tile${spread>1?'s':''}`);
 }
 
 function runAITurn(fk) {
   if (gameOver) return;
-  turnAttacks = 0;
+  turnAttacks = 0; turnStrikes = {};
   G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
   G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
   const f = G.factions[fk];
@@ -2589,22 +2603,22 @@ function runAITurn(fk) {
       }
     }
 
-    // Part 2: Sic boon — Tyrant attacks one adjacent enemy per sic-allied faction
+    // Part 2: Sic boon — each turn the Tyrant lashes out at ONE enemy of each sic-ally.
+    // Strikes from its strongest 2+ tile adjacent to that enemy. If the blob has no real
+    // adjacency yet (it spreads toward enemies — that takes a round or two), sic simply
+    // does nothing this turn rather than nibbling for guaranteed damage.
     for (const ally of livingKeys()) {
-      if (ally === TYRANT_KEY || !hasPact(TYRANT_KEY, ally)) continue;
-      if (G.factions[ally].boon !== 'sic') continue;
-      // Find a Tyrant tile adjacent to an enemy of the ally (not the ally, not the Tyrant)
-      const tyrantTiles = Object.values(G.tiles).filter(t => t.owner === TYRANT_KEY && t.troops >= 2);
-      let sicTarget = null, sicSrc = null;
-      for (const tt of tyrantTiles) {
-        const adj = Object.values(G.tiles).find(t =>
-          t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(TYRANT_KEY, t.owner) && adjacent(tt, t)
-        );
-        if (adj) { sicTarget = adj; sicSrc = tt; break; }
+      if (ally === TYRANT_KEY || !hasPact(TYRANT_KEY, ally) || G.factions[ally].boon !== 'sic') continue;
+      const foe = (t) => t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(TYRANT_KEY, t.owner);
+      let atkSrc = null, atkTgt = null, best = 1;
+      for (const tt of Object.values(G.tiles)) {
+        if (tt.owner !== TYRANT_KEY || tt.troops < 2) continue;
+        const adj = Object.values(G.tiles).find(t => foe(t) && adjacent(tt, t));
+        if (adj && tt.troops > best) { best = tt.troops; atkSrc = tt; atkTgt = adj; }
       }
-      if (sicTarget && sicSrc) {
-        resolveAttack(TYRANT_KEY, sicSrc.id, sicTarget.id, false);
-        addLog(`🦠 The Tyrant lashes out at ${sicTarget.name} (sic the blob)`);
+      if (atkSrc) {
+        resolveAttack(TYRANT_KEY, atkSrc.id, atkTgt.id, false);
+        addLog(`🦠 The Tyrant lashes out at ${atkTgt.name} (sic the blob)`);
         renderMap(); renderSidebar();
       }
     }
@@ -2657,13 +2671,14 @@ function runAITurn(fk) {
     for (const atk of myTiles().filter(t=>t.troops>=2)) {
       for (const def of enemyTiles()) {
         if (!adjacent(atk,def)) continue;
-        // Honor pacts — unless we can seize a NODE with a commanding edge (betrayal)
+        // Honor pacts — unless we can seize a NODE with a commanding edge (betrayal).
+        // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
         const pact = hasPact(fk, def.owner);
-        const canBetray = def.isNode && atk.troops >= def.troops + 2;
+        const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY;
         if (pact && !canBetray) continue;
         // Prefer: nodes, then weaker targets, then where we have a troop edge
         const atkPower = Math.min(2, Math.floor(atk.troops/4));
-        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + turnAttacks*2;  // overextension
+        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (turnStrikes[fk+'|'+def.owner]||0)*2;  // rally: per-victim
         const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
         const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
         if (!best || score > best.score) best = {atk, def, score, betray:pact};

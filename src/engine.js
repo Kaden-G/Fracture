@@ -356,7 +356,7 @@ const EVENT_HANDLERS = {
 // ============================================================
 // COMBAT RESOLUTION (pure)
 // ============================================================
-function resolveCombat(state, attackerFk, srcId, tgtId, turnAttacks) {
+function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   const src = state.tiles[srcId];
   const tgt = state.tiles[tgtId];
   const af  = state.factions[attackerFk];
@@ -375,7 +375,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, turnAttacks) {
   // --- Modifiers ---
   const attForce = Math.min(2, Math.floor(src.troops / 4));
   const defForce = Math.min(2, Math.floor(tgt.troops / 4));
-  const overextend = turnAttacks * 2;
+  const overextend = priorStrikes * 2;   // rally: prior strikes by THIS attacker on THIS victim this turn
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);
   if (af.ability === 'sabotage') entrench = 0;
   const lastStand = (df?.trait === 'last_stand' && tgt.troops <= 2) ? 3 : 0;
@@ -571,7 +571,7 @@ export function reduce(inputState, action) {
     case 'BEGIN_TURN': {
       const fk = action.faction;
       state.actionsUsed = 0;
-      state.turnAttacks = 0;
+      state.turnAttacks = 0; state.turnStrikes = {};
       state.assaultCaptures = 0;
       state.assaultOn = false;
       state.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
@@ -607,7 +607,13 @@ export function reduce(inputState, action) {
         state.assaultOn = true;
         state.assaultCaptures = 0;
       }
-      const result = resolveCombat(state, fk, action.src, action.tgt, state.turnAttacks || 0);
+      // Rally is per-victim: it only escalates when THIS attacker has already struck the SAME
+      // faction this turn (e.g. a press-the-assault chain) — not when hitting different rivals.
+      if (!state.turnStrikes) state.turnStrikes = {};
+      const rallyKey = fk + '|' + state.tiles[action.tgt].owner;
+      const prior = state.turnStrikes[rallyKey] || 0;
+      const result = resolveCombat(state, fk, action.src, action.tgt, prior);
+      state.turnStrikes[rallyKey] = prior + 1;
       state.turnAttacks = (state.turnAttacks || 0) + 1;
       if (result.captured) state.assaultCaptures = (state.assaultCaptures || 0) + 1;
       log.push(...result.log);
@@ -907,44 +913,47 @@ export function reduce(inputState, action) {
       break;
     }
 
-    // ---- TYRANT_SPREAD: metastasize into adjacent empty tiles ----
+    // ---- TYRANT_SPREAD: metastasize toward hostile factions ----
     case 'TYRANT_SPREAD': {
       const fk = TYRANT_KEY;
       const tiles = Object.values(state.tiles);
       const seeds = tiles.filter(t => t.owner === fk && t.troops >= 2);
+      // Grow TOWARD non-allied factions instead of always the first/top-left empty tile.
+      const hostile = tiles.filter(t => t.owner && t.owner !== fk && !hasPact(state, fk, t.owner));
+      const dist = (a, b) => Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+      const towardHostile = (t) => hostile.length ? Math.min(...hostile.map(h => dist(t, h))) : 0;
       let spread = 0;
       for (const s of seeds) {
         if (spread >= 4) break;
-        const empty = tiles.find(t => !t.owner && adjacent(s, t));
-        if (empty) {
-          s.troops--;
-          empty.owner = fk;
-          empty.troops = 1;
-          empty.heldRounds = 0;
-          effects.push({kind:'refresh', tiles:[s.id, empty.id]});
-          spread++;
-        }
+        const empties = tiles.filter(t => !t.owner && adjacent(s, t));
+        if (!empties.length) continue;
+        empties.sort((a, b) => towardHostile(a) - towardHostile(b));
+        const empty = empties[0];
+        s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0;
+        effects.push({kind:'refresh', tiles:[s.id, empty.id]});
+        spread++;
       }
       if (spread) log.push(`🦠 THE TYRANT spreads into ${spread} new tile${spread>1?'s':''}`);
-      // Part 2: Sic boon — Tyrant attacks one adjacent enemy per sic-allied faction
+      // Part 2: Sic boon — strike ONE enemy of each sic-ally from the strongest 2+ tile
+      // adjacent to that enemy. If the blob hasn't reached the frontier yet, sic simply
+      // does nothing this turn (no guaranteed nibble — the blob is the threat, not free damage).
       for (const ally of livingKeys(state)) {
-        if (ally === TYRANT_KEY || !hasPact(state, TYRANT_KEY, ally)) continue;
-        if (state.factions[ally].boon !== 'sic') continue;
-        const tyrantT = Object.values(state.tiles).filter(t => t.owner === TYRANT_KEY && t.troops >= 2);
-        for (const tt of tyrantT) {
-          const adj = Object.values(state.tiles).find(t =>
-            t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(state, TYRANT_KEY, t.owner) && adjacent(tt, t)
-          );
-          if (adj) {
-            const result = resolveCombat(state, TYRANT_KEY, tt.id, adj.id, 0);
-            log.push(...result.log);
-            effects.push(...result.effects);
-            log.push(`🦠 The Tyrant lashes out at ${adj.name} (sic the blob)`);
-            if (adj.owner === null) {
-              const prev = result.effects.find(e => e.kind === 'combat')?.defenderFk;
-              if (prev && tilesOf(state, prev).length === 0) killFaction(state, prev, log);
-            }
-            break;  // one attack per sic ally
+        if (ally === TYRANT_KEY || !hasPact(state, TYRANT_KEY, ally) || state.factions[ally].boon !== 'sic') continue;
+        const foe = (t) => t.owner && t.owner !== TYRANT_KEY && t.owner !== ally && !hasPact(state, TYRANT_KEY, t.owner);
+        let atkSrc = null, atkTgt = null, best = 1;
+        for (const tt of Object.values(state.tiles)) {
+          if (tt.owner !== TYRANT_KEY || tt.troops < 2) continue;
+          const adj = Object.values(state.tiles).find(t => foe(t) && adjacent(tt, t));
+          if (adj && tt.troops > best) { best = tt.troops; atkSrc = tt; atkTgt = adj; }
+        }
+        if (atkSrc) {
+          const result = resolveCombat(state, TYRANT_KEY, atkSrc.id, atkTgt.id, 0);
+          log.push(...result.log);
+          effects.push(...result.effects);
+          log.push(`🦠 The Tyrant lashes out at ${atkTgt.name} (sic the blob)`);
+          if (atkTgt.owner === null) {
+            const prev = result.effects.find(e => e.kind === 'combat')?.defenderFk;
+            if (prev && tilesOf(state, prev).length === 0) killFaction(state, prev, log);
           }
         }
       }
@@ -955,7 +964,7 @@ export function reduce(inputState, action) {
     case 'END_TURN': {
       state.assaultOn = false;
       state.assaultCaptures = 0;
-      state.turnAttacks = 0;
+      state.turnAttacks = 0; state.turnStrikes = {};
       state.currentTurnIdx++;
       effects.push({kind:'turnEnd'});
       break;
