@@ -432,6 +432,15 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
         killFaction(state, prev, log);
         af.resources = Math.min((af.resources || 0) + 3, RES_CAP);
         log.push(`🏆 ${af.icon} eliminated ${state.factions[prev]?.name || prev}! +3 resources bounty.`);
+        // GRAVEYARD: when the Tyrant dies in combat, the killing tile becomes a 6th node —
+        // counts toward the "3 to win" condition for whoever holds it. No perk.
+        if (prev === TYRANT_KEY && state.factions[TYRANT_KEY].eliminated && !tgt.isNode) {
+          tgt.isNode = true;
+          tgt.nodeId = 'node_graveyard';
+          tgt.name = '☠ GRAVEYARD';
+          tgt.short = '☠GRV';
+          log.push(`☠ GRAVEYARD rises where the Tyrant fell — a bounty node for ${af.icon}.`);
+        }
       }
     } else {
       tgt.heldRounds = 0;

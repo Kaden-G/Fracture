@@ -938,3 +938,77 @@ describe('Tyrant diplomacy & spread', () => {
   });
 
 });
+
+// ============================================================
+// GRAVEYARD NODE — bounty for slaying THE TYRANT
+// ============================================================
+describe('Tyrant graveyard node', () => {
+  function tyrantOnLastTile(opts = {}) {
+    const state = makeTestState({ seed: opts.seed || 99 });
+    state.tyrantOn = true;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; });
+    // tile_0_0 / tile_0_1 are non-node tiles. Grid will kill the Tyrant on tile_0_1.
+    state.tiles['tile_0_0'].owner = 'grid';     state.tiles['tile_0_0'].troops = 30;
+    state.tiles['tile_0_1'].owner = TYRANT_KEY; state.tiles['tile_0_1'].troops = 1;
+    state.currentTurnIdx = state.turnOrder.indexOf('grid');
+    return state;
+  }
+
+  // Drive ATTACK repeatedly until grid captures (or runs out of tries). Rally escalates per
+  // strike on the SAME victim, so we reset turnStrikes between attempts to mirror "this is
+  // a brand-new turn each try" (otherwise rally stacks indefinitely).
+  function killTyrant(state) {
+    let next = state, tries = 0;
+    while (!next.factions[TYRANT_KEY].eliminated && tries++ < 50) {
+      next.turnStrikes = {};   // fresh turn each retry — no rally stacking from past failures
+      const r = reduce(next, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+      next = r.state;
+      if (!next.factions[TYRANT_KEY].eliminated) {
+        // Tyrant survived the swing — respawn its last tile so we can try again next loop.
+        next.tiles['tile_0_1'].owner = TYRANT_KEY; next.tiles['tile_0_1'].troops = 1;
+        // Refill grid's stack too so a long unlucky streak doesn't starve the test.
+        next.tiles['tile_0_0'].owner = 'grid'; next.tiles['tile_0_0'].troops = 30;
+      }
+    }
+    return next;
+  }
+
+  it('the killing tile becomes a graveyard node when the Tyrant dies in combat', () => {
+    const next = killTyrant(tyrantOnLastTile());
+    assert.ok(next.factions[TYRANT_KEY].eliminated, 'Tyrant should be eliminated after the killing blow');
+    const grave = next.tiles['tile_0_1'];
+    assert.ok(grave.isNode, 'killing tile should become a node');
+    assert.equal(grave.nodeId, 'node_graveyard', 'killing tile is the graveyard node');
+    assert.equal(grave.owner, 'grid', 'graveyard goes to the killer');
+  });
+
+  it('graveyard counts toward node victory (3 of any nodes)', () => {
+    const state = tyrantOnLastTile();
+    const nodeTiles = Object.values(state.tiles).filter(t => t.isNode);
+    assert.ok(nodeTiles.length >= 2, 'need 2+ fixed nodes for the setup');
+    nodeTiles[0].owner = 'grid'; nodeTiles[0].troops = 5;
+    nodeTiles[1].owner = 'grid'; nodeTiles[1].troops = 5;
+    const next = killTyrant(state);
+    assert.ok(next.factions[TYRANT_KEY].eliminated, 'Tyrant should be eliminated');
+    assert.equal(countNodes(next, 'grid'), 3, 'graveyard counts as the 3rd node for grid (2 fixed + 1 graveyard)');
+  });
+
+  it('Tyrant harbored by allies does NOT spawn a graveyard (Tyrant still alive)', () => {
+    const state = tyrantOnLastTile();
+    state.factions.syndicate = mkFaction('SYNDICATE', 'syndicate', true, 'fortify');
+    state.pacts[pairKey(TYRANT_KEY, 'syndicate')] = 1;  // ally → killFaction harbors instead of eliminating
+    // Drive a single capture-attempt: when grid takes tile_0_1, killFaction enters harbor
+    // mode (does NOT mark eliminated), so the graveyard guard should NOT fire.
+    let next = state, tries = 0;
+    while (next.tiles['tile_0_1'].owner === TYRANT_KEY && tries++ < 50) {
+      next.turnStrikes = {};
+      const r = reduce(next, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+      next = r.state;
+    }
+    assert.ok(!next.factions[TYRANT_KEY].eliminated, 'harbored Tyrant is not eliminated');
+    assert.ok(!next.tiles['tile_0_1'].isNode || next.tiles['tile_0_1'].nodeId !== 'node_graveyard',
+      'no graveyard spawns while Tyrant is harbored / still alive');
+  });
+});
