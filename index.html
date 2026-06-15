@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRACTURE</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 <!-- Firebase SDK (compat) for online multiplayer — loaded before module scripts -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -46,9 +46,10 @@
     All 4 factions are always in play. Set each to a <strong>HUMAN</strong> (pass-and-play on this device) or <strong>AI</strong>. 1–4 humans; AI fills the rest.
   </p>
   <div class="setup-grid" id="setup-grid"></div>
-  <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+  <div id="setup-status" class="setup-status"></div>
+  <div style="margin-top:14px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
     <button class="btn btn-secondary" onclick="showTitle()">← BACK</button>
-    <button class="btn btn-primary" id="start-btn" onclick="startGame()" disabled>DEPLOY! →</button>
+    <button class="btn btn-primary" id="start-btn" onclick="startGame()">DEPLOY! →</button>
   </div>
 </div>
 
@@ -329,6 +330,6 @@
   </div>
 </div>
 
-<script type="module" src="src/app.js?v=10"></script>
+<script type="module" src="src/app.js?v=11"></script>
 </body>
 </html>

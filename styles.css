@@ -239,6 +239,22 @@
   .trait-option.selected strong { color: var(--ink); }
   .trait-option strong { font-family: 'Bangers', cursive; font-size: 15px; letter-spacing: 1px; color: var(--node-glow); }
 
+  /* Deploy readiness banner — tells the player exactly what's missing. */
+  .setup-status {
+    width: 100%; max-width: 900px; margin: 18px auto 0; min-height: 22px;
+    text-align: center; font-size: 14px; font-weight: 700; line-height: 1.5;
+  }
+  .setup-status.warn {
+    color: #f0e6d3; background: rgba(231,76,60,.16);
+    border: 2px solid var(--syndicate); padding: 10px 14px;
+  }
+  .setup-status.warn b { color: #ff8a7a; letter-spacing: .5px; }
+  .setup-status.warn span {
+    display: inline-block; background: #0d1117; border: 1px solid var(--syndicate);
+    color: #ffd9d3; padding: 2px 9px; margin: 3px; border-radius: 12px; font-weight: 600;
+  }
+  .setup-status.ok { color: #2ecc71; }
+
   /* ===== GAME SCREEN ===== */
   #game-screen {
     display: grid;
