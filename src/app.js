@@ -413,7 +413,24 @@ function maybeReckoningApp(fk) {
   if (!G.factions[TYRANT_KEY] || G.factions[TYRANT_KEY].eliminated) return false;
   if (fk === TYRANT_KEY) return false;
   const corr = G.factions[fk].corruption || 0;
-  if (corr <= 0) return false;
+  if (corr <= 0) {
+    // No Reckoning fires when corruption is clean — but if the winner was BOUND to the
+    // Tyrant (just hadn't ticked any corruption yet), tell them. Otherwise the silent
+    // skip reads as a bug ("the Reckoning didn't happen!"). A brief themed modal sits on
+    // top of the win banner until dismissed, so the player understands they were spared.
+    if (hasPact(TYRANT_KEY, fk)) {
+      addLog(`⚖️ ${G.factions[fk].name}'s soul was weighed — untainted. The Tyrant lets them ascend.`);
+      tyrantModal({
+        type: 'THE WEIGHING',
+        title: '⚖️ SOUL UNTAINTED',
+        body: `<b>${G.factions[fk].name}</b> was bound to the Tyrant — but your soul was untainted by corruption.<br><br>` +
+              `You ascend without trial.`,
+        confirmLabel: 'SO BE IT',
+        cancelLabel: null,
+      });
+    }
+    return false;
+  }
 
   // Thralldom cap — auto-loss
   if (corr >= THRALLDOM_CAP) {
@@ -2014,6 +2031,11 @@ function handleTileClick(id) {
       if (!srcT || srcT.owner !== G.playerFaction || srcT.troops < 2 || !tile.owner || tile.owner === G.playerFaction) {
         setActionLog('Attack fizzled — the situation changed.'); return;
       }
+      // BACKSTOP: any strike that lands on a faction we still have a pact with MUST break
+      // the pact (this is the rule, regardless of how we got here — confirm modal, assault
+      // chain, or anything else). Catches edge cases like the modal not firing because the
+      // pact state was misread, or an assault chain that started before pact formation.
+      if (hasPact(G.playerFaction, tile.owner)) breakPactBetrayal(G.playerFaction, tile.owner);
       if (!assaultOn) { G.actionsUsed++; assaultOn = true; assaultCaptures = 0; }   // launching the assault costs ONE action
       const captured = G.tiles[id].troops <= 1;  // will this be a capture if we win?
       const won = resolveAttack(G.playerFaction, srcId, id, true);
@@ -2092,6 +2114,8 @@ function handleTileClick(id) {
       if (!tile.owner || tile.owner === G.playerFaction || f.resources < 1) {
         setActionLog('Sabotage fizzled — the situation changed.'); return;
       }
+      // BACKSTOP: any strike on a current pact partner breaks the pact (see ATTACK).
+      if (hasPact(G.playerFaction, tile.owner)) breakPactBetrayal(G.playerFaction, tile.owner);
       f.resources -= 1;
       const sabPrev = tile.owner;
       recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
@@ -2149,6 +2173,8 @@ function handleTileClick(id) {
       if (!tile.owner || tile.owner === G.playerFaction || f.resources < 1) {
         setActionLog('Bribe fizzled — the situation changed.'); return;
       }
+      // BACKSTOP: any strike on a current pact partner breaks the pact (see ATTACK).
+      if (hasPact(G.playerFaction, tile.owner)) breakPactBetrayal(G.playerFaction, tile.owner);
       f.resources -= 1;
       const bribedPrev = tile.owner;
       // The bribed troop DEFECTS to an adjacent Syndicate tile (the staging tile) — a 2-point
