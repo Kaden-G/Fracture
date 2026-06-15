@@ -39,13 +39,14 @@ function findBestAttack(state, fk, turnAttacks) {
     for (const def of enemyT) {
       if (!adjacent(atk, def)) continue;
       const pact = hasPact(state, fk, def.owner);
-      const canBetray = def.isNode && atk.troops >= def.troops + 2;
+      // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
+      const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY;
       if (pact && !canBetray) continue;
 
       const atkPower = Math.min(2, Math.floor(atk.troops / 4));
       const defPower = Math.min(2, Math.floor(def.troops / 4))
         + Math.min(def.heldRounds || 0, def.isNode ? 2 : 3)
-        + (turnAttacks || 0) * 2;
+        + ((state.turnStrikes && state.turnStrikes[fk + '|' + def.owner]) || 0) * 2;  // rally: per-victim
       const edge = (atk.troops - def.troops) + (atkPower - defPower) * 2;
       const score = (def.isNode ? 100 : 0) + edge * 10 - def.troops - (pact ? 15 : 0);
       if (!best || score > best.score) best = { atk, def, score, betray: pact };
