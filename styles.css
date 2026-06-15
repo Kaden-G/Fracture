@@ -1164,6 +1164,44 @@
   /* Mobile-only chrome (standings drawer toggle + backdrop) — hidden on desktop. */
   #m-info-btn, #m-drawer-bar, #m-drawer-backdrop { display: none; }
 
+  /* ===== FIRST-RUN PROMPT ===== */
+  #firstrun-overlay {
+    display: none; position: fixed; inset: 0; z-index: 300;
+    background: rgba(8,8,12,.82); align-items: center; justify-content: center; padding: 20px;
+  }
+  #firstrun-overlay.show { display: flex; }
+  .firstrun-card {
+    background: var(--card-bg); border: 4px solid var(--node-glow); max-width: 420px;
+    padding: 26px 24px; text-align: center; box-shadow: 0 0 40px rgba(241,196,15,.25);
+  }
+  .firstrun-title { font-family: 'Bangers', cursive; font-size: 30px; letter-spacing: 2px; color: var(--node-glow); margin-bottom: 10px; }
+  .firstrun-body  { color: var(--card-text); font-size: 15px; line-height: 1.5; margin-bottom: 20px; }
+  .firstrun-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .firstrun-actions .btn { font-size: 16px; padding: 10px 22px; }
+
+  /* ===== TUTORIAL COACH-MARK TOUR ===== */
+  #tutorial-overlay { display: none; position: fixed; inset: 0; z-index: 280; pointer-events: none; }
+  #tutorial-overlay.show { display: block; }
+  .tut-dim { position: fixed; background: rgba(6,8,12,.74); pointer-events: auto; }   /* dim blocks taps; the spotlight hole stays open */
+  #tut-ring { position: fixed; border: 3px solid var(--node-glow); border-radius: 6px; box-shadow: 0 0 16px var(--node-glow); pointer-events: none; }
+  #tut-card {
+    position: fixed; width: 300px; max-width: 92vw; pointer-events: auto;
+    background: var(--card-bg); border: 3px solid var(--node-glow); padding: 14px 16px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.6); z-index: 281;
+  }
+  .tut-step  { font-size: 11px; color: #888; letter-spacing: 2px; margin-bottom: 4px; }
+  .tut-title { font-family: 'Bangers', cursive; font-size: 21px; letter-spacing: 1px; color: var(--node-glow); margin-bottom: 6px; }
+  .tut-body  { color: var(--card-text); font-size: 13.5px; line-height: 1.5; }
+  .tut-body b { color: #fff; }
+  .tut-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .tut-btn {
+    font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px;
+    padding: 7px 14px; border: 2px solid #555; background: #0d1117; color: #ddd; cursor: pointer;
+  }
+  .tut-btn:hover { border-color: var(--node-glow); color: var(--node-glow); }
+  .tut-next { background: var(--node-glow); color: var(--ink); border-color: var(--node-glow); }
+  .tut-skip { font-size: 11px; color: #888; border-color: #333; padding: 7px 10px; }
+
   /* ===== ONLINE LOBBY WIZARD (name → faction → passive → ready) ===== */
   .wizard-card { max-width:460px; width:100%; margin:0 auto; }
   .wizard-foot { display:flex; gap:10px; margin-top:18px; }

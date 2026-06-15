@@ -191,6 +191,8 @@ let myClientId     = null;
 let myName         = '';
 let myTrait        = '';
 let lobbyStep      = 1;       // online lobby wizard: 1 name · 2 faction · 3 passive · 4 review · 5 ready/roster
+let tutorialMode   = false;   // coach-mark tour running
+let tutorialStep   = 0;
 let fbInited       = false;
 let db             = null;    // Firebase Realtime Database handle (set by online layer)
 
@@ -762,12 +764,13 @@ function renderMap() {
   });
 
   fitBoard();
+  if (tutorialMode) tutorialReposition();   // keep the spotlight aligned after a board re-render
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitBoard);   // after layout settles
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__fitResize) {
     window.__fitResize = true;
-    window.addEventListener('resize', () => fitBoard());
+    window.addEventListener('resize', () => { fitBoard(); tutorialReposition(); });
     // Mobile: re-fit after an orientation flip / address-bar resize once layout settles.
-    window.addEventListener('orientationchange', () => setTimeout(fitBoard, 250));
+    window.addEventListener('orientationchange', () => setTimeout(() => { fitBoard(); tutorialReposition(); }, 250));
   }
 }
 
@@ -1640,6 +1643,7 @@ function showHandoff(fk, cb) {
 }
 
 function endTurn() {
+  if (tutorialMode) { tutorialNext(); return; }   // in the tour, END TURN just advances the coach-marks
   if (online && !canActNow()) return;   // only the active local player may end the turn
   selectedTile = null; currentAction = null; assaultOn = false;
   clearHighlights();
@@ -3111,6 +3115,160 @@ function openRules()  { document.getElementById('rules-overlay').classList.add('
 function closeRules() { document.getElementById('rules-overlay').classList.remove('show'); }
 
 // ============================================================
+// TUTORIAL — coach-mark tour on a controlled round-1 board.
+// Spotlights one element at a time (dim strips around it, leaving it tappable),
+// with a tooltip card and Back/Next/Skip. AI is frozen so the board holds still.
+// ============================================================
+// Steps run across real screens: an optional onEnter navigates/sets up the screen
+// (title → setup → the controlled game board), then we spotlight a target on it.
+const TUT_STEPS = [
+  { onEnter: showTitle, target: null, title: '⚔️ Welcome to FRACTURE',
+    body: 'Four factions fight over a broken grid. <b>Hold 3 of the 5 ★ Core Nodes for two straight rounds — or wipe out every rival — to win.</b><br><br>This tour walks you from setup to your first moves. You\'ll play <b style="color:#f39c12">⚙️ THE GRID</b>.' },
+  { onEnter: showTitle, target: '#btn-online', title: '🌐 Solo, hot-seat, or online',
+    body: '<b>NEW GAME</b> plays on one device — versus AI, or pass-and-play with friends. <b>PLAY ONLINE</b> hosts a room: you get a <b>4-letter code</b>, friends join from their own phones, everyone readies up, and you start once all are set.' },
+  { onEnter: showSetup, target: '#setup-grid .setup-card', title: '🎭 Factions & seats',
+    body: 'Before a match you configure all four factions — set each to a <b>Human</b> or an <b>AI</b>. Every faction has a unique <b>ability + perk</b>: Grid reinforces cheap and can Overclock, Syndicate bribes troops away, Commune grows reinforcements, Ghost sabotages and slips through walls.' },
+  { onEnter: showSetup, target: '#setup-grid .trait-select', title: '🧬 Your passive trait',
+    body: 'Each human also picks a <b>passive trait</b> — a perk that lasts the whole game. <b>Scavenger</b> loots resources on every capture, <b>Tactician</b> rolls better dice, <b>Fortify</b> hardens fresh tiles, <b>Hoarder</b> earns more per node. Pick to fit your plan.' },
+  { onEnter: showSetup, target: '#setup-grid .setup-card:last-child', title: '🦠 The Tyrant (optional)',
+    body: 'Toggle <b>THE TYRANT</b> for a harder, wilder game: an AI <b>virus</b> that festers at the center, <b>spreads every round</b>, and can win by force <em>or</em> by striking a secret pact with <em>every</em> survivor. A shared threat — exploit it, ally with it, or unite to burn it out.' },
+  { onEnter: ensureTutorialGame, target: '#hex-tile_0_0', title: '🏰 Your territory',
+    body: 'Now into a real game. This corner is yours — the <b>number</b> on a hex is its <b>troop count</b>. You can move to and attack the tiles directly <b>touching</b> yours.' },
+  { onEnter: ensureTutorialGame, target: '#hex-tile_1_1', title: '★ Core Nodes',
+    body: 'Star tiles are <b>Core Nodes</b>. Each earns +1 resource and a passive perk (this ⚡ one makes Reinforce cheaper). <b>Hold any 3 for two straight rounds and you win</b> — so nodes are everything.' },
+  { onEnter: ensureTutorialGame, target: '#action-panel', title: '🔄 Your turn',
+    body: 'Each round: an <b>event</b> fires, you collect <b>income</b> (2 + 1 per node), then take <b>3 actions</b> from this bar.' },
+  { onEnter: ensureTutorialGame, target: '#player-stats', title: '🎒 Resources & actions',
+    body: 'Your <b>resources</b> and <b>actions left</b> live here. Resources buy strength; actions buy moves, fights, and building.' },
+  { onEnter: ensureTutorialGame, target: '#btn-move', title: '🚶 Move',
+    body: '<b>MOVE</b> shifts troops between your tiles to mass an army or step onto an empty node. Tap it, then a tile, then where to send them.' },
+  { onEnter: ensureTutorialGame, target: '#btn-reinforce', title: '🛡️ Reinforce',
+    body: '<b>REINFORCE</b> spends resources to add troops to a tile — Grid pays 1 less. Money becomes muscle.' },
+  { onEnter: ensureTutorialGame, target: '#hex-tile_1_0', title: '⚔️ Attack & combat',
+    body: 'That weak enemy is right next to you. <b>ATTACK</b> → your tile → the enemy. Both roll <b>2d6</b> + bonuses (+1 per 4 troops, capped +2; defenders add dig-in). <b>Attacker wins ties</b>, and a win lets you keep pressing the assault.' },
+  { onEnter: ensureTutorialGame, target: '#btn-overclock', title: '⚙️ Your faction power',
+    body: 'Every faction has a unique <b>ability</b> + <b>perk</b>. Grid\'s <b>OVERCLOCK</b> surges +3 troops onto a tile, and its reinforces cost less. Yours is your edge — learn it.' },
+  { onEnter: ensureTutorialGame, target: '#btn-pact', title: '🤝 Pacts & betrayal',
+    body: '<b>PACT</b> a rival for free non-aggression — buy time, or team up on the leader. <b>Break it to backstab</b> and the victim gets <b>+2</b> against you for two rounds. And anyone holding 2+ nodes gets <b>everyone</b> piling on — no runaway winner.' },
+  { onEnter: ensureTutorialGame, target: '.end-turn-btn', title: '✅ End your turn',
+    body: 'Spent your 3 actions? <b>END TURN</b> hands off. That\'s the whole loop!<br><br>Round events and more are in <b>📖 FULL RULES</b>. Ready to play for real?' },
+];
+
+function startTutorial() {
+  if (typeof resetNet === 'function') resetNet();
+  online = false; gameOver = false;
+  tutorialMode = true; tutorialStep = 0;
+  tutorialShow(0);   // step 0's onEnter sets the screen
+}
+
+// Build the controlled round-1 board for the gameplay half of the tour. Idempotent:
+// re-entered when the player steps forward from the setup half.
+function ensureTutorialGame() {
+  if (G && G.tutBuilt && document.getElementById('game-screen').classList.contains('active')) return;
+  online = false; gameOver = false;
+  const factions = {
+    grid:      mkFaction('YOU', 'grid', false, 'scavenger'),
+    syndicate: mkFaction('SYNDICATE', 'syndicate', true, 'fortify'),
+    commune:   mkFaction('COMMUNE', 'commune', true, 'hoarder'),
+    ghost:     mkFaction('THE GHOST', 'ghost', true, 'tactician'),
+  };
+  G = {
+    round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
+    factions, turnOrder: ['grid', 'syndicate', 'commune', 'ghost'], humans: ['grid'],
+    tyrantOn: false, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false,
+    nodesHeldSince: {}, tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: 'grid', tutBuilt: true,
+  };
+  G.tiles = buildMap();
+  // Deterministic teaching layout: wipe random faction placement, put Grid in the NW corner
+  // with a weak enemy scout adjacent (attack demo) and the ⚡ POWER node one tile away.
+  Object.values(G.tiles).forEach(t => { if (!t.isNode) { t.owner = null; t.troops = 0; t.heldRounds = 0; } });
+  const set = (id, owner, troops) => { const t = G.tiles[id]; if (t) { t.owner = owner; t.troops = troops; t.heldRounds = 0; } };
+  set('tile_0_0', 'grid', 4); set('tile_0_1', 'grid', 3);
+  set('tile_1_0', 'commune', 1);                                  // weak scout to attack (adjacent to 0_0)
+  set(`tile_0_${GRID-1}`, 'syndicate', 2); set(`tile_1_${GRID-1}`, 'syndicate', 2);
+  set(`tile_${GRID-1}_0`, 'commune', 2);
+  set(`tile_${GRID-1}_${GRID-1}`, 'ghost', 2); set(`tile_${GRID-1}_${GRID-2}`, 'ghost', 2);
+  // tile_1_1 (POWER node) stays neutral as the nearby objective.
+  mySeats = ['grid']; G.playerFaction = 'grid';
+  myTurnActive = true; isDriver = true; currentAction = null; selectedTile = null;
+  switchScreen('game-screen');
+  document.getElementById('rules-btn').style.display = 'flex';
+  renderMap(); renderSidebar();
+  enablePlayerActions('grid');
+  const tl = document.getElementById('turn-label'); tl.textContent = '⚡ TUTORIAL'; tl.className = 'turn-indicator your-turn';
+  document.getElementById('phase-label').textContent = 'LEARN TO PLAY';
+  setActionLog('Follow the tour — tap NEXT. You can try the highlighted controls anytime.');
+}
+
+function tutorialShow(i) {
+  tutorialStep = i;
+  const step = TUT_STEPS[i];
+  if (step.onEnter) step.onEnter();   // navigate/build the right screen first
+  document.getElementById('tutorial-overlay').classList.add('show');
+  document.getElementById('tut-step').textContent  = `${i + 1} / ${TUT_STEPS.length}`;
+  document.getElementById('tut-title').textContent = step.title;
+  document.getElementById('tut-body').innerHTML    = step.body;
+  document.getElementById('tut-back').style.visibility = i === 0 ? 'hidden' : 'visible';
+  document.getElementById('tut-next').textContent = i === TUT_STEPS.length - 1 ? 'FINISH ✓' : 'NEXT →';
+  tutorialReposition();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tutorialReposition);  // after layout settles
+}
+
+function tutorialReposition() {
+  if (!tutorialMode) return;
+  const ov = document.getElementById('tutorial-overlay');
+  if (!ov || !ov.classList.contains('show')) return;
+  const step = TUT_STEPS[tutorialStep]; if (!step) return;
+  const el = step.target ? document.querySelector(step.target) : null;
+  const vw = window.innerWidth || 390, vh = window.innerHeight || 800;
+  const T = document.getElementById('tut-top'), B = document.getElementById('tut-bottom');
+  const L = document.getElementById('tut-left'), R = document.getElementById('tut-right');
+  const ring = document.getElementById('tut-ring'), card = document.getElementById('tut-card');
+  const put = (e, x, y, w, h) => { e.style.left = x + 'px'; e.style.top = y + 'px'; e.style.width = Math.max(0, w) + 'px'; e.style.height = Math.max(0, h) + 'px'; };
+  const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+  if (r && (r.width > 0 || r.height > 0)) {
+    put(T, 0, 0, vw, r.top);
+    put(B, 0, r.bottom, vw, vh - r.bottom);
+    put(L, 0, r.top, r.left, r.height);
+    put(R, r.right, r.top, vw - r.right, r.height);
+    ring.style.display = 'block';
+    put(ring, r.left - 5, r.top - 5, r.width + 10, r.height + 10);
+    const cw = card.offsetWidth || 300, ch = card.offsetHeight || 170;
+    let top = (r.top + r.height / 2 > vh / 2) ? r.top - ch - 14 : r.bottom + 14;
+    top = Math.max(8, Math.min(top, vh - ch - 8));
+    let left = Math.max(8, Math.min(r.left + r.width / 2 - cw / 2, vw - cw - 8));
+    card.style.left = left + 'px'; card.style.top = top + 'px';
+  } else {
+    // No target (or unmeasured): dim everything, center the card.
+    put(T, 0, 0, vw, vh); put(B, 0, 0, 0, 0); put(L, 0, 0, 0, 0); put(R, 0, 0, 0, 0);
+    ring.style.display = 'none';
+    const cw = card.offsetWidth || 300, ch = card.offsetHeight || 170;
+    card.style.left = Math.max(8, vw / 2 - cw / 2) + 'px';
+    card.style.top = Math.max(8, vh / 2 - ch / 2) + 'px';
+  }
+}
+
+function tutorialNext() { if (tutorialStep >= TUT_STEPS.length - 1) { endTutorial(); return; } tutorialShow(tutorialStep + 1); }
+function tutorialBack() { if (tutorialStep > 0) tutorialShow(tutorialStep - 1); }
+
+function endTutorial() {
+  tutorialMode = false;
+  document.getElementById('tutorial-overlay').classList.remove('show');
+  document.body.classList.remove('drawer-open');
+  try { localStorage.setItem('fracture_seen', '1'); } catch (e) {}
+  showSetup();   // back to the setup screen so they pick their own game
+}
+
+// First-run: offer the tour the first time someone opens the game.
+function maybeFirstRun() {
+  try { if (localStorage.getItem('fracture_seen') === '1') return; } catch (e) { return; }
+  const ov = document.getElementById('firstrun-overlay');
+  if (ov) ov.classList.add('show');
+}
+function firstrunSkip()  { try { localStorage.setItem('fracture_seen', '1'); } catch (e) {} document.getElementById('firstrun-overlay').classList.remove('show'); }
+function firstrunStart() { firstrunSkip(); startTutorial(); }
+
+// ============================================================
 // ONLINE MULTIPLAYER — Firebase Realtime Database
 // Rooms by code · full-state broadcast · active-player engine baton.
 // All of this is dormant until the player taps PLAY ONLINE.
@@ -3580,6 +3738,11 @@ Object.assign(window, {
   acknowledgeCombat,
   qtySync, qtyAdj, qtyConfirm, qtyCancel,
   toggleInfoDrawer, closeInfoDrawer,
+  startTutorial, tutorialNext, tutorialBack, endTutorial, firstrunStart, firstrunSkip,
 });
 // Read-only test handle: lets the headless harness inspect live game state.
 Object.defineProperty(window, '__G', { get: () => G });
+
+// First-run: offer the tutorial the first time the game is opened (DOM is parsed —
+// this module script is at the end of <body>).
+maybeFirstRun();
