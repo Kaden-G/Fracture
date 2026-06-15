@@ -593,16 +593,49 @@ function setSeatTrait(fk, id) {
   renderSetup();
 }
 
+// What's stopping deployment? Returns a human-readable list (empty = ready).
+function setupMissing() {
+  const humans = Object.entries(G.setup.seats).filter(([, s]) => s.type === 'human');
+  const out = [];
+  if (humans.length < 1) out.push('Set at least one faction to HUMAN');
+  humans.forEach(([k, s]) => {
+    if (!s.name.trim()) out.push(`${FACTIONS[k].name}: enter a name`);
+    if (!s.trait)       out.push(`${FACTIONS[k].name}: pick a passive trait`);
+  });
+  return out;
+}
+
 function checkReady() {
-  const humans = Object.values(G.setup.seats).filter(s => s.type === 'human');
-  const ok = humans.length >= 1 && humans.every(s => s.name.trim() && s.trait);
-  document.getElementById('start-btn').disabled = !ok;
+  // DEPLOY stays clickable so a tap can explain what's missing instead of failing silently.
+  const btn = document.getElementById('start-btn');
+  if (btn) btn.disabled = false;
+  const status = document.getElementById('setup-status');
+  if (!status) return;
+  const missing = setupMissing();
+  if (missing.length) {
+    status.className = 'setup-status warn';
+    status.innerHTML = '⚠️ <b>To deploy:</b> ' + missing.map(m => `<span>${m}</span>`).join('');
+  } else {
+    status.className = 'setup-status ok';
+    status.textContent = '✓ All set — tap DEPLOY!';
+  }
 }
 
 // ============================================================
 // GAME INIT
 // ============================================================
 function startGame() {
+  // Block deploy with a clear reason rather than silently doing nothing.
+  const missing = setupMissing();
+  if (missing.length) {
+    const status = document.getElementById('setup-status');
+    if (status) {
+      status.className = 'setup-status warn';
+      status.innerHTML = '⛔ <b>Can\'t deploy yet:</b> ' + missing.map(m => `<span>${m}</span>`).join('');
+      if (status.scrollIntoView) status.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    return;
+  }
   const seats = G.setup.seats;
   const order = shuffle(Object.keys(FACTIONS));  // randomized turn order for fairness
 
