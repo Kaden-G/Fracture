@@ -3119,33 +3119,52 @@ function closeRules() { document.getElementById('rules-overlay').classList.remov
 // Spotlights one element at a time (dim strips around it, leaving it tappable),
 // with a tooltip card and Back/Next/Skip. AI is frozen so the board holds still.
 // ============================================================
+// Steps run across real screens: an optional onEnter navigates/sets up the screen
+// (title → setup → the controlled game board), then we spotlight a target on it.
 const TUT_STEPS = [
-  { target: null, title: '⚔️ Welcome to FRACTURE',
-    body: 'Four factions are fighting over a broken grid. <b>Hold 3 of the 5 ★ Core Nodes for 2 rounds — or wipe out every rival — to win.</b><br><br>This quick tour shows the ropes. You\'re playing <b style="color:#f39c12">⚙️ THE GRID</b>.' },
-  { target: '#hex-tile_0_0', title: '🏰 Your territory',
-    body: 'This corner is yours. The <b>number</b> on a hex is its <b>troop count</b> — your strength there. Dotted links between tiles show which ones connect for moving and attacking.' },
-  { target: '#hex-tile_1_1', title: '★ Core Nodes',
+  { onEnter: showTitle, target: null, title: '⚔️ Welcome to FRACTURE',
+    body: 'Four factions fight over a broken grid. <b>Hold 3 of the 5 ★ Core Nodes for two straight rounds — or wipe out every rival — to win.</b><br><br>This tour walks you from setup to your first moves. You\'ll play <b style="color:#f39c12">⚙️ THE GRID</b>.' },
+  { onEnter: showTitle, target: '#btn-online', title: '🌐 Solo, hot-seat, or online',
+    body: '<b>NEW GAME</b> plays on one device — versus AI, or pass-and-play with friends. <b>PLAY ONLINE</b> hosts a room: you get a <b>4-letter code</b>, friends join from their own phones, everyone readies up, and you start once all are set.' },
+  { onEnter: showSetup, target: '#setup-grid .setup-card', title: '🎭 Factions & seats',
+    body: 'Before a match you configure all four factions — set each to a <b>Human</b> or an <b>AI</b>. Every faction has a unique <b>ability + perk</b>: Grid reinforces cheap and can Overclock, Syndicate bribes troops away, Commune grows reinforcements, Ghost sabotages and slips through walls.' },
+  { onEnter: showSetup, target: '#setup-grid .trait-select', title: '🧬 Your passive trait',
+    body: 'Each human also picks a <b>passive trait</b> — a perk that lasts the whole game. <b>Scavenger</b> loots resources on every capture, <b>Tactician</b> rolls better dice, <b>Fortify</b> hardens fresh tiles, <b>Hoarder</b> earns more per node. Pick to fit your plan.' },
+  { onEnter: showSetup, target: '#setup-grid .setup-card:last-child', title: '🦠 The Tyrant (optional)',
+    body: 'Toggle <b>THE TYRANT</b> for a harder, wilder game: an AI <b>virus</b> that festers at the center, <b>spreads every round</b>, and can win by force <em>or</em> by striking a secret pact with <em>every</em> survivor. A shared threat — exploit it, ally with it, or unite to burn it out.' },
+  { onEnter: ensureTutorialGame, target: '#hex-tile_0_0', title: '🏰 Your territory',
+    body: 'Now into a real game. This corner is yours — the <b>number</b> on a hex is its <b>troop count</b>. You can move to and attack the tiles directly <b>touching</b> yours.' },
+  { onEnter: ensureTutorialGame, target: '#hex-tile_1_1', title: '★ Core Nodes',
     body: 'Star tiles are <b>Core Nodes</b>. Each earns +1 resource and a passive perk (this ⚡ one makes Reinforce cheaper). <b>Hold any 3 for two straight rounds and you win</b> — so nodes are everything.' },
-  { target: '#action-panel', title: '🔄 Your turn',
+  { onEnter: ensureTutorialGame, target: '#action-panel', title: '🔄 Your turn',
     body: 'Each round: an <b>event</b> fires, you collect <b>income</b> (2 + 1 per node), then take <b>3 actions</b> from this bar.' },
-  { target: '#player-stats', title: '🎒 Resources & actions',
+  { onEnter: ensureTutorialGame, target: '#player-stats', title: '🎒 Resources & actions',
     body: 'Your <b>resources</b> and <b>actions left</b> live here. Resources buy strength; actions buy moves, fights, and building.' },
-  { target: '#btn-move', title: '🚶 Move',
+  { onEnter: ensureTutorialGame, target: '#btn-move', title: '🚶 Move',
     body: '<b>MOVE</b> shifts troops between your tiles to mass an army or step onto an empty node. Tap it, then a tile, then where to send them.' },
-  { target: '#btn-reinforce', title: '🛡️ Reinforce',
+  { onEnter: ensureTutorialGame, target: '#btn-reinforce', title: '🛡️ Reinforce',
     body: '<b>REINFORCE</b> spends resources to add troops to a tile — Grid pays 1 less. Money becomes muscle.' },
-  { target: '#hex-tile_1_0', title: '⚔️ Attack & combat',
+  { onEnter: ensureTutorialGame, target: '#hex-tile_1_0', title: '⚔️ Attack & combat',
     body: 'That weak enemy is right next to you. <b>ATTACK</b> → your tile → the enemy. Both roll <b>2d6</b> + bonuses (+1 per 4 troops, capped +2; defenders add dig-in). <b>Attacker wins ties</b>, and a win lets you keep pressing the assault.' },
-  { target: '#btn-overclock', title: '⚙️ Your faction power',
+  { onEnter: ensureTutorialGame, target: '#btn-overclock', title: '⚙️ Your faction power',
     body: 'Every faction has a unique <b>ability</b> + <b>perk</b>. Grid\'s <b>OVERCLOCK</b> surges +3 troops onto a tile, and its reinforces cost less. Yours is your edge — learn it.' },
-  { target: '#btn-pact', title: '🤝 Pacts & betrayal',
+  { onEnter: ensureTutorialGame, target: '#btn-pact', title: '🤝 Pacts & betrayal',
     body: '<b>PACT</b> a rival for free non-aggression — buy time, or team up on the leader. <b>Break it to backstab</b> and the victim gets <b>+2</b> against you for two rounds. And anyone holding 2+ nodes gets <b>everyone</b> piling on — no runaway winner.' },
-  { target: '.end-turn-btn', title: '✅ End your turn',
-    body: 'Spent your 3 actions? <b>END TURN</b> hands off. That\'s the core loop!<br><br>The Tyrant, round events, and passive traits are all in <b>📖 FULL RULES</b>. Ready to play for real?' },
+  { onEnter: ensureTutorialGame, target: '.end-turn-btn', title: '✅ End your turn',
+    body: 'Spent your 3 actions? <b>END TURN</b> hands off. That\'s the whole loop!<br><br>Round events and more are in <b>📖 FULL RULES</b>. Ready to play for real?' },
 ];
 
 function startTutorial() {
   if (typeof resetNet === 'function') resetNet();
+  online = false; gameOver = false;
+  tutorialMode = true; tutorialStep = 0;
+  tutorialShow(0);   // step 0's onEnter sets the screen
+}
+
+// Build the controlled round-1 board for the gameplay half of the tour. Idempotent:
+// re-entered when the player steps forward from the setup half.
+function ensureTutorialGame() {
+  if (G && G.tutBuilt && document.getElementById('game-screen').classList.contains('active')) return;
   online = false; gameOver = false;
   const factions = {
     grid:      mkFaction('YOU', 'grid', false, 'scavenger'),
@@ -3157,7 +3176,7 @@ function startTutorial() {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder: ['grid', 'syndicate', 'commune', 'ghost'], humans: ['grid'],
     tyrantOn: false, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false,
-    nodesHeldSince: {}, tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: 'grid',
+    nodesHeldSince: {}, tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: 'grid', tutBuilt: true,
   };
   G.tiles = buildMap();
   // Deterministic teaching layout: wipe random faction placement, put Grid in the NW corner
@@ -3171,7 +3190,6 @@ function startTutorial() {
   set(`tile_${GRID-1}_${GRID-1}`, 'ghost', 2); set(`tile_${GRID-1}_${GRID-2}`, 'ghost', 2);
   // tile_1_1 (POWER node) stays neutral as the nearby objective.
   mySeats = ['grid']; G.playerFaction = 'grid';
-  tutorialMode = true; tutorialStep = 0;
   myTurnActive = true; isDriver = true; currentAction = null; selectedTile = null;
   switchScreen('game-screen');
   document.getElementById('rules-btn').style.display = 'flex';
@@ -3180,12 +3198,12 @@ function startTutorial() {
   const tl = document.getElementById('turn-label'); tl.textContent = '⚡ TUTORIAL'; tl.className = 'turn-indicator your-turn';
   document.getElementById('phase-label').textContent = 'LEARN TO PLAY';
   setActionLog('Follow the tour — tap NEXT. You can try the highlighted controls anytime.');
-  tutorialShow(0);
 }
 
 function tutorialShow(i) {
   tutorialStep = i;
   const step = TUT_STEPS[i];
+  if (step.onEnter) step.onEnter();   // navigate/build the right screen first
   document.getElementById('tutorial-overlay').classList.add('show');
   document.getElementById('tut-step').textContent  = `${i + 1} / ${TUT_STEPS.length}`;
   document.getElementById('tut-title').textContent = step.title;
@@ -3193,6 +3211,7 @@ function tutorialShow(i) {
   document.getElementById('tut-back').style.visibility = i === 0 ? 'hidden' : 'visible';
   document.getElementById('tut-next').textContent = i === TUT_STEPS.length - 1 ? 'FINISH ✓' : 'NEXT →';
   tutorialReposition();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(tutorialReposition);  // after layout settles
 }
 
 function tutorialReposition() {
