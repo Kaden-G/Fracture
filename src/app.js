@@ -1187,19 +1187,13 @@ function startRound() {
         G.factions[k].corruption = (G.factions[k].corruption || 0) + 1;
       }
     }
-    // Part 2: Tithe boon — +1 troop on a frontline tile each round
+    // (Tithe is now applied at each bound faction's turn-start, when they pick TITHE on the
+    // per-round bargain modal — not in a round-start sweep. Sic likewise: each bound faction
+    // picks at their turn-start, the Tyrant reads .boon === 'sic' when it acts later.)
+    // Per-round boon reset: clear last round's choice so each bound faction must pick again.
     for (const k of livingKeys()) {
       if (k === TYRANT_KEY) continue;
-      if (hasPact(TYRANT_KEY, k) && G.factions[k].boon === 'tithe') {
-        const myT = tilesOf(k);
-        const frontline = myT.filter(mt =>
-          Object.values(G.tiles).some(t => t.owner && t.owner !== k && adjacent(mt, t))
-        );
-        const target = frontline.length > 0
-          ? frontline.reduce((a, b) => a.troops <= b.troops ? a : b)
-          : myT.reduce((a, b) => a.troops <= b.troops ? a : b, myT[0]);
-        if (target) { target.troops += 1; refreshHex(target.id); }
-      }
+      if (hasPact(TYRANT_KEY, k)) G.factions[k].boon = null;
     }
   }
   document.getElementById('phase-label').textContent = `ROUND ${G.round}`;
@@ -1364,6 +1358,17 @@ function beginTurnFor(fk) {
 // The Tyrant's private dealings with the active human: a harbor plea or a secret pact offer.
 function tyrantInteract(fk) {
   if (fk === TYRANT_KEY) return;
+  // 0. PER-ROUND BARGAIN: if already bound, ask what the Tyrant owes you THIS round
+  //    (or whether to renounce). Replaces the old set-and-forget tithe/sic at pact formation.
+  if (tyrantAlive() && hasPact(TYRANT_KEY, fk) && !G.tyrantHarbor) {
+    // Don't re-prompt if a choice was already made this round (e.g., reopened mid-turn).
+    if (!G.boonChosenThisRound) G.boonChosenThisRound = {};
+    const key = fk + '|' + G.round;
+    if (!G.boonChosenThisRound[key]) {
+      showRoundBoonModal(fk);
+      return;   // boon flow handles the rest (other interactions queue if needed)
+    }
+  }
   // 1. Harbor: a cornered Tyrant begs an ally to feed it a tile so it can rise again.
   if (G.tyrantHarbor && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0) {
     tyrantModal({
@@ -1631,6 +1636,99 @@ function acceptTyrantPact(boon) {
   addLog('🦠 A secret pact takes hold in the shadows…');
   closeTyrantPactOffer();
   renderSidebar(); syncPush();
+}
+
+// ============================================================
+// PER-ROUND TYRANT BARGAIN — each round, a bound faction picks tithe/sic/refuse/renounce
+// ============================================================
+let _roundBoonFk = null;
+
+function showRoundBoonModal(fk) {
+  _roundBoonFk = fk;
+  const f = G.factions[fk];
+  const corr = f.corruption || 0;
+  const band = (typeof corruptionBand === 'function') ? corruptionBand(corr) : { label: `${corr} corruption` };
+  const body = document.getElementById('boon-body');
+  if (body) {
+    body.innerHTML =
+      `<b>${f.name}</b>, you are bound to the Tyrant — <b>${band.label}</b>.<br>` +
+      `Each round it offers a service. Take its gift, take nothing, or break the pact and ` +
+      `<span style="color:#d98fd9;">slay the Tyrant</span>.`;
+  }
+  document.getElementById('boon-overlay').classList.add('show');
+}
+
+function pickRoundBoon(choice) {
+  const fk = _roundBoonFk; _roundBoonFk = null;
+  document.getElementById('boon-overlay').classList.remove('show');
+  if (!fk || !G.factions[fk] || G.factions[fk].eliminated) return;
+  if (!G.boonChosenThisRound) G.boonChosenThisRound = {};
+  G.boonChosenThisRound[fk + '|' + G.round] = choice;
+  applyBoonChoice(fk, choice);
+  renderSidebar(); syncPush();
+}
+
+function applyBoonChoice(fk, choice) {
+  const f = G.factions[fk];
+  if (choice === 'tithe') {
+    f.boon = 'tithe';
+    // +1 troop on a frontline tile (or weakest if no frontline) — same intent as the old sweep.
+    const myT = tilesOf(fk);
+    if (myT.length) {
+      const frontline = myT.filter(mt => Object.values(G.tiles).some(t => t.owner && t.owner !== fk && adjacent(mt, t)));
+      const target = (frontline.length ? frontline : myT).reduce((a, b) => a.troops <= b.troops ? a : b);
+      if (target) { target.troops += 1; refreshHex(target.id); addLog(`🩸 The Tyrant blesses ${target.name} (+1 troop) — tithe.`); }
+    }
+  } else if (choice === 'sic') {
+    f.boon = 'sic';   // Tyrant turn reads this and lashes out at an ally-enemy
+    addLog(`👹 ${f.name} sics the Tyrant on an enemy this round.`);
+  } else if (choice === 'refuse') {
+    f.boon = null;
+    addLog(`✋ ${f.name} accepts nothing from the Tyrant this round.`);
+  } else if (choice === 'renounce') {
+    // Existing renounce-kill logic: break pact, wipe Tyrant, resurrect grudges.
+    renounceTyrant(fk);
+  }
+}
+
+// Renounce-kill (extracted from the old turn-start fork at "RECKONING IS NEAR"). Always
+// available via the per-round bargain now, not just when closeToWin.
+function renounceTyrant(fk) {
+  delete G.pacts[pairKey(fk, TYRANT_KEY)];
+  G.factions[fk].boon = null;
+  const rTiles = tilesOf(fk).sort((a, b) => a.troops - b.troops);
+  for (let i = 0; i < Math.min(2, rTiles.length); i++) {
+    const lost = Math.max(1, Math.floor(rTiles[i].troops / 2));
+    rTiles[i].troops = Math.max(1, rTiles[i].troops - lost);
+    refreshHex(rTiles[i].id);
+  }
+  addLog(`🦠💥 ${G.factions[fk].name} RENOUNCES the Tyrant! Withdrawal hit!`);
+  tilesOf(TYRANT_KEY).forEach(t => { t.owner = null; t.troops = 0; t.heldRounds = 0; refreshHex(t.id); });
+  G.factions[TYRANT_KEY].eliminated = true;
+  for (const pk of Object.keys(G.pacts || {})) {
+    const [pa, pb] = pk.split('|');
+    if (pa === TYRANT_KEY || pb === TYRANT_KEY) {
+      const ally = pa === TYRANT_KEY ? pb : pa;
+      if (G.factions[ally]) G.factions[ally].boon = null;
+      delete G.pacts[pk];
+    }
+  }
+  addLog('💀 THE TYRANT is destroyed!');
+  // Resurrect eliminated factions with a grudge against the renouncer.
+  for (const [ek, ef] of Object.entries(G.factions)) {
+    if (!ef.eliminated || ek === TYRANT_KEY || ek === fk) continue;
+    const neutrals = Object.values(G.tiles).filter(t => !t.owner);
+    if (!neutrals.length) continue;
+    ef.eliminated = false; ef.corruption = 0; ef.resources = 3;
+    for (let i = 0; i < Math.min(2, neutrals.length); i++) {
+      neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+      refreshHex(neutrals[i].id);
+    }
+    G.grudges[ek + '>' + fk] = G.round + 3;
+    addLog(`👻 ${ef.name} rises — grudge against ${G.factions[fk].name}!`);
+  }
+  G.factions[fk].corruption = 0;
+  renderMap(); renderSidebar();
 }
 
 function refuseTyrantPact() {
@@ -2597,6 +2695,18 @@ function runAITurn(fk) {
   G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
   const f = G.factions[fk];
   if (f.eliminated) { G.currentTurnIdx++; setTimeout(doNextTurn,200); return; }
+
+  // PER-ROUND BARGAIN (AI): a bound non-Tyrant AI silently picks its boon this round.
+  // (Humans get the modal in tyrantInteract; this is the AI parallel.)
+  if (fk !== TYRANT_KEY && tyrantAlive() && hasPact(TYRANT_KEY, fk) && !G.tyrantHarbor) {
+    if (!G.boonChosenThisRound) G.boonChosenThisRound = {};
+    const key = fk + '|' + G.round;
+    if (!G.boonChosenThisRound[key]) {
+      const choice = aiPickBoon(fk);
+      G.boonChosenThisRound[key] = choice;
+      applyBoonChoice(fk, choice);
+    }
+  }
 
   if (fk === TYRANT_KEY) {
     tyrantSpread(fk);   // virus expansion before its normal actions
@@ -3822,7 +3932,7 @@ Object.assign(window, {
   setSeatType, setSeatName, setSeatTrait,
   hostRoom, joinRoomPrompt, hostSetTyrant, hostStart,
   setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
-  acceptTyrantPact, refuseTyrantPact,
+  acceptTyrantPact, refuseTyrantPact, pickRoundBoon,
   tyrantModalConfirm, tyrantModalCancel,
   acknowledgeCombat,
   qtySync, qtyAdj, qtyConfirm, qtyCancel,

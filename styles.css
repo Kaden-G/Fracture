@@ -725,7 +725,8 @@
 
   /* ===== TYRANT PACT OFFER ===== */
   #tyrant-overlay,
-  #tyrant-confirm-overlay {
+  #tyrant-confirm-overlay,
+  #boon-overlay {
     display: none;
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -735,7 +736,8 @@
     justify-content: center;
   }
   #tyrant-overlay.show,
-  #tyrant-confirm-overlay.show { display: flex; }
+  #tyrant-confirm-overlay.show,
+  #boon-overlay.show { display: flex; }
 
   .tyrant-card {
     background: #0e1410;
