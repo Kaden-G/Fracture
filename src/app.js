@@ -1632,9 +1632,16 @@ function acceptTyrantPact(boon) {
   if (!fk) { closeTyrantPactOffer(); return; }
   formPact(TYRANT_KEY, fk);
   G.tyrantRefusalStreak = 0;  // pact formed — reset streak
-  G.factions[fk].boon = (boon === 'sic') ? 'sic' : 'tithe';
-  addLog('🦠 A secret pact takes hold in the shadows…');
   closeTyrantPactOffer();
+  addLog('🦠 A secret pact takes hold in the shadows…');
+  // Apply the initial boon choice immediately and mark it as this round's pick, so the
+  // per-round bargain modal doesn't re-prompt them on the same turn. (Previously only the
+  // raw .boon field was set, which silently dropped the TITHE effect once the round-start
+  // sweep was removed.)
+  const choice = (boon === 'sic') ? 'sic' : 'tithe';
+  if (!G.boonChosenThisRound) G.boonChosenThisRound = {};
+  G.boonChosenThisRound[fk + '|' + G.round] = choice;
+  applyBoonChoice(fk, choice);
   renderSidebar(); syncPush();
 }
 
@@ -1666,6 +1673,11 @@ function pickRoundBoon(choice) {
   G.boonChosenThisRound[fk + '|' + G.round] = choice;
   applyBoonChoice(fk, choice);
   renderSidebar(); syncPush();
+  // Re-enter the Tyrant turn-start flow so any FOLLOWING prompts still fire (e.g. the
+  // close-to-win RECKONING IS NEAR fork). The boonChosenThisRound guard ensures the
+  // per-round bargain doesn't re-prompt; the rest of tyrantInteract proceeds normally.
+  // Skipped on renounce — the pact is gone, so there's nothing left to warn about.
+  if (choice !== 'renounce') tyrantInteract(fk);
 }
 
 function applyBoonChoice(fk, choice) {
