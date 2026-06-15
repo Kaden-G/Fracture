@@ -85,11 +85,14 @@ const EVENTS = [
 ];
 
 const NODE_TILES = [
-  { id:'node_power',   name:'⚡ POWER',   short:'⚡PWR', isNode:true },
-  { id:'node_water',   name:'💧 WATER',   short:'💧H2O', isNode:true },
-  { id:'node_transit', name:'🚇 TRANSIT', short:'🚇TRN', isNode:true },
-  { id:'node_comms',   name:'📡 COMMS',   short:'📡COM', isNode:true },
-  { id:'node_data',    name:'🖧 DATA',    short:'🖧DAT', isNode:true },
+  { id:'node_power',     name:'⚡ POWER',     short:'⚡PWR', isNode:true },
+  { id:'node_water',     name:'💧 WATER',     short:'💧H2O', isNode:true },
+  { id:'node_transit',   name:'🚇 TRANSIT',   short:'🚇TRN', isNode:true },
+  { id:'node_comms',     name:'📡 COMMS',     short:'📡COM', isNode:true },
+  { id:'node_data',      name:'🖧 DATA',      short:'🖧DAT', isNode:true },
+  // GRAVEYARD — bounty node spawned where THE TYRANT dies. No perk; just counts as a 6th
+  // node toward the "3 to win" condition. Can be stolen like any other node.
+  { id:'node_graveyard', name:'☠ GRAVEYARD',  short:'☠GRV', isNode:true },
 ];
 
 // Each Core Node grants its controller a passive bonus — so WHICH nodes you hold matters.
@@ -99,15 +102,17 @@ const NODE_BONUSES = {
   node_transit: 'Airlifts cost 0 res',
   node_comms:   '+1 attack rolls',
   node_data:    '+1 defense rolls',
+  node_graveyard: 'no bonus — bounty for slaying the Tyrant',
 };
 
 // Custom artwork for each Core Node (transparent hex badges).
 const NODE_IMAGES = {
-  node_power:   'assets/node_power.png',
-  node_water:   'assets/node_water.png',
-  node_transit: 'assets/node_transit.png',
-  node_comms:   'assets/node_comms.png',
-  node_data:    'assets/node_data.png',
+  node_power:     'assets/node_power.png',
+  node_water:     'assets/node_water.png',
+  node_transit:   'assets/node_transit.png',
+  node_comms:     'assets/node_comms.png',
+  node_data:      'assets/node_data.png',
+  node_graveyard: 'assets/node_graveyard.png?v=1',
 };
 
 // Themed frame artwork for each faction's owned (non-node) tiles.
@@ -940,10 +945,10 @@ function renderSidebar() {
         </div>`;
     }).join('');
 
-  // Nodes
+  // Nodes — show the static 5, plus GRAVEYARD only once it has spawned (Tyrant slain).
   document.getElementById('node-list').innerHTML = NODE_TILES.map(n => {
     const t = Object.values(G.tiles).find(t=>t.nodeId===n.id);
-    if (!t) return '';
+    if (!t) return '';   // GRAVEYARD won't have a tile until the Tyrant dies
     const owner = t.owner ? G.factions[t.owner] : null;
     return `
       <div class="node-item" style="border-left:4px solid ${owner?owner.color:'#333'}; flex-direction:column; align-items:stretch; gap:2px;">
@@ -2348,6 +2353,16 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
         // Bounty: wiping a rival grants +3 resources (encourages PvP without breaking node count).
         af.resources = Math.min((af.resources||0)+3, RES_CAP);
         addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +3 resources bounty.`);
+        // GRAVEYARD: when the Tyrant dies (its last tile falls in combat), THIS tile becomes a
+        // node — counts toward the "3 nodes for 2 rounds" win for whoever holds it. No perk,
+        // just the bounty for slaying the blob. Steal-able like any other node afterwards.
+        if (prev === TYRANT_KEY && G.factions[TYRANT_KEY].eliminated && !tgt.isNode) {
+          tgt.isNode = true;
+          tgt.nodeId = 'node_graveyard';
+          tgt.name = '☠ GRAVEYARD';
+          tgt.short = '☠GRV';
+          addLog(`☠ ${tgt.name} rises where the Tyrant fell — a bounty node for ${af.name}.`);
+        }
       }
     } else {
       tgt.heldRounds = 0;   // taking casualties breaks entrenchment
@@ -3197,7 +3212,7 @@ function closeRules() { document.getElementById('rules-overlay').classList.remov
 // (title → setup → the controlled game board), then we spotlight a target on it.
 const TUT_STEPS = [
   { onEnter: showTitle, target: null, title: '⚔️ Welcome to FRACTURE',
-    body: 'Four factions fight over a broken grid. <b>Hold 3 of the 5 ★ Core Nodes for two straight rounds — or wipe out every rival — to win.</b><br><br>This tour walks you from setup to your first moves. You\'ll play <b style="color:#f39c12">⚙️ THE GRID</b>.' },
+    body: 'Four factions fight over a broken grid. <b>Hold any 3 ★ Core Nodes for two straight rounds — or wipe out every rival — to win.</b><br><br>This tour walks you from setup to your first moves. You\'ll play <b style="color:#f39c12">⚙️ THE GRID</b>.' },
   { onEnter: showTitle, target: '#btn-online', title: '🌐 Solo, hot-seat, or online',
     body: '<b>NEW GAME</b> plays on one device — versus AI, or pass-and-play with friends. <b>PLAY ONLINE</b> hosts a room: you get a <b>4-letter code</b>, friends join from their own phones, everyone readies up, and you start once all are set.' },
   { onEnter: showSetup, target: '#setup-grid .setup-card', title: '🎭 Factions & seats',

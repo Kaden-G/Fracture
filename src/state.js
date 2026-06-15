@@ -48,11 +48,14 @@ export function traitsFor(fk) {
 
 // ---- Nodes ----
 export const NODE_TILES = [
-  { id:'node_power',   name:'⚡ POWER',   short:'⚡PWR', isNode:true },
-  { id:'node_water',   name:'💧 WATER',   short:'💧H2O', isNode:true },
-  { id:'node_transit', name:'🚇 TRANSIT', short:'🚇TRN', isNode:true },
-  { id:'node_comms',   name:'📡 COMMS',   short:'📡COM', isNode:true },
-  { id:'node_data',    name:'🖧 DATA',    short:'🖧DAT', isNode:true },
+  { id:'node_power',     name:'⚡ POWER',     short:'⚡PWR', isNode:true },
+  { id:'node_water',     name:'💧 WATER',     short:'💧H2O', isNode:true },
+  { id:'node_transit',   name:'🚇 TRANSIT',   short:'🚇TRN', isNode:true },
+  { id:'node_comms',     name:'📡 COMMS',     short:'📡COM', isNode:true },
+  { id:'node_data',      name:'🖧 DATA',      short:'🖧DAT', isNode:true },
+  // GRAVEYARD — bounty node spawned on the tile where THE TYRANT dies. No perk; just counts
+  // as a 6th node toward the 3-of-N victory. Can be stolen like any other node.
+  { id:'node_graveyard', name:'☠ GRAVEYARD',  short:'☠GRV', isNode:true },
 ];
 
 export const NODE_BONUSES = {
@@ -61,14 +64,16 @@ export const NODE_BONUSES = {
   node_transit: 'Airlifts cost 0 res',
   node_comms:   '+1 attack rolls',
   node_data:    '+1 defense rolls',
+  node_graveyard: 'no bonus — bounty for slaying the Tyrant',
 };
 
 export const NODE_IMAGES = {
-  node_power:   'assets/node_power.png',
-  node_water:   'assets/node_water.png',
-  node_transit: 'assets/node_transit.png',
-  node_comms:   'assets/node_comms.png',
-  node_data:    'assets/node_data.png',
+  node_power:     'assets/node_power.png',
+  node_water:     'assets/node_water.png',
+  node_transit:   'assets/node_transit.png',
+  node_comms:     'assets/node_comms.png',
+  node_data:      'assets/node_data.png',
+  node_graveyard: 'assets/node_graveyard.png',
 };
 
 export const FACTION_IMAGES = {
