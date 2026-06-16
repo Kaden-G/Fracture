@@ -4,6 +4,10 @@
 // ============================================================
 
 export const RES_CAP = 14;
+// Max troops on a single tile. Past the force cap (+2 at 8 troops) extra troops only buy
+// attrition-resistance, which trivializes sabotage and other chip effects — so we cap the
+// stack. 12 leaves a 4-troop buffer above the force cap. (Tunable: 10 = tighter, 15 = looser.)
+export const TROOP_CAP = 12;
 export const GRID_SIZE = 7;   // board is GRID_SIZE x GRID_SIZE tiles
 export const ROUND_CAP = 30;
 export const THRALLDOM_CAP = 13; // at this corruption → auto-loss (Tyrant wins)

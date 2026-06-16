@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { reduce, buildMap, checkWinCondition, resolveCombat, EVENT_HANDLERS, tyrantAtPactCap } from '../src/engine.js';
 import {
-  RES_CAP, FACTIONS, TYRANT_KEY, TRAITS,
+  RES_CAP, TROOP_CAP, FACTIONS, TYRANT_KEY, TRAITS,
   factionDef, adjacent, mkFaction,
   tilesOf, countNodes, reinforceCost,
   hasPact, pairKey, moveReachable,
@@ -1124,5 +1124,29 @@ describe('Ghost-attack reach (leapfrog capability)', () => {
     const t = next.tiles['tile_0_2'];
     const hit = (t.owner === 'commune') || (t.troops < before);   // captured (1 troop → flips) or damaged
     assert.ok(hit, 'the 2-away enemy was struck by the leapfrog attack');
+  });
+});
+
+// ============================================================
+// TROOP CAP — stacks clamp so chip effects keep biting
+// ============================================================
+describe('Troop cap', () => {
+  it('clamps any stack over TROOP_CAP after an action', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 10;
+    state.tiles['tile_0_0'].owner = 'grid';
+    state.tiles['tile_0_0'].troops = TROOP_CAP + 5;   // over the cap
+    // any action runs the end-of-reduce clamp
+    const { state: next } = reduce(state, { type: 'REINFORCE', tile: 'tile_0_0' });
+    assert.equal(next.tiles['tile_0_0'].troops, TROOP_CAP, 'over-cap stack clamped down to TROOP_CAP');
+  });
+
+  it('leaves stacks at or below the cap untouched', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 10;
+    state.tiles['tile_0_0'].owner = 'grid';
+    state.tiles['tile_0_0'].troops = 2;
+    const { state: next } = reduce(state, { type: 'REINFORCE', tile: 'tile_0_0' });
+    assert.equal(next.tiles['tile_0_0'].troops, 4, 'under-cap reinforce unaffected by clamp');
   });
 });

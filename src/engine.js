@@ -6,7 +6,7 @@
 // ============================================================
 
 import {
-  RES_CAP, GRID_SIZE, ROUND_CAP, THRALLDOM_CAP, MOON_BAND,
+  RES_CAP, TROOP_CAP, GRID_SIZE, ROUND_CAP, THRALLDOM_CAP, MOON_BAND,
   FACTIONS, TYRANT_KEY, TYRANT_DEF,
   TRAITS, EVENT_DEFS, NODE_TILES, NODE_POSITIONS, START_CORNERS,
   DISTRICT_NAMES, REGION_NAMES,
@@ -1174,6 +1174,12 @@ export function reduce(inputState, action) {
 
     default:
       log.push(`⚠️ Unknown action: ${action.type}`);
+  }
+
+  // Clamp every stack to the troop cap. Past the force cap extra troops only buy
+  // attrition-resistance, which trivializes sabotage/chip effects — so cap the stack.
+  for (const t of Object.values(state.tiles)) {
+    if (t.troops > TROOP_CAP) t.troops = TROOP_CAP;
   }
 
   return { state, effects, log };

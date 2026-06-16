@@ -18,6 +18,10 @@ window.addEventListener('unhandledrejection', function(e) {
 // GAME DATA
 // ============================================================
 const RES_CAP = 14;  // resource stockpile ceiling
+// Max troops on a single tile. Past the force cap (+2 at 8 troops) extra troops only buy
+// attrition-resistance, which trivializes sabotage and other chip effects — so cap the
+// stack. 12 leaves a 4-troop buffer above the force cap. (Tunable: 10 = tighter, 15 = looser.)
+const TROOP_CAP = 12;
 const GRID    = 7;   // board is GRID x GRID tiles
 
 const FACTIONS = {
@@ -806,7 +810,15 @@ function shuffle(a) {
 // ============================================================
 // RENDER
 // ============================================================
+// Clamp every stack to the troop cap. Centralized here so the ~25 troop-add sites
+// don't each need a clamp — render is the single chokepoint every state change passes
+// through before the player sees it.
+function capTroops() {
+  Object.values(G.tiles).forEach(t => { if (t.troops > TROOP_CAP) t.troops = TROOP_CAP; });
+}
+
 function renderMap() {
+  capTroops();
   const grid = document.getElementById('hex-grid');
   grid.innerHTML = '';
   // Flat-top hexes tile in COLUMNS; odd columns are shifted down half a tile.
@@ -921,6 +933,7 @@ function flashHex(id) {
 }
 
 function renderSidebar() {
+  capTroops();
   // Factions
   document.getElementById('faction-status').innerHTML =
     Object.entries(G.factions).map(([k,f]) => {
