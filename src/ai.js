@@ -46,7 +46,7 @@ function findBestAttack(state, fk, turnAttacks) {
       const atkPower = Math.min(2, Math.floor(atk.troops / 4));
       const defPower = Math.min(2, Math.floor(def.troops / 4))
         + Math.min(def.heldRounds || 0, def.isNode ? 2 : 3)
-        + (def.owner === TYRANT_KEY ? 0 : ((state.turnStrikes && state.turnStrikes[fk + '|' + def.owner]) || 0) * 2);  // rally: per-victim, none vs Tyrant
+        + (def.owner === TYRANT_KEY ? 0 : ((state.turnStrikes && state.turnStrikes[atk.id + '|' + def.id]) || 0) * 2);  // rally: per-encounter (this tile vs that tile), none vs Tyrant
       const edge = (atk.troops - def.troops) + (atkPower - defPower) * 2;
       const score = (def.isNode ? 100 : 0) + edge * 10 - def.troops - (pact ? 15 : 0);
       if (!best || score > best.score) best = { atk, def, score, betray: pact };

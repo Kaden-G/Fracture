@@ -180,7 +180,7 @@ let totalWar       = false;  // TOTAL WAR event: attackers +1 this round
 let pendingEvent   = null;
 let gameOver       = false;
 let turnAttacks    = 0;  // total attacks this turn (informational)
-let turnStrikes    = {};  // "attacker|victimFaction" → times struck this turn → rally only escalates vs the SAME victim
+let turnStrikes    = {};  // "attackerTile|defenderTile" → times struck this turn → rally only escalates on the SAME tile-vs-tile encounter
 let assaultCaptures = 0;  // captures in the current assault chain — capped at 3
 let assaultOn      = false;  // a "press the assault" attack chain is in progress (player)
 let mySeats        = [];  // faction keys THIS device controls (hot-seat: all humans; online: your claimed seat)
@@ -2409,12 +2409,13 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 1. Force ratio: every 4 troops = +1, capped at +2 (big stacks are resilient, not auto-win)
   const attForce = Math.min(2, Math.floor(src.troops / 4));
   const defForce = Math.min(2, Math.floor(tgt.troops / 4));
-  // 2. Rally: a victim only digs in if THIS attacker has already hit it this turn (+2 per
-  //    prior strike on the same faction). Attacking different rivals once each costs nothing —
-  //    the brake is on grinding the SAME enemy (e.g. a press-the-assault chain), not on spreading.
+  // 2. Rally is per-encounter: a defending tile only digs in if the SAME attacking tile has
+  //    already struck it this turn (+2 per prior strike on that exact tile-vs-tile matchup).
+  //    Different attackers ganging one tile (A1→B1, A2→B1) or one attacker spreading across
+  //    tiles (A1→B1, A1→B2) each fight fresh — the brake is only on grinding one pairing.
   //    EXCEPTION: the Tyrant never rallies — it's the shared enemy, so anyone can hammer it
   //    repeatedly without the escalating-defense penalty.
-  const rallyKey = attackerFk + '|' + tgt.owner;
+  const rallyKey = srcId + '|' + tgtId;
   const overextend = tgt.owner === TYRANT_KEY ? 0 : (turnStrikes[rallyKey] || 0) * 2;
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
@@ -2450,7 +2451,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const attWins = attTotal >= defTotal + fortify;
 
   turnAttacks++;
-  turnStrikes[rallyKey] = (turnStrikes[rallyKey] || 0) + 1;  // next strike on this victim rallies +2
+  turnStrikes[rallyKey] = (turnStrikes[rallyKey] || 0) + 1;  // next strike on this exact tile-vs-tile pairing rallies +2
 
   // Step 3: record the strike (earns surge next turn) — tgt.owner is still the Tyrant here.
   recordTyrantStrike(attackerFk, tgt.owner);
@@ -2862,7 +2863,7 @@ function runAITurn(fk) {
         if (pact && !canBetray) continue;
         // Prefer: nodes, then weaker targets, then where we have a troop edge
         const atkPower = Math.min(2, Math.floor(atk.troops/4));
-        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (def.owner===TYRANT_KEY ? 0 : (turnStrikes[fk+'|'+def.owner]||0)*2);  // rally: per-victim, none vs Tyrant
+        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (def.owner===TYRANT_KEY ? 0 : (turnStrikes[atk.id+'|'+def.id]||0)*2);  // rally: per-encounter (this tile vs that tile), none vs Tyrant
         const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
         const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
         if (!best || score > best.score) best = {atk, def, score, betray:pact};

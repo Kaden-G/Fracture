@@ -867,22 +867,48 @@ describe('Tyrant ally-default win gating', () => {
 // ============================================================
 // COMBAT/TYRANT FIXES — rally scoping, pact honor, directional spread, sic
 // ============================================================
-describe('Rally is per-victim, not per-turn', () => {
-  it('hitting different factions does not stack rally; the same victim escalates', () => {
+describe('Rally is per-encounter (this tile vs that tile)', () => {
+  // An encounter is one attacking tile vs one defending tile. The defender buff only escalates
+  // when that exact pairing fights again this turn — not when several attackers gang one tile,
+  // and not when one attacker spreads across tiles.
+  function arena() {
     const state = makeTestState({ seed: 7 });
     Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
     state.currentTurnIdx = state.turnOrder.indexOf('grid');
-    state.tiles['tile_0_0'].owner = 'grid';     state.tiles['tile_0_0'].troops = 20;
-    state.tiles['tile_0_1'].owner = 'commune';  state.tiles['tile_0_1'].troops = 20;  // adjacent
-    state.tiles['tile_1_0'].owner = 'ghost';    state.tiles['tile_1_0'].troops = 20;  // adjacent
-    const rallyOf = (r) => r.effects.find(e => e.kind === 'combat').def.overextend;
+    state.tiles['tile_0_0'].owner = 'grid';     state.tiles['tile_0_0'].troops = 10;  // A1
+    state.tiles['tile_1_0'].owner = 'grid';     state.tiles['tile_1_0'].troops = 10;  // A2
+    state.tiles['tile_0_1'].owner = 'commune';  state.tiles['tile_0_1'].troops = 10;  // B1
+    state.tiles['tile_1_1'].owner = 'commune';  state.tiles['tile_1_1'].troops = 10;  // B2
+    state.turnStrikes = {};
+    return state;
+  }
+  const rallyOf = (r) => r.effects.find(e => e.kind === 'combat').def.overextend;
 
-    const a = reduce(state,   { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });  // 1st vs commune
-    assert.equal(rallyOf(a), 0, 'first strike on commune: no rally');
-    const b = reduce(a.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_1_0' });  // 1st vs ghost
-    assert.equal(rallyOf(b), 0, 'first strike on a DIFFERENT faction: still no rally');
-    const c = reduce(b.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });  // 2nd vs commune
-    assert.equal(rallyOf(c), 2, 'second strike on the SAME faction: rally +2');
+  it('the SAME attacker tile striking the SAME defender tile again rallies +2', () => {
+    const state = arena();
+    state.turnStrikes = { 'tile_0_0|tile_0_1': 1 };   // A1 already hit B1 once this turn
+    const r = reduce(state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    assert.equal(rallyOf(r), 2, 'second strike on the same encounter: rally +2');
+  });
+
+  it('different attacker tiles ganging one defender do NOT rally (A1→B1, A2→B1)', () => {
+    const state = arena();
+    state.turnStrikes = { 'tile_0_0|tile_0_1': 1 };   // A1 already hit B1
+    const r = reduce(state, { type: 'ATTACK', src: 'tile_1_0', tgt: 'tile_0_1' });  // A2 → B1 is fresh
+    assert.equal(rallyOf(r), 0, 'a different attacker tile fights fresh — no rally');
+  });
+
+  it('one attacker spreading across defenders does NOT rally (A1→B1, A1→B2)', () => {
+    const state = arena();
+    state.turnStrikes = { 'tile_0_0|tile_0_1': 1 };   // A1 already hit B1
+    const r = reduce(state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_1_1' });  // A1 → B2 is fresh
+    assert.equal(rallyOf(r), 0, 'a different defender tile fights fresh — no rally');
+  });
+
+  it('records each strike under the attacker-tile|defender-tile key', () => {
+    const state = arena();
+    const r = reduce(state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    assert.equal(r.state.turnStrikes['tile_0_0|tile_0_1'], 1, 'strike logged under the tile-vs-tile key');
   });
 });
 
