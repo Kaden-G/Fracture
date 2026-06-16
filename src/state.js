@@ -32,7 +32,7 @@ export const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
   { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
-  { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles — slip through anything'},
+  { id:'ghost_step', name:'GHOST STEP',   desc:'Move OR attack 2 tiles — leapfrog through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 3d6 attack, keep best 2'        },
   { id:'fortify',    name:'FORTIFY',      desc:'Fresh tiles: +2 def margin. After casualty: +1'},
 ];
@@ -155,7 +155,8 @@ export function mkFaction(name, key, isAI, trait) {
   const def = factionDef(key);
   return {
     name, icon: def.icon, color: def.color,
-    ability: def.ability, isAI, trait, resources: 4, eliminated: false,
+    // The Tyrant never carries a passive trait — it's the shared enemy, kept clean & predictable.
+    ability: def.ability, isAI, trait: key === TYRANT_KEY ? null : trait, resources: 4, eliminated: false,
     isTyrant: key === TYRANT_KEY,
     corruption: 0,   // Part 2: Tyrant corruption clock (exact integer, display via corruptionBand)
     boon: null,       // Part 2: chosen boon when allied to Tyrant ('tithe' | 'sic' | null)

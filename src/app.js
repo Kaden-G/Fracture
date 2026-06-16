@@ -43,7 +43,7 @@ const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
   { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
-  { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles (3 on Ghost) — slip through anything'},
+  { id:'ghost_step', name:'GHOST STEP',   desc:'Move OR attack 2 tiles (3 on Ghost) — leapfrog through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 3d6 attack, keep best 2'        },
   { id:'fortify',    name:'FORTIFY',      desc:'Fresh tiles: +2 def margin. After casualty: +1'},
 ];
@@ -673,7 +673,7 @@ function startGame() {
   const turnOrder = order.slice();
   // The Tyrant joins as a permanent AI, taking its turn last.
   if (G.setup.tyrant) {
-    factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, randTrait(TYRANT_KEY));
+    factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null);
     turnOrder.push(TYRANT_KEY);
   }
 
@@ -714,7 +714,9 @@ function startGame() {
 function mkFaction(name, key, isAI, trait) {
   const def = factionDef(key);
   return { name, icon: def.icon, color: def.color,
-           ability: def.ability, isAI, trait, resources: 4, eliminated: false,
+           // The Tyrant never carries a passive trait (no last stand, ghost step, fortify, etc.) —
+           // it's the shared enemy and should be a clean, predictable threat.
+           ability: def.ability, isAI, trait: key === TYRANT_KEY ? null : trait, resources: 4, eliminated: false,
            isTyrant: key === TYRANT_KEY,
            corruption: 0, boon: null };
 }
@@ -2130,12 +2132,16 @@ function handleTileClick(id) {
         selectedTile = id;
         renderMap();
         document.getElementById('hex-'+id)?.classList.add('selected');
-        setActionLog(`Attacking FROM ${tile.name}. Click an adjacent ENEMY tile.`);
+        const reach = moveRange(G.playerFaction) > 1 ? `an ENEMY within ${moveRange(G.playerFaction)} tiles (leapfrog through anything)` : 'an adjacent ENEMY tile';
+        setActionLog(`Attacking FROM ${tile.name}. Click ${reach}.`);
       } else { setActionLog('Select YOUR tile with 2+ troops to attack from.'); }
       return;
     }
     const src = G.tiles[selectedTile];
-    if (!adjacent(src,tile))          { setActionLog('Not adjacent — pick an enemy next to your assault tile.'); return; }
+    // GHOST ATTACK: phantom / ghost_step factions can strike any enemy within their move range,
+    // leapfrogging through intervening tiles — not just adjacent ones. moveReachable is
+    // faction-aware (it's plain adjacency for everyone else) and ignores the target's owner.
+    if (!moveReachable(G.playerFaction, src, tile)) { setActionLog(moveRange(G.playerFaction) > 1 ? 'Out of reach — pick an enemy within your leapfrog range.' : 'Not adjacent — pick an enemy next to your assault tile.'); return; }
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
@@ -2162,7 +2168,7 @@ function handleTileClick(id) {
         // Hard cap: 3 captures per assault chain.
         if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
           selectedTile = srcId;   // keep the assault source selected for the next strike
-          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Each repeat strike on the SAME faction rallies it +2. Click another adjacent enemy — or pick another action to halt.`);
+          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Each repeat strike on the SAME faction rallies it +2. Click another enemy in reach — or pick another action to halt.`);
           renderMap();
           document.getElementById('hex-'+srcId)?.classList.add('selected');
           return;
@@ -2835,7 +2841,7 @@ function runAITurn(fk) {
     let best=null;
     for (const atk of myTiles().filter(t=>t.troops>=2)) {
       for (const def of enemyTiles()) {
-        if (!adjacent(atk,def)) continue;
+        if (!moveReachable(fk, atk, def)) continue;   // ghost-attack: leapfrog reach for phantom/ghost_step
         // Honor pacts — unless we can seize a NODE with a commanding edge (betrayal).
         // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
         const pact = hasPact(fk, def.owner);
@@ -3925,7 +3931,7 @@ function buildOnlineGame(seats, tyrant) {
       : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k));
   });
   const turnOrder = order.slice();
-  if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, randTrait(TYRANT_KEY)); turnOrder.push(TYRANT_KEY); }
+  if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null); turnOrder.push(TYRANT_KEY); }
   G = {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),

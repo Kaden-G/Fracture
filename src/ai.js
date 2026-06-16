@@ -37,7 +37,7 @@ function findBestAttack(state, fk, turnAttacks) {
 
   for (const atk of myT.filter(t => t.troops >= 2)) {
     for (const def of enemyT) {
-      if (!adjacent(atk, def)) continue;
+      if (!moveReachable(state, fk, atk, def)) continue;   // ghost-attack: leapfrog reach for phantom/ghost_step
       const pact = hasPact(state, fk, def.owner);
       // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
       const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY;

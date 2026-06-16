@@ -10,7 +10,7 @@ import {
   RES_CAP, FACTIONS, TYRANT_KEY, TRAITS,
   factionDef, adjacent, mkFaction,
   tilesOf, countNodes, reinforceCost,
-  hasPact, pairKey,
+  hasPact, pairKey, moveReachable,
 } from '../src/state.js';
 import { makeRng, roll2d6, nextInt } from '../src/rng.js';
 import { chooseAction } from '../src/ai.js';
@@ -1075,5 +1075,54 @@ describe('Tyrant takes no rally bonus', () => {
     assert.equal(rallyOf(a), 0, '1st strike on Tyrant: 0');
     assert.equal(rallyOf(b), 0, '2nd strike on Tyrant: still 0 (no rally)');
     assert.equal(rallyOf(c), 0, '3rd strike on Tyrant: still 0 (no rally)');
+  });
+});
+
+// ============================================================
+// GHOST ATTACK (leapfrog) + Tyrant has no traits
+// ============================================================
+describe('Ghost-attack (leapfrog) & traitless Tyrant', () => {
+  it('the Tyrant is created with no trait, even if one is passed', () => {
+    const f = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    assert.equal(f.trait, null, 'Tyrant trait forced to null');
+    const g = mkFaction('THE GHOST', 'ghost', true, 'fortify');
+    assert.equal(g.trait, 'fortify', 'normal factions keep their trait');
+  });
+
+
+});
+
+describe('Ghost-attack reach (leapfrog capability)', () => {
+  function reachState(trait) {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    if (trait) state.factions.commune.trait = trait;
+    state.currentTurnIdx = state.turnOrder.indexOf('commune');
+    state.tiles['tile_0_0'].owner = 'commune';   state.tiles['tile_0_0'].troops = 30;
+    state.tiles['tile_0_1'].owner = 'grid';      state.tiles['tile_0_1'].troops = 5;  // blocker between
+    state.tiles['tile_0_2'].owner = 'syndicate'; state.tiles['tile_0_2'].troops = 1;  // 2-away target
+    return state;
+  }
+
+  it('moveReachable lets a ghost_step faction reach a 2-away ENEMY tile (leapfrog)', () => {
+    const s = reachState('ghost_step');
+    assert.ok(!adjacent(s.tiles['tile_0_0'], s.tiles['tile_0_2']), 'target is not adjacent');
+    assert.ok(moveReachable(s, 'commune', s.tiles['tile_0_0'], s.tiles['tile_0_2']),
+      'ghost_step reaches the 2-away enemy through the blocker');
+  });
+
+  it('a normal faction cannot reach a 2-away tile', () => {
+    const s = reachState(null);   // commune default trait (scavenger), no ghost_step
+    assert.ok(!moveReachable(s, 'commune', s.tiles['tile_0_0'], s.tiles['tile_0_2']),
+      'no leapfrog reach without phantom/ghost_step');
+  });
+
+  it('the engine resolves a leapfrog ATTACK on a non-adjacent enemy', () => {
+    const s = reachState('ghost_step');
+    const before = s.tiles['tile_0_2'].troops;
+    const { state: next } = reduce(s, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_2', attackerFk: 'commune' });
+    const t = next.tiles['tile_0_2'];
+    const hit = (t.owner === 'commune') || (t.troops < before);   // captured (1 troop → flips) or damaged
+    assert.ok(hit, 'the 2-away enemy was struck by the leapfrog attack');
   });
 });
