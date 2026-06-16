@@ -60,10 +60,13 @@ function initGame(seed, opts = {}) {
   };
 
   if (opts.tyrant) {
+    // The Tyrant carries NO trait. We still burn one RNG draw here so the random stream stays
+    // byte-aligned with prior runs (keeps controlled before/after gates clean — only the trait
+    // changes, not the dice that follow).
     const r = nextInt(rng, TRAITS.length);
     rng = r.rng;
     state.rng = rng;
-    factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, TRAITS[r.value].id);
+    factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, null);
     turnOrder.push(TYRANT_KEY);
   }
 

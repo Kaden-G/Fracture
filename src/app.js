@@ -18,6 +18,10 @@ window.addEventListener('unhandledrejection', function(e) {
 // GAME DATA
 // ============================================================
 const RES_CAP = 14;  // resource stockpile ceiling
+// Max troops on a single tile. Past the force cap (+2 at 8 troops) extra troops only buy
+// attrition-resistance, which trivializes sabotage and other chip effects — so cap the
+// stack. 12 leaves a 4-troop buffer above the force cap. (Tunable: 10 = tighter, 15 = looser.)
+const TROOP_CAP = 12;
 const GRID    = 7;   // board is GRID x GRID tiles
 
 const FACTIONS = {
@@ -43,7 +47,7 @@ const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
   { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
-  { id:'ghost_step', name:'GHOST STEP',   desc:'Move 2 tiles (3 on Ghost) — slip through anything'},
+  { id:'ghost_step', name:'GHOST STEP',   desc:'Move OR attack 2 tiles (3 on Ghost) — leapfrog through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 3d6 attack, keep best 2'        },
   { id:'fortify',    name:'FORTIFY',      desc:'Fresh tiles: +2 def margin. After casualty: +1'},
 ];
@@ -673,7 +677,7 @@ function startGame() {
   const turnOrder = order.slice();
   // The Tyrant joins as a permanent AI, taking its turn last.
   if (G.setup.tyrant) {
-    factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, randTrait(TYRANT_KEY));
+    factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null);
     turnOrder.push(TYRANT_KEY);
   }
 
@@ -714,7 +718,9 @@ function startGame() {
 function mkFaction(name, key, isAI, trait) {
   const def = factionDef(key);
   return { name, icon: def.icon, color: def.color,
-           ability: def.ability, isAI, trait, resources: 4, eliminated: false,
+           // The Tyrant never carries a passive trait (no last stand, ghost step, fortify, etc.) —
+           // it's the shared enemy and should be a clean, predictable threat.
+           ability: def.ability, isAI, trait: key === TYRANT_KEY ? null : trait, resources: 4, eliminated: false,
            isTyrant: key === TYRANT_KEY,
            corruption: 0, boon: null };
 }
@@ -804,7 +810,15 @@ function shuffle(a) {
 // ============================================================
 // RENDER
 // ============================================================
+// Clamp every stack to the troop cap. Centralized here so the ~25 troop-add sites
+// don't each need a clamp — render is the single chokepoint every state change passes
+// through before the player sees it.
+function capTroops() {
+  Object.values(G.tiles).forEach(t => { if (t.troops > TROOP_CAP) t.troops = TROOP_CAP; });
+}
+
 function renderMap() {
+  capTroops();
   const grid = document.getElementById('hex-grid');
   grid.innerHTML = '';
   // Flat-top hexes tile in COLUMNS; odd columns are shifted down half a tile.
@@ -919,6 +933,7 @@ function flashHex(id) {
 }
 
 function renderSidebar() {
+  capTroops();
   // Factions
   document.getElementById('faction-status').innerHTML =
     Object.entries(G.factions).map(([k,f]) => {
@@ -1903,7 +1918,7 @@ function setAction(action) {
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
     airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (2+ troops), then ANY other tile you own — move up to 3 troops.`,
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
-    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −1 troop. First sabotage each turn vs a 2+ stack siphons +1 to your weakest frontline tile.',
+    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −2 troops. First sabotage each turn vs a 3+ stack siphons +2 to your weakest frontline tile.',
     bribe:     'BRIBE (1 res): Click an adjacent enemy tile — a troop defects to you (−1 them, +1 you).',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
@@ -2130,12 +2145,16 @@ function handleTileClick(id) {
         selectedTile = id;
         renderMap();
         document.getElementById('hex-'+id)?.classList.add('selected');
-        setActionLog(`Attacking FROM ${tile.name}. Click an adjacent ENEMY tile.`);
+        const reach = moveRange(G.playerFaction) > 1 ? `an ENEMY within ${moveRange(G.playerFaction)} tiles (leapfrog through anything)` : 'an adjacent ENEMY tile';
+        setActionLog(`Attacking FROM ${tile.name}. Click ${reach}.`);
       } else { setActionLog('Select YOUR tile with 2+ troops to attack from.'); }
       return;
     }
     const src = G.tiles[selectedTile];
-    if (!adjacent(src,tile))          { setActionLog('Not adjacent — pick an enemy next to your assault tile.'); return; }
+    // GHOST ATTACK: phantom / ghost_step factions can strike any enemy within their move range,
+    // leapfrogging through intervening tiles — not just adjacent ones. moveReachable is
+    // faction-aware (it's plain adjacency for everyone else) and ignores the target's owner.
+    if (!moveReachable(G.playerFaction, src, tile)) { setActionLog(moveRange(G.playerFaction) > 1 ? 'Out of reach — pick an enemy within your leapfrog range.' : 'Not adjacent — pick an enemy next to your assault tile.'); return; }
     if (!tile.owner || tile.owner===G.playerFaction) { setActionLog('Pick an ENEMY tile.'); return; }
     if (src.troops < 2)               { setActionLog('Need 2+ troops to attack.'); return; }
     if ((G.renouncedThisTurn||{})[tile.owner]) { setActionLog("Can't strike a faction you renounced this turn — wait until next turn."); return; }
@@ -2162,7 +2181,7 @@ function handleTileClick(id) {
         // Hard cap: 3 captures per assault chain.
         if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
           selectedTile = srcId;   // keep the assault source selected for the next strike
-          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Each repeat strike on the SAME faction rallies it +2. Click another adjacent enemy — or pick another action to halt.`);
+          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Each repeat strike on the SAME faction rallies it +2. Click another enemy in reach — or pick another action to halt.`);
           renderMap();
           document.getElementById('hex-'+srcId)?.classList.add('selected');
           return;
@@ -2234,22 +2253,22 @@ function handleTileClick(id) {
       f.resources -= 1;
       const sabPrev = tile.owner;
       recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
-      const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
-      const sabDrop = 1;  // Siphon: −1 enemy troop
+      const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
+      const sabDrop = 2;  // −2 enemy troops (distinct from Syndicate's −1 bribe)
       if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
       if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
         killFaction(sabPrev);
       }
-      // Siphon: +1 to the Ghost's weakest frontline tile — only if the target survives (≥2 before)
-      // and only once per turn.
+      // Siphon: the knocked-off troops defect — +2 to the Ghost's weakest frontline tile, but
+      // ONLY if the target survived the −2 (had 3+) and ONLY once per turn (cap +2/turn, never +6).
       let sabGain = null;
-      if (sabPreTroops >= 2 && !G.siphonedThisTurn) {
+      if (sabPreTroops > sabDrop && !G.siphonedThisTurn) {
         sabGain = ghostSiphonTarget(G.playerFaction);
-        if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
+        if (sabGain) { sabGain.troops += 2; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
       }
       G.actionsUsed++;
       const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
-      const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
+      const gainMsg = sabGain ? ` — siphoned +2 to ${sabGain.name}` : '';
       addLog(`👁️ ${f.name} sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
       setActionLog(`Sabotage hit!${gainMsg}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
       refreshHex(id); flashHex(id); renderSidebar(); checkWin();
@@ -2393,8 +2412,10 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 2. Rally: a victim only digs in if THIS attacker has already hit it this turn (+2 per
   //    prior strike on the same faction). Attacking different rivals once each costs nothing —
   //    the brake is on grinding the SAME enemy (e.g. a press-the-assault chain), not on spreading.
+  //    EXCEPTION: the Tyrant never rallies — it's the shared enemy, so anyone can hammer it
+  //    repeatedly without the escalating-defense penalty.
   const rallyKey = attackerFk + '|' + tgt.owner;
-  const overextend = (turnStrikes[rallyKey] || 0) * 2;
+  const overextend = tgt.owner === TYRANT_KEY ? 0 : (turnStrikes[rallyKey] || 0) * 2;
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
@@ -2833,7 +2854,7 @@ function runAITurn(fk) {
     let best=null;
     for (const atk of myTiles().filter(t=>t.troops>=2)) {
       for (const def of enemyTiles()) {
-        if (!adjacent(atk,def)) continue;
+        if (!moveReachable(fk, atk, def)) continue;   // ghost-attack: leapfrog reach for phantom/ghost_step
         // Honor pacts — unless we can seize a NODE with a commanding edge (betrayal).
         // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
         const pact = hasPact(fk, def.owner);
@@ -2841,7 +2862,7 @@ function runAITurn(fk) {
         if (pact && !canBetray) continue;
         // Prefer: nodes, then weaker targets, then where we have a troop edge
         const atkPower = Math.min(2, Math.floor(atk.troops/4));
-        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (turnStrikes[fk+'|'+def.owner]||0)*2;  // rally: per-victim
+        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (def.owner===TYRANT_KEY ? 0 : (turnStrikes[fk+'|'+def.owner]||0)*2);  // rally: per-victim, none vs Tyrant
         const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
         const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
         if (!best || score > best.score) best = {atk, def, score, betray:pact};
@@ -2981,16 +3002,16 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       const prev = target.owner;
       f.resources -= 1;
       recordTyrantStrike(fk, prev);   // Step 3: AI sabotaging the blob joins the coalition
-      const aiPreTroops = target.troops;  // before the hit (D)
-      const aiSabDrop = 1;  // Siphon: −1 enemy troop
+      const aiPreTroops = target.troops;  // before the hit
+      const aiSabDrop = 2;  // −2 enemy troops
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
       let aiGain = null;
-      if (aiPreTroops >= 2 && !G.siphonedThisTurn) {
+      if (aiPreTroops > aiSabDrop && !G.siphonedThisTurn) {
         aiGain = ghostSiphonTarget(fk);
-        if (aiGain) { aiGain.troops += 1; refreshHex(aiGain.id); G.siphonedThisTurn = true; }
+        if (aiGain) { aiGain.troops += 2; refreshHex(aiGain.id); G.siphonedThisTurn = true; }
       }
-      addLog(`👁️ ${f.name} sabotaged ${target.name}${aiGain ? ` (siphoned +1 to ${aiGain.name})` : ''}`);
+      addLog(`👁️ ${f.name} sabotaged ${target.name}${aiGain ? ` (siphoned +2 to ${aiGain.name})` : ''}`);
       refreshHex(target.id); flashHex(target.id);
       return true;
     }
@@ -3923,7 +3944,7 @@ function buildOnlineGame(seats, tyrant) {
       : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k));
   });
   const turnOrder = order.slice();
-  if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, randTrait(TYRANT_KEY)); turnOrder.push(TYRANT_KEY); }
+  if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null); turnOrder.push(TYRANT_KEY); }
   G = {
     round: 1, signalJam: false, currentTurnIdx: 0, actionsUsed: 0,
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),

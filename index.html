@@ -254,6 +254,7 @@
     <p style="margin-top:6px"><strong>Modifiers stack on the roll:</strong></p>
     <ul>
       <li><strong>🪖 Force:</strong> +1 per 4 troops on the stack (both sides), <strong>capped at +2</strong>. Big armies are resilient, not auto-win.</li>
+      <li><strong>🔟 Stack cap:</strong> a tile holds at most <strong>12 troops</strong>. Past the Force cap, extra troops only soak attrition — capping the stack keeps Sabotage and other chip effects meaningful.</li>
       <li><strong>🛡️ Dug in:</strong> +1 per round a defender holds a tile with 2+ troops, max +3 (or +2 on Node tiles). Taking any casualty resets it.</li>
       <li><strong>⚔️ Press the Assault:</strong> after a winning attack you may keep striking for free — but each strike, defenders <strong>rally +2</strong>. Max <strong>3 captures</strong> per chain. A repel, an emptied stack, or picking another action ends the assault.</li>
       <li><strong>⚖️ Modifier Clamp:</strong> net modifier swing is capped at ±4, so no combination of perks fully removes chance.</li>
@@ -274,7 +275,7 @@
       <li><strong>⚙️ GRID — Industrial:</strong> Reinforce costs 1 less · OVERCLOCK (1 res) surges +3 troops onto a tile</li>
       <li><strong>💰 SYNDICATE — Cartel:</strong> +1 resource every round · BRIBE (1 res) turns a troop on an adjacent enemy tile — it defects to your staging tile (−1 them, +1 you); captures the tile if it empties</li>
       <li><strong>🌿 COMMUNE — Grassroots:</strong> +1 troop grows on a frontline tile each round · RALLY (1 res) buffs a tile + adjacent friendlies</li>
-      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) hits any enemy tile for −1. The <em>first</em> sabotage each turn against a 2+ stack <em>siphons</em> that troop to your weakest frontline tile (+1)</li>
+      <li><strong>👁️ GHOST — Phantom:</strong> Your attacks ignore enemy entrenchment · SABOTAGE (1 res) hits any enemy tile for −2. The <em>first</em> sabotage each turn against a 3+ stack <em>siphons</em> those troops to your weakest frontline tile (+2, capped)</li>
     </ul>
     <h3>🔌 NODE BONUSES</h3>
     <p>Each Core Node grants its controller a passive — so <em>which</em> Nodes you hold matters, not just how many:</p>
@@ -305,7 +306,7 @@
       <li><strong>LAST STAND:</strong> Tiles with 1–2 troops get +3 defense — but deny Scavenger loot to attackers who break through</li>
       <li><strong>SCAVENGER:</strong> Earn +1 resource each time you capture an enemy tile</li>
       <li><strong>HOARDER:</strong> +1 bonus resource per Node</li>
-      <li><strong>GHOST STEP:</strong> Move a troop up to 2 tiles, slipping <em>through</em> any tile (even enemy-held) to reach an empty/your tile</li>
+      <li><strong>GHOST STEP:</strong> Move <em>or attack</em> up to 2 tiles away, leapfrogging <em>through</em> any tile (even enemy-held). Move lands on an empty/your tile; a ghost-attack strikes an enemy 2 tiles off as if adjacent. (The Ghost faction's Phantom ability grants the same 2-tile reach.)</li>
       <li><strong>TACTICIAN:</strong> Roll 3d6 attack, keep best 2 (advantage on the bell curve)</li>
       <li><strong>FORTIFY:</strong> Fresh tiles: enemies need +2 margin. After a casualty: decays to +1</li>
     </ul>
@@ -360,6 +361,6 @@
   </div>
 </div>
 
-<script type="module" src="src/app.js?v=12"></script>
+<script type="module" src="src/app.js?v=15"></script>
 </body>
 </html>

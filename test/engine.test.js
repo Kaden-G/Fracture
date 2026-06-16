@@ -7,10 +7,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { reduce, buildMap, checkWinCondition, resolveCombat, EVENT_HANDLERS, tyrantAtPactCap } from '../src/engine.js';
 import {
-  RES_CAP, FACTIONS, TYRANT_KEY, TRAITS,
+  RES_CAP, TROOP_CAP, FACTIONS, TYRANT_KEY, TRAITS,
   factionDef, adjacent, mkFaction,
   tilesOf, countNodes, reinforceCost,
-  hasPact, pairKey,
+  hasPact, pairKey, moveReachable,
 } from '../src/state.js';
 import { makeRng, roll2d6, nextInt } from '../src/rng.js';
 import { chooseAction } from '../src/ai.js';
@@ -1010,5 +1010,143 @@ describe('Tyrant graveyard node', () => {
     assert.ok(!next.factions[TYRANT_KEY].eliminated, 'harbored Tyrant is not eliminated');
     assert.ok(!next.tiles['tile_0_1'].isNode || next.tiles['tile_0_1'].nodeId !== 'node_graveyard',
       'no graveyard spawns while Tyrant is harbored / still alive');
+  });
+});
+
+// ============================================================
+// SABOTAGE — −2 enemy, +2 siphon (capped once/turn)
+// ============================================================
+describe('Sabotage (-2 / +2 siphon)', () => {
+  function ghostState() {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('ghost');
+    state.factions.ghost.resources = 9;
+    state.tiles['tile_0_0'].owner = 'ghost';   state.tiles['tile_0_0'].troops = 1;  // frontline (siphon target)
+    state.tiles['tile_0_1'].owner = 'syndicate'; state.tiles['tile_0_1'].troops = 5; // adjacent enemy → frontline qualifies
+    state.siphonedThisTurn = false;
+    return state;
+  }
+
+  it('removes 2 enemy troops and siphons +2 to the weakest frontline tile (first per turn)', () => {
+    const state = ghostState();
+    const { state: next } = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    assert.equal(next.tiles['tile_0_1'].troops, 3, 'enemy loses 2 (5 → 3)');
+    assert.equal(next.tiles['tile_0_0'].troops, 3, 'ghost frontline gains 2 (1 → 3)');
+    assert.equal(next.siphonedThisTurn, true, 'siphon flag set');
+  });
+
+  it('the second sabotage in a turn is −2 only, no siphon (cap +2/turn, not +6)', () => {
+    let state = ghostState();
+    state.tiles['tile_0_2'].owner = 'commune'; state.tiles['tile_0_2'].troops = 5;  // a second enemy
+    const a = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    const before = a.state.tiles['tile_0_0'].troops;           // ghost frontline after 1st siphon
+    const b = reduce(a.state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_2' });
+    assert.equal(b.state.tiles['tile_0_2'].troops, 3, 'second target loses 2');
+    assert.equal(b.state.tiles['tile_0_0'].troops, before, 'no second siphon — gain unchanged');
+  });
+
+  it('no siphon when the target does NOT survive the −2 (≤2 troops)', () => {
+    const state = ghostState();
+    state.tiles['tile_0_1'].troops = 2;   // exactly 2 → emptied by −2, no survivor to siphon
+    const { state: next } = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    assert.equal(next.tiles['tile_0_1'].owner, null, 'target wiped out');
+    assert.equal(next.tiles['tile_0_0'].troops, 1, 'no siphon (target did not survive)');
+  });
+});
+
+// ============================================================
+// NO RALLY vs THE TYRANT — grind the shared enemy without penalty
+// ============================================================
+describe('Tyrant takes no rally bonus', () => {
+  it('repeated strikes on the Tyrant never raise its defense (overextend stays 0)', () => {
+    const state = makeTestState({ seed: 5 });
+    state.tyrantOn = true;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('grid');
+    state.tiles['tile_0_0'].owner = 'grid';       state.tiles['tile_0_0'].troops = 40;
+    state.tiles['tile_0_1'].owner = TYRANT_KEY;    state.tiles['tile_0_1'].troops = 40;  // big stack, won't fall
+    const rallyOf = (r) => r.effects.find(e => e.kind === 'combat').def.overextend;
+    const a = reduce(state,   { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    const b = reduce(a.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    const c = reduce(b.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    assert.equal(rallyOf(a), 0, '1st strike on Tyrant: 0');
+    assert.equal(rallyOf(b), 0, '2nd strike on Tyrant: still 0 (no rally)');
+    assert.equal(rallyOf(c), 0, '3rd strike on Tyrant: still 0 (no rally)');
+  });
+});
+
+// ============================================================
+// GHOST ATTACK (leapfrog) + Tyrant has no traits
+// ============================================================
+describe('Ghost-attack (leapfrog) & traitless Tyrant', () => {
+  it('the Tyrant is created with no trait, even if one is passed', () => {
+    const f = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    assert.equal(f.trait, null, 'Tyrant trait forced to null');
+    const g = mkFaction('THE GHOST', 'ghost', true, 'fortify');
+    assert.equal(g.trait, 'fortify', 'normal factions keep their trait');
+  });
+
+
+});
+
+describe('Ghost-attack reach (leapfrog capability)', () => {
+  function reachState(trait) {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    if (trait) state.factions.commune.trait = trait;
+    state.currentTurnIdx = state.turnOrder.indexOf('commune');
+    state.tiles['tile_0_0'].owner = 'commune';   state.tiles['tile_0_0'].troops = 30;
+    state.tiles['tile_0_1'].owner = 'grid';      state.tiles['tile_0_1'].troops = 5;  // blocker between
+    state.tiles['tile_0_2'].owner = 'syndicate'; state.tiles['tile_0_2'].troops = 1;  // 2-away target
+    return state;
+  }
+
+  it('moveReachable lets a ghost_step faction reach a 2-away ENEMY tile (leapfrog)', () => {
+    const s = reachState('ghost_step');
+    assert.ok(!adjacent(s.tiles['tile_0_0'], s.tiles['tile_0_2']), 'target is not adjacent');
+    assert.ok(moveReachable(s, 'commune', s.tiles['tile_0_0'], s.tiles['tile_0_2']),
+      'ghost_step reaches the 2-away enemy through the blocker');
+  });
+
+  it('a normal faction cannot reach a 2-away tile', () => {
+    const s = reachState(null);   // commune default trait (scavenger), no ghost_step
+    assert.ok(!moveReachable(s, 'commune', s.tiles['tile_0_0'], s.tiles['tile_0_2']),
+      'no leapfrog reach without phantom/ghost_step');
+  });
+
+  it('the engine resolves a leapfrog ATTACK on a non-adjacent enemy', () => {
+    const s = reachState('ghost_step');
+    const before = s.tiles['tile_0_2'].troops;
+    const { state: next } = reduce(s, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_2', attackerFk: 'commune' });
+    const t = next.tiles['tile_0_2'];
+    const hit = (t.owner === 'commune') || (t.troops < before);   // captured (1 troop → flips) or damaged
+    assert.ok(hit, 'the 2-away enemy was struck by the leapfrog attack');
+  });
+});
+
+// ============================================================
+// TROOP CAP — stacks clamp so chip effects keep biting
+// ============================================================
+describe('Troop cap', () => {
+  it('clamps any stack over TROOP_CAP after an action', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 10;
+    state.tiles['tile_0_0'].owner = 'grid';
+    state.tiles['tile_0_0'].troops = TROOP_CAP + 5;   // over the cap
+    // any action runs the end-of-reduce clamp
+    const { state: next } = reduce(state, { type: 'REINFORCE', tile: 'tile_0_0' });
+    assert.equal(next.tiles['tile_0_0'].troops, TROOP_CAP, 'over-cap stack clamped down to TROOP_CAP');
+  });
+
+  it('leaves stacks at or below the cap untouched', () => {
+    const state = makeTestState();
+    state.factions.grid.resources = 10;
+    state.tiles['tile_0_0'].owner = 'grid';
+    state.tiles['tile_0_0'].troops = 2;
+    const { state: next } = reduce(state, { type: 'REINFORCE', tile: 'tile_0_0' });
+    assert.equal(next.tiles['tile_0_0'].troops, 4, 'under-cap reinforce unaffected by clamp');
   });
 });
