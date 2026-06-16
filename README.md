@@ -1,7 +1,7 @@
 # FRACTURE
 
 A browser strategy game for 1–4 players (plus AI). Four factions fight for the broken
-grid of Nexus — hold **3 of 5 Core Nodes for 2 consecutive rounds**, or eliminate every
+grid of Nexus — hold **any 3 Core Nodes for 2 consecutive rounds**, or eliminate every
 rival, to win. Dominate. Negotiate. Betray. Survive.
 
 **Play:** https://kaden-g.github.io/Fracture/
@@ -13,9 +13,12 @@ rival, to win. Dominate. Negotiate. Betray. Survive.
   their controller a passive bonus on top of income.
 - **Turns:** every round opens with an event card, then each faction takes 3 actions —
   Move, Attack, Reinforce, Airlift, Entrench, plus a faction ability. Pacts are free.
-- **Combat:** 2d6 vs 2d6 with modifiers for force, entrenchment, grudges, node bonuses,
-  and an anti-snowball coalition. Winning attacks can "press the assault" — keep striking
-  for free while defenders rally harder each strike (max 3 captures per chain).
+- **Combat:** 2d6 vs 2d6 with modifiers for force (+1 per 4 troops, capped at +2),
+  entrenchment, grudges, node bonuses, and an anti-snowball coalition. Stacks cap at
+  **12 troops**, so chip damage always bites. Winning attacks can "press the assault" —
+  keep striking for free (max 3 captures per chain); rally is **per-encounter**: grinding
+  the *same defending tile from the same attacker* digs the defender in +2 each repeat,
+  but switching attacker or target fights fresh.
 - **Events:** regional chaos (Power Failure, Uprising, Earthquake, Riot, Siege, Muster,
   Gold Strike), global swings (Market Crash, Revolution, Total War, Insurgency), and
   choice cards (Warlord's Tribute, Mercenary Contract) where every faction — human or
@@ -32,17 +35,22 @@ rival, to win. Dominate. Negotiate. Betray. Survive.
 | ⚙️ THE GRID | Reinforce costs 1 less | Overclock — +3 troops on a tile (1 res) |
 | 💰 SYNDICATE | +1 resource income each round | Bribe — steal a troop from an adjacent enemy (1 res) |
 | 🌿 COMMUNE | +1 troop grows every other round | Rally — buff a tile and adjacent friendlies (1 res) |
-| 👁️ THE GHOST | Attacks ignore entrenchment; moves 2 tiles through enemies | Sabotage — hit any enemy tile; first hit per turn siphons the troop to you (1 res) |
+| 👁️ THE GHOST | Attacks ignore entrenchment; moves **or attacks** 2 tiles, leapfrogging through anything | Sabotage — **−2** to any enemy tile; the first hit per turn siphons up to **+2** to your weakest frontline (1 res) |
 
 ## 🦠 The Tyrant (optional fifth player)
 
 An always-AI menace that festers at the center of the board and **spreads like a virus**
-every turn. It offers each faction a **secret pact** with a boon (🩸 Tithe: +1 troop a
-round, or 👹 Sic: it attacks your enemies) — but allied factions pay tribute, get
-skimmed, and accrue hidden **corruption**. Win while corrupt and you must first survive
-the **Reckoning**, a best-of-3 duel against the Tyrant; hit the corruption cap and you
-become its thrall. Cornered, it can be harbored back to life by an ally; bound factions
-can renounce it at the brink of victory — at a price.
+toward its enemies every turn. Each round it offers a bound faction a fresh **bargain**
+(🩸 Tithe: +1 troop a round, or 👹 Sic: it attacks your enemies) — but allied factions pay
+tribute, get skimmed, and accrue hidden **corruption**. Win while corrupt and you must
+first survive the **Reckoning**, a best-of-3 duel against the Tyrant; hit the corruption
+cap and you become its thrall. Cornered, it can be harbored back to life by an ally; bound
+factions can renounce it at the brink of victory — at a price.
+
+It is also the **shared enemy**, so it plays by harsher rules: it carries **no trait** and
+**never rallies**, so the coalition can grind it down without its defense escalating. Slay
+it and its former seat becomes a **☠ Graveyard** node — no passive, just a bounty for
+whoever lands the kill.
 
 The Tyrant also wins by **diplomacy**: holding a pact with every surviving rival.
 **In single-human games it can hold at most 3 pacts at once**, so it can never win by
