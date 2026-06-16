@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRACTURE</title>
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 <!-- Firebase SDK (compat) for online multiplayer — loaded before module scripts -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -192,6 +192,36 @@
   </div>
 </div>
 
+<!-- PER-ROUND TYRANT BARGAIN — bound players pick a boon (or refuse / renounce) each round -->
+<div id="boon-overlay">
+  <div class="tyrant-card">
+    <div class="tyrant-card-type">A WHISPER IN THE DARK</div>
+    <div class="tyrant-card-title">🦠 THE TYRANT'S BARGAIN</div>
+    <div class="tyrant-card-body" id="boon-body"></div>
+    <div class="tyrant-boon-prompt">What does it owe you THIS round?</div>
+    <div class="tyrant-boons">
+      <button class="tyrant-boon-btn" onclick="pickRoundBoon('tithe')">
+        <span class="boon-icon">🩸</span>
+        <span class="boon-name">TITHE</span>
+        <span class="boon-desc">+1 troop on a frontline tile NOW</span>
+      </button>
+      <button class="tyrant-boon-btn" onclick="pickRoundBoon('sic')">
+        <span class="boon-icon">👹</span>
+        <span class="boon-name">SIC THE BLOB</span>
+        <span class="boon-desc">The Tyrant strikes your enemy this turn</span>
+      </button>
+      <button class="tyrant-boon-btn" onclick="pickRoundBoon('refuse')">
+        <span class="boon-icon">✋</span>
+        <span class="boon-name">REFUSE</span>
+        <span class="boon-desc">Take nothing this round (pact holds; corruption still ticks)</span>
+      </button>
+    </div>
+    <div class="tyrant-actions">
+      <button class="tyrant-refuse-btn" onclick="pickRoundBoon('renounce')">🗡️ RENOUNCE THE PACT (kill the Tyrant)</button>
+    </div>
+  </div>
+</div>
+
 <!-- TYRANT GENERIC CONFIRM (harbor / renounce) -->
 <div id="tyrant-confirm-overlay">
   <div class="tyrant-card">
@@ -330,6 +360,6 @@
   </div>
 </div>
 
-<script type="module" src="src/app.js?v=11"></script>
+<script type="module" src="src/app.js?v=12"></script>
 </body>
 </html>
