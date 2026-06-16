@@ -375,7 +375,9 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   // --- Modifiers ---
   const attForce = Math.min(2, Math.floor(src.troops / 4));
   const defForce = Math.min(2, Math.floor(tgt.troops / 4));
-  const overextend = priorStrikes * 2;   // rally: prior strikes by THIS attacker on THIS victim this turn
+  // Rally: +2 per prior strike by THIS attacker on THIS victim this turn — but the Tyrant
+  // never rallies (it's the shared enemy; the coalition can grind it down without the brake).
+  const overextend = tgt.owner === TYRANT_KEY ? 0 : priorStrikes * 2;
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);
   if (af.ability === 'sabotage') entrench = 0;
   const lastStand = (df?.trait === 'last_stand' && tgt.troops <= 2) ? 3 : 0;
@@ -807,22 +809,22 @@ export function reduce(inputState, action) {
           f.resources -= 1;
           const sabPrev = tile.owner;
           recordTyrantStrike(state, fk, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
-          const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
-          const drop = 1;  // Siphon: −1 enemy troop
+          const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
+          const drop = 2;  // −2 enemy troops (distinct from Syndicate's −1 bribe)
           if (tile.troops > drop) { tile.troops -= drop; }
           else { tile.owner = null; tile.troops = 0; }
           if (tile.owner === null && tilesOf(state, sabPrev).length === 0) {
             killFaction(state, sabPrev, log);
           }
-          // Siphon: +1 to saboteur's weakest frontline tile — only if target survives (≥2 before)
-          // and only once per turn.
-          if (sabPreTroops >= 2 && !state.siphonedThisTurn) {
+          // Siphon: +2 to saboteur's weakest frontline tile — only if the target survived the −2
+          // (had 3+) and only once per turn (cap +2/turn, never +6).
+          if (sabPreTroops > drop && !state.siphonedThisTurn) {
             const mine = tilesOf(state, fk);
             if (mine.length) {
               const frontline = mine.filter(mt => Object.values(state.tiles).some(t => t.owner && t.owner !== fk && adjacent(mt, t)));
               const pool = frontline.length ? frontline : mine;
               const gain = pool.reduce((a, b) => a.troops <= b.troops ? a : b);
-              gain.troops += 1;
+              gain.troops += 2;
               state.siphonedThisTurn = true;
               effects.push({kind:'refresh', tiles:[gain.id]});
             }

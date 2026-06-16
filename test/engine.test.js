@@ -1012,3 +1012,68 @@ describe('Tyrant graveyard node', () => {
       'no graveyard spawns while Tyrant is harbored / still alive');
   });
 });
+
+// ============================================================
+// SABOTAGE — −2 enemy, +2 siphon (capped once/turn)
+// ============================================================
+describe('Sabotage (-2 / +2 siphon)', () => {
+  function ghostState() {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('ghost');
+    state.factions.ghost.resources = 9;
+    state.tiles['tile_0_0'].owner = 'ghost';   state.tiles['tile_0_0'].troops = 1;  // frontline (siphon target)
+    state.tiles['tile_0_1'].owner = 'syndicate'; state.tiles['tile_0_1'].troops = 5; // adjacent enemy → frontline qualifies
+    state.siphonedThisTurn = false;
+    return state;
+  }
+
+  it('removes 2 enemy troops and siphons +2 to the weakest frontline tile (first per turn)', () => {
+    const state = ghostState();
+    const { state: next } = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    assert.equal(next.tiles['tile_0_1'].troops, 3, 'enemy loses 2 (5 → 3)');
+    assert.equal(next.tiles['tile_0_0'].troops, 3, 'ghost frontline gains 2 (1 → 3)');
+    assert.equal(next.siphonedThisTurn, true, 'siphon flag set');
+  });
+
+  it('the second sabotage in a turn is −2 only, no siphon (cap +2/turn, not +6)', () => {
+    let state = ghostState();
+    state.tiles['tile_0_2'].owner = 'commune'; state.tiles['tile_0_2'].troops = 5;  // a second enemy
+    const a = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    const before = a.state.tiles['tile_0_0'].troops;           // ghost frontline after 1st siphon
+    const b = reduce(a.state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_2' });
+    assert.equal(b.state.tiles['tile_0_2'].troops, 3, 'second target loses 2');
+    assert.equal(b.state.tiles['tile_0_0'].troops, before, 'no second siphon — gain unchanged');
+  });
+
+  it('no siphon when the target does NOT survive the −2 (≤2 troops)', () => {
+    const state = ghostState();
+    state.tiles['tile_0_1'].troops = 2;   // exactly 2 → emptied by −2, no survivor to siphon
+    const { state: next } = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    assert.equal(next.tiles['tile_0_1'].owner, null, 'target wiped out');
+    assert.equal(next.tiles['tile_0_0'].troops, 1, 'no siphon (target did not survive)');
+  });
+});
+
+// ============================================================
+// NO RALLY vs THE TYRANT — grind the shared enemy without penalty
+// ============================================================
+describe('Tyrant takes no rally bonus', () => {
+  it('repeated strikes on the Tyrant never raise its defense (overextend stays 0)', () => {
+    const state = makeTestState({ seed: 5 });
+    state.tyrantOn = true;
+    state.factions[TYRANT_KEY] = mkFaction('THE TYRANT', TYRANT_KEY, true, 'fortify');
+    state.turnOrder = [...state.turnOrder, TYRANT_KEY];
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; });
+    state.currentTurnIdx = state.turnOrder.indexOf('grid');
+    state.tiles['tile_0_0'].owner = 'grid';       state.tiles['tile_0_0'].troops = 40;
+    state.tiles['tile_0_1'].owner = TYRANT_KEY;    state.tiles['tile_0_1'].troops = 40;  // big stack, won't fall
+    const rallyOf = (r) => r.effects.find(e => e.kind === 'combat').def.overextend;
+    const a = reduce(state,   { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    const b = reduce(a.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    const c = reduce(b.state, { type: 'ATTACK', src: 'tile_0_0', tgt: 'tile_0_1' });
+    assert.equal(rallyOf(a), 0, '1st strike on Tyrant: 0');
+    assert.equal(rallyOf(b), 0, '2nd strike on Tyrant: still 0 (no rally)');
+    assert.equal(rallyOf(c), 0, '3rd strike on Tyrant: still 0 (no rally)');
+  });
+});

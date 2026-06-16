@@ -1903,7 +1903,7 @@ function setAction(action) {
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
     airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (2+ troops), then ANY other tile you own — move up to 3 troops.`,
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
-    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −1 troop. First sabotage each turn vs a 2+ stack siphons +1 to your weakest frontline tile.',
+    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −2 troops. First sabotage each turn vs a 3+ stack siphons +2 to your weakest frontline tile.',
     bribe:     'BRIBE (1 res): Click an adjacent enemy tile — a troop defects to you (−1 them, +1 you).',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
@@ -2234,22 +2234,22 @@ function handleTileClick(id) {
       f.resources -= 1;
       const sabPrev = tile.owner;
       recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
-      const sabPreTroops = tile.troops;  // before the hit (D: siphon only from a surviving tile)
-      const sabDrop = 1;  // Siphon: −1 enemy troop
+      const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
+      const sabDrop = 2;  // −2 enemy troops (distinct from Syndicate's −1 bribe)
       if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
       if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
         killFaction(sabPrev);
       }
-      // Siphon: +1 to the Ghost's weakest frontline tile — only if the target survives (≥2 before)
-      // and only once per turn.
+      // Siphon: the knocked-off troops defect — +2 to the Ghost's weakest frontline tile, but
+      // ONLY if the target survived the −2 (had 3+) and ONLY once per turn (cap +2/turn, never +6).
       let sabGain = null;
-      if (sabPreTroops >= 2 && !G.siphonedThisTurn) {
+      if (sabPreTroops > sabDrop && !G.siphonedThisTurn) {
         sabGain = ghostSiphonTarget(G.playerFaction);
-        if (sabGain) { sabGain.troops += 1; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
+        if (sabGain) { sabGain.troops += 2; refreshHex(sabGain.id); G.siphonedThisTurn = true; }
       }
       G.actionsUsed++;
       const sabLeft = tile.troops>0 ? `${tile.name} now ${tile.troops} troop${tile.troops>1?'s':''}` : `${tile.name} wiped out`;
-      const gainMsg = sabGain ? ` — siphoned +1 to ${sabGain.name}` : '';
+      const gainMsg = sabGain ? ` — siphoned +2 to ${sabGain.name}` : '';
       addLog(`👁️ ${f.name} sabotaged ${tile.name}${gainMsg} (${sabLeft})`);
       setActionLog(`Sabotage hit!${gainMsg}. ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
       refreshHex(id); flashHex(id); renderSidebar(); checkWin();
@@ -2393,8 +2393,10 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 2. Rally: a victim only digs in if THIS attacker has already hit it this turn (+2 per
   //    prior strike on the same faction). Attacking different rivals once each costs nothing —
   //    the brake is on grinding the SAME enemy (e.g. a press-the-assault chain), not on spreading.
+  //    EXCEPTION: the Tyrant never rallies — it's the shared enemy, so anyone can hammer it
+  //    repeatedly without the escalating-defense penalty.
   const rallyKey = attackerFk + '|' + tgt.owner;
-  const overextend = (turnStrikes[rallyKey] || 0) * 2;
+  const overextend = tgt.owner === TYRANT_KEY ? 0 : (turnStrikes[rallyKey] || 0) * 2;
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
@@ -2841,7 +2843,7 @@ function runAITurn(fk) {
         if (pact && !canBetray) continue;
         // Prefer: nodes, then weaker targets, then where we have a troop edge
         const atkPower = Math.min(2, Math.floor(atk.troops/4));
-        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (turnStrikes[fk+'|'+def.owner]||0)*2;  // rally: per-victim
+        const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (def.owner===TYRANT_KEY ? 0 : (turnStrikes[fk+'|'+def.owner]||0)*2);  // rally: per-victim, none vs Tyrant
         const edge = (atk.troops - def.troops) + (atkPower - defPower)*2;
         const score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
         if (!best || score > best.score) best = {atk, def, score, betray:pact};
@@ -2981,16 +2983,16 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       const prev = target.owner;
       f.resources -= 1;
       recordTyrantStrike(fk, prev);   // Step 3: AI sabotaging the blob joins the coalition
-      const aiPreTroops = target.troops;  // before the hit (D)
-      const aiSabDrop = 1;  // Siphon: −1 enemy troop
+      const aiPreTroops = target.troops;  // before the hit
+      const aiSabDrop = 2;  // −2 enemy troops
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
       let aiGain = null;
-      if (aiPreTroops >= 2 && !G.siphonedThisTurn) {
+      if (aiPreTroops > aiSabDrop && !G.siphonedThisTurn) {
         aiGain = ghostSiphonTarget(fk);
-        if (aiGain) { aiGain.troops += 1; refreshHex(aiGain.id); G.siphonedThisTurn = true; }
+        if (aiGain) { aiGain.troops += 2; refreshHex(aiGain.id); G.siphonedThisTurn = true; }
       }
-      addLog(`👁️ ${f.name} sabotaged ${target.name}${aiGain ? ` (siphoned +1 to ${aiGain.name})` : ''}`);
+      addLog(`👁️ ${f.name} sabotaged ${target.name}${aiGain ? ` (siphoned +2 to ${aiGain.name})` : ''}`);
       refreshHex(target.id); flashHex(target.id);
       return true;
     }
