@@ -618,10 +618,12 @@ export function reduce(inputState, action) {
         state.assaultOn = true;
         state.assaultCaptures = 0;
       }
-      // Rally is per-victim: it only escalates when THIS attacker has already struck the SAME
-      // faction this turn (e.g. a press-the-assault chain) — not when hitting different rivals.
+      // Rally is per-encounter: it only escalates when the SAME attacking tile strikes the
+      // SAME defending tile again this turn. Different attackers ganging one tile, or one
+      // attacker spreading across tiles, each fight fresh — only grinding one tile-vs-tile
+      // matchup rallies the defender (+2 per prior strike on that exact pairing).
       if (!state.turnStrikes) state.turnStrikes = {};
-      const rallyKey = fk + '|' + state.tiles[action.tgt].owner;
+      const rallyKey = action.src + '|' + action.tgt;
       const prior = state.turnStrikes[rallyKey] || 0;
       const result = resolveCombat(state, fk, action.src, action.tgt, prior);
       state.turnStrikes[rallyKey] = prior + 1;
