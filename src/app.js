@@ -183,6 +183,7 @@ let turnAttacks    = 0;  // total attacks this turn (informational)
 let turnStrikes    = {};  // "attackerTile|defenderTile" → times struck this turn → rally only escalates on the SAME tile-vs-tile encounter
 let assaultCaptures = 0;  // captures in the current assault chain — capped at 3
 let assaultOn      = false;  // a "press the assault" attack chain is in progress (player)
+let aiTurnActive   = false;  // an AI is taking its turn — combat popups auto-dismiss, AI never waits on a human click
 let mySeats        = [];  // faction keys THIS device controls (hot-seat: all humans; online: your claimed seat)
 
 // ---- Networking state (all inert while offline; online layer flips these) ----
@@ -328,6 +329,38 @@ function aiConsiderPact(aiFk, propFk){
   if (propNodes > aiNodes) return true;                       // buy time vs a stronger rival
   if (tilesOf(propFk).length >= tilesOf(aiFk).length) return true;
   return Math.random() < 0.5;                                  // weaker suitor: a coin flip
+}
+
+// A non-Tyrant AI's own diplomacy on its turn: it may court ONE partner for a non-aggression
+// pact — a rival faction, or the Tyrant itself. Proposing to the front-runner is refused by
+// aiConsiderPact (the leader won't be tied down), so in practice the weaker factions band
+// together, and a scared/boxed-in AI can buy the Tyrant's protection. Throttled to roughly
+// every other turn so the board doesn't freeze into a web of pacts.
+function aiTryDiplomacy(fk) {
+  const me = G.factions[fk];
+  if (me.eliminated || Math.random() < 0.5) return;
+  const renounced = G.renouncedThisTurn || {};
+  const rivals = livingKeys().filter(k => k !== fk && !hasPact(fk, k) && !renounced[k]);
+  // Prefer the strongest available partner — a pact with a leader buys the most safety.
+  const strength = (k) => countNodes(k) * 10 + tilesOf(k).length;
+  rivals.sort((a, b) => strength(b) - strength(a));
+  for (const other of rivals) {
+    if (other === TYRANT_KEY) {
+      // Ally the Tyrant only while it's still dealing (not in conquest), has a pact slot,
+      // and both sides want it — same gates as its own courting.
+      if (G.tyrantConquest || tyrantAtPactCap()) continue;
+      if (!aiConsiderPact(fk, TYRANT_KEY) || !aiConsiderPact(TYRANT_KEY, fk)) continue;
+      formPact(TYRANT_KEY, fk);
+      G.factions[fk].boon = aiPickBoon(fk);
+      addLog(`🦠 ${me.name} strikes a hidden bargain with the Tyrant…`);
+      return;
+    }
+    if (aiConsiderPact(other, fk)) {   // WE propose, THEY decide
+      formPact(fk, other);
+      addLog(`🤝 ${me.name} and ${G.factions[other].name} sign a non-aggression pact.`);
+      return;
+    }
+  }
 }
 
 // AI redemption — should this bound AI renounce-kill the Tyrant?
@@ -1315,6 +1348,7 @@ function doNextTurn() {
 // Route a turn to the AI, a local human, or (online) a remote human we just watch.
 function beginTurnFor(fk) {
   const f = G.factions[fk];
+  aiTurnActive = false;   // cleared now; runAITurn re-arms it. Human turns keep blocking popups.
 
   if (f.isAI) {
     if (!isDriver) { disablePlayerActions(); return; }   // only the driver runs the AI
@@ -2557,6 +2591,13 @@ function renderCombatFlash() {
   `;
   ov.appendChild(el);
   document.body.appendChild(ov);
+  // During an AI turn the human is only a spectator — never make them click to unblock the AI.
+  // Show the result briefly, then auto-dismiss so the turn keeps flowing. (Their own attacks,
+  // on their own turn, still wait for a deliberate OK.)
+  if (aiTurnActive) {
+    const mine = combatQueue[0];
+    setTimeout(() => { if (combatQueue[0] === mine) acknowledgeCombat(); }, 1100);
+  }
 }
 
 // OK pressed — dismiss the current result, show the next queued one, or release the engine.
@@ -2724,6 +2765,7 @@ function tyrantSpread(fk) {
 
 function runAITurn(fk) {
   if (gameOver) return;
+  aiTurnActive = true;   // spectator mode for the human — popups auto-dismiss, nothing blocks
   turnAttacks = 0; turnStrikes = {};
   G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
   G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
@@ -2741,6 +2783,9 @@ function runAITurn(fk) {
       applyBoonChoice(fk, choice);
     }
   }
+
+  // Non-Tyrant AIs do their own diplomacy: court a rival (or the Tyrant) for a pact.
+  if (fk !== TYRANT_KEY) aiTryDiplomacy(fk);
 
   if (fk === TYRANT_KEY) {
     tyrantSpread(fk);   // virus expansion before its normal actions
@@ -2886,13 +2931,11 @@ function runAITurn(fk) {
     const combat = (result === 'won' || result === 'repelled');
     if (result === 'won') aiCaptures++;
     if (result !== 'won' || aiCaptures >= 3) { actsLeft--; aiCaptures = 0; }   // wins chain; 3-capture cap or repel spends action
-    // A combat that involved the local player put an OK popup on screen — the AI waits
-    // for the acknowledgment before its next action. AI-vs-AI fights keep the old pacing.
-    if (combat && combatQueue.length) onCombatAck(() => setTimeout(step, 400));
-    else setTimeout(step, combat ? 900 : 250);   // AI-vs-AI fights show no popup — keep it brisk
+    // The AI never waits on a human click — any popup auto-dismisses (see renderCombatFlash).
+    // Combat just gets a slightly longer beat so the result is readable as it flies by.
+    setTimeout(step, combat ? 850 : 250);
   };
-  // A Tyrant "sic" strike just above may already have a popup up — wait for it first.
-  onCombatAck(() => setTimeout(step, 250));
+  setTimeout(step, 250);
 }
 
 function finishAITurn(fk) {
@@ -2904,8 +2947,42 @@ function finishAITurn(fk) {
   setTimeout(doNextTurn, online ? 250 : 300);
 }
 
+// Conquest-mode Tyrant: diplomacy is exhausted, so it stops courting and just throws itself at
+// the nodes — reinforce its strongest spearhead, march it at the nearest node, and assault any
+// node (or the tile blocking the approach) it can reach, edge or no edge, until it dies.
+function tyrantConquestAction(fk, f, myTiles, enemyTiles) {
+  const mine = myTiles().filter(t => t.troops >= 2);
+  const nodes = enemyTiles().filter(t => t.isNode);
+  // 1. Attack a node we can reach — relentless, no troop-edge requirement.
+  for (const node of nodes.sort((a,b)=>a.troops-b.troops)) {
+    const src = mine.filter(t => moveReachable(fk, t, node)).sort((a,b)=>b.troops-a.troops)[0];
+    if (src) return aiAttackWithAdvance(fk, src, node);
+  }
+  // 2. No node directly reachable — clear an enemy tile that sits on the approach to one.
+  const approach = enemyTiles().find(e => nodes.some(n => adjacent(e, n)) && mine.some(t => moveReachable(fk, t, e)));
+  if (approach) {
+    const src = mine.filter(t => moveReachable(fk, t, approach)).sort((a,b)=>b.troops-a.troops)[0];
+    if (src) return aiAttackWithAdvance(fk, src, approach);
+  }
+  // 3. Build the spearhead: reinforce the strongest tile nearest a node.
+  if (nodes.length && f.resources >= reinforceCost(fk) && myTiles().length) {
+    const d = (a,b) => Math.abs(a.row-b.row)+Math.abs(a.col-b.col);
+    const near = (t) => Math.min(...nodes.map(n => d(t,n)));
+    const target = myTiles().sort((a,b)=> near(a)-near(b) || b.troops-a.troops)[0];
+    target.troops += reinforceAmount(fk); f.resources -= reinforceCost(fk);
+    addLog(`🦠 THE TYRANT masses its horde on ${target.name}`);
+    refreshHex(target.id);
+    return true;
+  }
+  // 4. Nothing to hit and nothing to buy — march the blob at the nearest node.
+  if (aiNodePush(fk)) return true;
+  return false;
+}
+
 // One AI action. Returns 'combat' if it fought, true for any other action, false if nothing to do.
 function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
+  // Conquest Tyrant ignores the generic playbook — it only reinforces and assaults nodes.
+  if (fk === TYRANT_KEY && G.tyrantConquest) return tyrantConquestAction(fk, f, myTiles, enemyTiles);
   const best = findBestAttack();
   const attackable = best && best.atk.troops >= 2 && !signalJamActive;
   const myNodes = nodesOf(fk);
