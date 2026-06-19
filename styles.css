@@ -299,9 +299,13 @@
     padding: 12px;
     overflow: hidden;           /* the board is auto-scaled to fit — never scrolls */
     position: relative;
-    background: #1a1a2e;
-    background-image: radial-gradient(circle, rgba(241,196,15,0.05) 1px, transparent 1px);
-    background-size: 24px 24px;
+    /* Cosmic backdrop on the hex-tile window only — sidebar / event-strip / action-panel
+       are separate grid cells, so this is naturally scoped. A dark overlay keeps the hex
+       tiles clearly readable on top. */
+    background:
+      linear-gradient(rgba(13, 17, 23, 0.55), rgba(13, 17, 23, 0.55)),
+      url('assets/raw/map_bg.png') center / cover no-repeat,
+      #1a1a2e;
   }
 
   #hex-grid {
