@@ -1922,16 +1922,16 @@ function endTurn() {
 
 const ROUND_CAP = 30;
 function endRound() {
-  // Node dominance win: held 3+ nodes for 2 consecutive round-ends
+  // Node dominance win: held 3+ nodes for 3 consecutive round-ends
   if (G.nodesHeldSince) {
     for (const [k, since] of Object.entries(G.nodesHeldSince)) {
       const f = G.factions[k];
-      if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 1) {
+      if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 2) {
         // Part 2: corrupt faction → Reckoning intercept
         const r = maybeReckoningApp(k);
         if (r === 'thralldom') return; // Tyrant won — showWin already called
         if (r === 'freedom') { showWin(k, 'RECKONING (FREEDOM)', `${f.name} fought off the Tyrant and claimed Nexus!`); return; }
-        showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`);
+        showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 3 rounds and commands Nexus.`);
         return;
       }
     }
@@ -2571,7 +2571,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
         af.resources = Math.min((af.resources||0)+3, RES_CAP);
         addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +3 resources bounty.`);
         // GRAVEYARD: when the Tyrant dies (its last tile falls in combat), THIS tile becomes a
-        // node — counts toward the "3 nodes for 2 rounds" win for whoever holds it. No perk,
+        // node — counts toward the "3 nodes for 3 rounds" win for whoever holds it. No perk,
         // just the bounty for slaying the blob. Steal-able like any other node afterwards.
         if (prev === TYRANT_KEY && G.factions[TYRANT_KEY].eliminated && !tgt.isNode) {
           tgt.isNode = true;
@@ -3400,14 +3400,14 @@ function dismissEvent() {
 // ============================================================
 function checkWin() {
   // Node dominance tracking: announce when someone reaches 3+ nodes, clear when they drop below.
-  // The actual node-hold WIN is checked in endRound (must hold for 2 consecutive round-ends).
+  // The actual node-hold WIN is checked in endRound (must hold for 3 consecutive round-ends).
   if (!G.nodesHeldSince) G.nodesHeldSince = {};
   for (const [k,f] of Object.entries(G.factions)) {
     if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
     const n = countNodes(k);
     if (n >= 3 && !G.nodesHeldSince[k]) {
       G.nodesHeldSince[k] = G.round;
-      addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 2 rounds to win.`);
+      addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 3 rounds to win.`);
     } else if (n < 3 && G.nodesHeldSince[k]) {
       delete G.nodesHeldSince[k];
       addLog(`📢 ${f.name} lost node dominance — hold timer reset.`);
