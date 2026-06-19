@@ -355,12 +355,47 @@ function aiTryDiplomacy(fk) {
       addLog(`🦠 ${me.name} strikes a hidden bargain with the Tyrant…`);
       return;
     }
+    // Human targets: queue the offer — the human decides via modal on their turn
+    if (!G.factions[other].isAI) {
+      if (!G.pendingAiPactOffers) G.pendingAiPactOffers = [];
+      G.pendingAiPactOffers.push({ from: fk, to: other });
+      return;
+    }
     if (aiConsiderPact(other, fk)) {   // WE propose, THEY decide
       formPact(fk, other);
       addLog(`🤝 ${me.name} and ${G.factions[other].name} sign a non-aggression pact.`);
       return;
     }
   }
+}
+
+function maybeShowAiPactOffers(fk) {
+  if (!G.pendingAiPactOffers || !G.pendingAiPactOffers.length) return;
+  if (document.getElementById('tyrant-confirm-overlay').classList.contains('show')) return;
+  const idx = G.pendingAiPactOffers.findIndex(o => o.to === fk);
+  if (idx === -1) return;
+  const offer = G.pendingAiPactOffers[idx];
+  const fromF = G.factions[offer.from], toF = G.factions[offer.to];
+  if (!fromF || fromF.eliminated || !toF || toF.eliminated || hasPact(offer.from, offer.to)) {
+    G.pendingAiPactOffers.splice(idx, 1);
+    maybeShowAiPactOffers(fk);
+    return;
+  }
+  pactOfferModal(offer.from, offer.to, {
+    onAccept: () => {
+      formPact(offer.from, offer.to);
+      addLog(`🤝 ${fromF.name} and ${toF.name} sign a non-aggression pact.`);
+      G.pendingAiPactOffers.splice(idx, 1);
+      syncPush(); renderSidebar();
+      maybeShowAiPactOffers(fk);
+    },
+    onRefuse: () => {
+      addLog(`✋ ${toF.name} refused a pact from ${fromF.name}.`);
+      G.pendingAiPactOffers.splice(idx, 1);
+      syncPush(); renderSidebar();
+      maybeShowAiPactOffers(fk);
+    },
+  });
 }
 
 // AI redemption — should this bound AI renounce-kill the Tyrant?
@@ -772,10 +807,10 @@ function randTrait(fk) {
 const _Q = 1, _MID = Math.floor((GRID - 1) / 2);
 const NODE_POSITIONS = {
   node_power:   { row: _Q,          col: _Q          },  // NW quadrant
-  node_water:   { row: _Q,          col: GRID-1-_Q   },  // NE quadrant
+  node_data:    { row: _Q,          col: GRID-1-_Q   },  // NE quadrant
   node_transit: { row: _MID,        col: _MID        },  // center (contested)
   node_comms:   { row: GRID-1-_Q,   col: _Q          },  // SW quadrant
-  node_data:    { row: GRID-1-_Q,   col: GRID-1-_Q   },  // SE quadrant
+  node_water:   { row: GRID-1-_Q,   col: GRID-1-_Q   },  // SE quadrant
 };
 
 // Each faction starts in a corner with 2 adjacent tiles, mirrored across the board.
@@ -1412,6 +1447,7 @@ function beginTurnFor(fk) {
     // this is a safety net in case that sync was missed (e.g. a refresh mid-offer).
     maybeShowPactOffer();
     maybeShowPactRenewals();
+    maybeShowAiPactOffers(fk);
   };
 
   // Hot-seat with several humans on one device: gate behind a pass-the-device screen.
