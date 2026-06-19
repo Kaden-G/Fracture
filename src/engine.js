@@ -555,7 +555,7 @@ export function buildMap(state) {
       const id = `tile_${pos.row}_${pos.col}`;
       if (tiles[id] && !tiles[id].isNode) {
         tiles[id].owner = fk;
-        tiles[id].troops = 2;
+        tiles[id].troops = 3;
       }
     });
   });
