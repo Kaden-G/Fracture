@@ -555,7 +555,7 @@ export function buildMap(state) {
       const id = `tile_${pos.row}_${pos.col}`;
       if (tiles[id] && !tiles[id].isNode) {
         tiles[id].owner = fk;
-        tiles[id].troops = 2;
+        tiles[id].troops = 3;
       }
     });
   });
@@ -814,7 +814,7 @@ export function reduce(inputState, action) {
           const sabPrev = tile.owner;
           recordTyrantStrike(state, fk, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
           const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
-          const drop = 2;  // −2 enemy troops (distinct from Syndicate's −1 bribe)
+          const drop = (tile.heldRounds || 0) >= 2 ? 1 : 2;
           if (tile.troops > drop) { tile.troops -= drop; }
           else { tile.owner = null; tile.troops = 0; }
           if (tile.owner === null && tilesOf(state, sabPrev).length === 0) {

@@ -852,7 +852,7 @@ function buildMap() {
       const id = `tile_${pos.row}_${pos.col}`;
       if (tiles[id] && !tiles[id].isNode) {
         tiles[id].owner = fk;
-        tiles[id].troops = 2;
+        tiles[id].troops = 3;
       }
     });
   });
@@ -2006,7 +2006,7 @@ function setAction(action) {
     renounce:  'RENOUNCE: Click a tile owned by a faction you have a pact with to peacefully withdraw (free, no grudge).',
     airlift:   `AIRLIFT (${airliftCost(G.playerFaction)} res): Click YOUR tile (2+ troops), then ANY other tile you own — move up to 3 troops.`,
     entrench:  'ENTRENCH (2 res): Click YOUR tile (2+ troops) to dig in +1 (max +3, or +2 on Nodes).',
-    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −2 troops. First sabotage each turn vs a 3+ stack siphons +2 to your weakest frontline tile.',
+    sabotage:  'SABOTAGE (1 res): Click any ENEMY tile — −2 troops (−1 if entrenched 2+). First sabotage each turn vs a 3+ stack siphons +2 to your weakest frontline tile.',
     bribe:     'BRIBE (1 res): Click an adjacent enemy tile — a troop defects to you (−1 them, +1 you).',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
@@ -2103,7 +2103,7 @@ function handleTileClick(id) {
     return;
   }
 
-  if (G.actionsUsed >= 3) { setActionLog('No actions left — hit END TURN.'); return; }
+  if (G.actionsUsed >= 3 && !assaultOn) { setActionLog('No actions left — hit END TURN.'); return; }
 
   // ---- REINFORCE ----
   if (currentAction === 'reinforce') {
@@ -2267,9 +2267,9 @@ function handleTileClick(id) {
       const contAssault = () => {
         // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
         // Hard cap: 3 captures per assault chain.
-        if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2 && assaultCaptures < 3) {
+        if (won && G.tiles[srcId] && G.tiles[srcId].troops >= 2) {
           selectedTile = srcId;   // keep the assault source selected for the next strike
-          setActionLog(`⚔️ Assault presses on! (${assaultCaptures}/3 captures) Each repeat strike on the SAME faction rallies it +2. Click another enemy in reach — or pick another action to halt.`);
+          setActionLog(`⚔️ Assault presses on! Each repeat strike on the SAME faction rallies it +2. Click another enemy in reach — or pick another action to halt.`);
           renderMap();
           document.getElementById('hex-'+srcId)?.classList.add('selected');
           return;
@@ -2342,7 +2342,7 @@ function handleTileClick(id) {
       const sabPrev = tile.owner;
       recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
       const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
-      const sabDrop = 2;  // −2 enemy troops (distinct from Syndicate's −1 bribe)
+      const sabDrop = (tile.heldRounds || 0) >= 2 ? 1 : 2;
       if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
       if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
         killFaction(sabPrev);
@@ -3138,7 +3138,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       f.resources -= 1;
       recordTyrantStrike(fk, prev);   // Step 3: AI sabotaging the blob joins the coalition
       const aiPreTroops = target.troops;  // before the hit
-      const aiSabDrop = 2;  // −2 enemy troops
+      const aiSabDrop = (target.heldRounds || 0) >= 2 ? 1 : 2;
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
       let aiGain = null;
