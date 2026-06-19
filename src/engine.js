@@ -562,7 +562,9 @@ export function buildMap(state) {
   const _MID = Math.floor((GRID_SIZE - 1) / 2);
   if (state.factions[TYRANT_KEY]) {
     const cId = `tile_${_MID}_${_MID}`;
-    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 4; }
+    // 8-troop garrison: protects against the Ghost round-1 sabotage assassination
+    // (sabotage is -2; two hits would wipe a 4-troop start before the Tyrant's first turn).
+    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 8; }
   }
   Object.values(tiles).forEach(t => { t.region = regionOf(t); });
   return tiles;
