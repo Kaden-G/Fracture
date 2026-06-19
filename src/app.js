@@ -882,8 +882,11 @@ function shuffle(a) {
 // #map-area; the styles.css rule references var(--map-bg, …). Update MAP_BG_COUNT
 // when you drop more art into assets/raw/map_bg_N.png.
 const MAP_BG_COUNT = 5;
+let lastBackdrop = 0;
 function pickMapBackdrop() {
-  const n = Math.floor(Math.random() * MAP_BG_COUNT) + 1;
+  let n;
+  do { n = Math.floor(Math.random() * MAP_BG_COUNT) + 1; } while (n === lastBackdrop && MAP_BG_COUNT > 1);
+  lastBackdrop = n;
   const el = document.getElementById('map-area');
   if (el && el.style && typeof el.style.setProperty === 'function') {
     el.style.setProperty('--map-bg', `url('assets/raw/map_bg_${n}.png?v=1')`);
@@ -1851,7 +1854,7 @@ function refuseTyrantPact() {
   if (!fk) return;
   if (petition) { setActionLog('You think better of it and walk away.'); return; }
   // Human refused — increment refusal streak, check for conquest flip.
-  // Flip when spurned 3 times, or when its two asks are spent on every living
+  // Flip when spurned 5 times, or when its two asks are spent on every living
   // non-allied human (the 2-offer cap would otherwise make the flip unreachable).
   if (!G.tyrantConquest) {
     if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
@@ -1860,7 +1863,7 @@ function refuseTyrantPact() {
     const spurned = livingKeys().filter(k =>
       k !== TYRANT_KEY && !G.factions[k].isAI && !hasPact(TYRANT_KEY, k));
     const exhausted = spurned.length > 0 && spurned.every(k => (oc[k] || 0) >= 2);
-    if (G.tyrantRefusalStreak >= 3 || exhausted) {
+    if (G.tyrantRefusalStreak >= 5 || exhausted) {
       const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
       if (unAllied.length > 0) {
         G.tyrantConquest = true;
@@ -2861,17 +2864,20 @@ function runAITurn(fk) {
       if (newAlly) addLog('🦠 The Tyrant whispers — a hidden pact takes hold…');
     }
 
-    // Part 2 Step 5: Tyrant betrayal flip — streak-based, requires 3 consecutive rounds
-    // (a cap-blocked round made no offers, so it neither builds nor resets the streak)
+    // Part 2 Step 5: Tyrant betrayal flip — streak-based, requires 5 consecutive rounds
+    // where un-allied AIs were courted and ALL refused. Rounds where the only unallied
+    // factions are humans don't count (humans are offered on their own turn, not here).
+    // A cap-blocked round made no offers, so it neither builds nor resets the streak.
     if (!G.tyrantConquest && !courtBlocked) {
       if (!G.tyrantRefusalStreak) G.tyrantRefusalStreak = 0;
-      const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
+      const unAlliedAIs = livingKeys().filter(k => k !== TYRANT_KEY && G.factions[k].isAI && !hasPact(TYRANT_KEY, k));
       if (newAlly) {
         G.tyrantRefusalStreak = 0;
-      } else if (unAllied.length > 0 && allAIsRefused) {
+      } else if (unAlliedAIs.length > 0 && allAIsRefused) {
         G.tyrantRefusalStreak++;
       }
-      if (G.tyrantRefusalStreak >= 3 && unAllied.length > 0) {
+      const unAllied = livingKeys().filter(k => k !== TYRANT_KEY && !hasPact(TYRANT_KEY, k));
+      if (G.tyrantRefusalStreak >= 5 && unAllied.length > 0) {
         G.tyrantConquest = true;
         addLog('🦠🗡️ THE TYRANT abandons diplomacy — CONQUEST MODE!');
         for (const k of Object.keys(G.pacts||{})) {
