@@ -315,14 +315,6 @@
     top: 50%;
     transform: translate(-50%, -50%);
     transform-origin: center center;
-    /* Cardinal-region backdrop: painted map with N/S/E/W biomes — a light wash keeps
-       the hexes dominant while letting the artwork pop through */
-    background-image:
-      linear-gradient(rgba(13, 17, 23, 0.22), rgba(13, 17, 23, 0.22)),
-      url('assets/map_regions.png');
-    background-size: cover, cover;
-    background-position: center, center;
-    background-repeat: no-repeat, no-repeat;
     border-radius: 10px;
   }
 
