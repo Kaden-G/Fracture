@@ -301,10 +301,11 @@
     position: relative;
     /* Cosmic backdrop on the hex-tile window only — sidebar / event-strip / action-panel
        are separate grid cells, so this is naturally scoped. A dark overlay keeps the hex
-       tiles clearly readable on top. */
+       tiles clearly readable on top. The image URL is set per new game (see startGame),
+       falling back to map_bg_1 if the JS hasn't fired yet. */
     background:
       linear-gradient(rgba(13, 17, 23, 0.55), rgba(13, 17, 23, 0.55)),
-      url('assets/raw/map_bg.png?v=1') center / cover no-repeat,
+      var(--map-bg, url('assets/raw/map_bg_1.png?v=1')) center / cover no-repeat,
       #1a1a2e;
   }
 
