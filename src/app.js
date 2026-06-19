@@ -741,6 +741,7 @@ function startGame() {
   mySeats = G.humans.slice();
   G.playerFaction = G.humans[0] || order[0];
 
+  pickMapBackdrop();   // fresh cosmic backdrop per new game
   switchScreen('game-screen');
   document.getElementById('rules-btn').style.display = 'flex';
   renderMap();
@@ -840,6 +841,18 @@ function shuffle(a) {
     const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];
   }
   return a;
+}
+
+// Pick one of the cosmic backdrops at random for this game. Sets a CSS variable on
+// #map-area; the styles.css rule references var(--map-bg, …). Update MAP_BG_COUNT
+// when you drop more art into assets/raw/map_bg_N.png.
+const MAP_BG_COUNT = 5;
+function pickMapBackdrop() {
+  const n = Math.floor(Math.random() * MAP_BG_COUNT) + 1;
+  const el = document.getElementById('map-area');
+  if (el && el.style && typeof el.style.setProperty === 'function') {
+    el.style.setProperty('--map-bg', `url('assets/raw/map_bg_${n}.png?v=1')`);
+  }
 }
 
 // ============================================================
@@ -3503,6 +3516,7 @@ function ensureTutorialGame() {
   // tile_1_1 (POWER node) stays neutral as the nearby objective.
   mySeats = ['grid']; G.playerFaction = 'grid';
   myTurnActive = true; isDriver = true; currentAction = null; selectedTile = null;
+  pickMapBackdrop();   // fresh cosmic backdrop for the tutorial too
   switchScreen('game-screen');
   document.getElementById('rules-btn').style.display = 'flex';
   renderMap(); renderSidebar();
