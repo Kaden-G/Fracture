@@ -822,9 +822,11 @@ function buildMap() {
   });
 
   // 3b. The Tyrant festers at the heart of Nexus — it seizes the central Node.
+  //     8-troop garrison: enough that two Ghost sabotages on round 1 (the new -2 hit) can't
+  //     wipe it before its first turn. Three sabotages cripple it (8 -> 2) but it survives.
   if (G.factions[TYRANT_KEY]) {
     const cId = `tile_${_MID}_${_MID}`;
-    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 4; }
+    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 8; }
   }
 
   // Stamp each tile with its cardinal region (used by region-targeted events).
