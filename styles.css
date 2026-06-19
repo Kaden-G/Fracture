@@ -304,7 +304,7 @@
        tiles clearly readable on top. */
     background:
       linear-gradient(rgba(13, 17, 23, 0.55), rgba(13, 17, 23, 0.55)),
-      url('assets/raw/map_bg.png') center / cover no-repeat,
+      url('assets/raw/map_bg.png?v=1') center / cover no-repeat,
       #1a1a2e;
   }
 
