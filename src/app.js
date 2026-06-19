@@ -355,12 +355,47 @@ function aiTryDiplomacy(fk) {
       addLog(`🦠 ${me.name} strikes a hidden bargain with the Tyrant…`);
       return;
     }
+    // Human targets: queue the offer — the human decides via modal on their turn
+    if (!G.factions[other].isAI) {
+      if (!G.pendingAiPactOffers) G.pendingAiPactOffers = [];
+      G.pendingAiPactOffers.push({ from: fk, to: other });
+      return;
+    }
     if (aiConsiderPact(other, fk)) {   // WE propose, THEY decide
       formPact(fk, other);
       addLog(`🤝 ${me.name} and ${G.factions[other].name} sign a non-aggression pact.`);
       return;
     }
   }
+}
+
+function maybeShowAiPactOffers(fk) {
+  if (!G.pendingAiPactOffers || !G.pendingAiPactOffers.length) return;
+  if (document.getElementById('tyrant-confirm-overlay').classList.contains('show')) return;
+  const idx = G.pendingAiPactOffers.findIndex(o => o.to === fk);
+  if (idx === -1) return;
+  const offer = G.pendingAiPactOffers[idx];
+  const fromF = G.factions[offer.from], toF = G.factions[offer.to];
+  if (!fromF || fromF.eliminated || !toF || toF.eliminated || hasPact(offer.from, offer.to)) {
+    G.pendingAiPactOffers.splice(idx, 1);
+    maybeShowAiPactOffers(fk);
+    return;
+  }
+  pactOfferModal(offer.from, offer.to, {
+    onAccept: () => {
+      formPact(offer.from, offer.to);
+      addLog(`🤝 ${fromF.name} and ${toF.name} sign a non-aggression pact.`);
+      G.pendingAiPactOffers.splice(idx, 1);
+      syncPush(); renderSidebar();
+      maybeShowAiPactOffers(fk);
+    },
+    onRefuse: () => {
+      addLog(`✋ ${toF.name} refused a pact from ${fromF.name}.`);
+      G.pendingAiPactOffers.splice(idx, 1);
+      syncPush(); renderSidebar();
+      maybeShowAiPactOffers(fk);
+    },
+  });
 }
 
 // AI redemption — should this bound AI renounce-kill the Tyrant?
@@ -772,10 +807,10 @@ function randTrait(fk) {
 const _Q = 1, _MID = Math.floor((GRID - 1) / 2);
 const NODE_POSITIONS = {
   node_power:   { row: _Q,          col: _Q          },  // NW quadrant
-  node_water:   { row: _Q,          col: GRID-1-_Q   },  // NE quadrant
+  node_data:    { row: _Q,          col: GRID-1-_Q   },  // NE quadrant
   node_transit: { row: _MID,        col: _MID        },  // center (contested)
   node_comms:   { row: GRID-1-_Q,   col: _Q          },  // SW quadrant
-  node_data:    { row: GRID-1-_Q,   col: GRID-1-_Q   },  // SE quadrant
+  node_water:   { row: GRID-1-_Q,   col: GRID-1-_Q   },  // SE quadrant
 };
 
 // Each faction starts in a corner with 2 adjacent tiles, mirrored across the board.
@@ -1412,6 +1447,7 @@ function beginTurnFor(fk) {
     // this is a safety net in case that sync was missed (e.g. a refresh mid-offer).
     maybeShowPactOffer();
     maybeShowPactRenewals();
+    maybeShowAiPactOffers(fk);
   };
 
   // Hot-seat with several humans on one device: gate behind a pass-the-device screen.
@@ -1886,16 +1922,16 @@ function endTurn() {
 
 const ROUND_CAP = 30;
 function endRound() {
-  // Node dominance win: held 3+ nodes for 2 consecutive round-ends
+  // Node dominance win: held 3+ nodes for 3 consecutive round-ends
   if (G.nodesHeldSince) {
     for (const [k, since] of Object.entries(G.nodesHeldSince)) {
       const f = G.factions[k];
-      if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 1) {
+      if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 2) {
         // Part 2: corrupt faction → Reckoning intercept
         const r = maybeReckoningApp(k);
         if (r === 'thralldom') return; // Tyrant won — showWin already called
         if (r === 'freedom') { showWin(k, 'RECKONING (FREEDOM)', `${f.name} fought off the Tyrant and claimed Nexus!`); return; }
-        showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`);
+        showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 3 rounds and commands Nexus.`);
         return;
       }
     }
@@ -2535,7 +2571,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
         af.resources = Math.min((af.resources||0)+3, RES_CAP);
         addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +3 resources bounty.`);
         // GRAVEYARD: when the Tyrant dies (its last tile falls in combat), THIS tile becomes a
-        // node — counts toward the "3 nodes for 2 rounds" win for whoever holds it. No perk,
+        // node — counts toward the "3 nodes for 3 rounds" win for whoever holds it. No perk,
         // just the bounty for slaying the blob. Steal-able like any other node afterwards.
         if (prev === TYRANT_KEY && G.factions[TYRANT_KEY].eliminated && !tgt.isNode) {
           tgt.isNode = true;
@@ -3364,14 +3400,14 @@ function dismissEvent() {
 // ============================================================
 function checkWin() {
   // Node dominance tracking: announce when someone reaches 3+ nodes, clear when they drop below.
-  // The actual node-hold WIN is checked in endRound (must hold for 2 consecutive round-ends).
+  // The actual node-hold WIN is checked in endRound (must hold for 3 consecutive round-ends).
   if (!G.nodesHeldSince) G.nodesHeldSince = {};
   for (const [k,f] of Object.entries(G.factions)) {
     if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
     const n = countNodes(k);
     if (n >= 3 && !G.nodesHeldSince[k]) {
       G.nodesHeldSince[k] = G.round;
-      addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 2 rounds to win.`);
+      addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 3 rounds to win.`);
     } else if (n < 3 && G.nodesHeldSince[k]) {
       delete G.nodesHeldSince[k];
       addLog(`📢 ${f.name} lost node dominance — hold timer reset.`);

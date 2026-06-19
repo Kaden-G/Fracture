@@ -141,10 +141,10 @@ export const EVENT_DEFS = [
 const _Q = 1, _MID = Math.floor((GRID_SIZE - 1) / 2);
 export const NODE_POSITIONS = {
   node_power:   { row: _Q,             col: _Q             },
-  node_water:   { row: _Q,             col: GRID_SIZE-1-_Q },
+  node_data:    { row: _Q,             col: GRID_SIZE-1-_Q },
   node_transit: { row: _MID,           col: _MID           },
   node_comms:   { row: GRID_SIZE-1-_Q, col: _Q             },
-  node_data:    { row: GRID_SIZE-1-_Q, col: GRID_SIZE-1-_Q },
+  node_water:   { row: GRID_SIZE-1-_Q, col: GRID_SIZE-1-_Q },
 };
 
 export const START_CORNERS = [

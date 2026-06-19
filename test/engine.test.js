@@ -343,7 +343,7 @@ describe('Reducer', () => {
       if (t.isNode && nodeCount < 3) { t.owner = 'grid'; t.troops = 3; nodeCount++; }
     });
     state.nodesHeldSince = { grid: 1 };
-    state.round = 2; // held since round 1, now round 2 → >= 1 round elapsed
+    state.round = 3; // held since round 1, now round 3 → >= 2 rounds elapsed
 
     const { state: next, effects } = reduce(state, { type: 'END_ROUND' });
     const win = effects.find(e => e.kind === 'win');

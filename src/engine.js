@@ -467,7 +467,7 @@ function checkWinCondition(state, log) {
     const n = countNodes(state, k);
     if (n >= 3 && !state.nodesHeldSince[k]) {
       state.nodesHeldSince[k] = state.round;
-      log.push(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 2 rounds to win.`);
+      log.push(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 3 rounds to win.`);
     } else if (n < 3 && state.nodesHeldSince[k]) {
       delete state.nodesHeldSince[k];
       log.push(`📢 ${f.name} lost node dominance — hold timer reset.`);
@@ -1114,7 +1114,7 @@ export function reduce(inputState, action) {
       if (state.nodesHeldSince) {
         for (const [k, since] of Object.entries(state.nodesHeldSince)) {
           const f = state.factions[k];
-          if (f && !f.eliminated && countNodes(state, k) >= 3 && state.round - since >= 1) {
+          if (f && !f.eliminated && countNodes(state, k) >= 3 && state.round - since >= 2) {
             // Part 2: corrupt faction → Reckoning intercept
             const reckoningWin = maybeReckoning(state, k, log);
             if (reckoningWin) {
@@ -1128,7 +1128,7 @@ export function reduce(inputState, action) {
             }
             // reckoningWin === false → no corruption, normal win
             const win = { fk: k, condition: 'NODE DOMINANCE',
-              detail: `${f.name} held 3+ Core Nodes for 2 rounds and commands Nexus.`, round: state.round };
+              detail: `${f.name} held 3+ Core Nodes for 3 rounds and commands Nexus.`, round: state.round };
             state.winner = win;
             effects.push({kind:'win', winner:win});
             return { state, effects, log };
