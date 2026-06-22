@@ -461,8 +461,8 @@ function recordTyrantStrike(attackerFk, defOwner) {
 // All elimination flows route through here so the Tyrant can get its harbor reprieve.
 function killFaction(fk){
   if (fk === TYRANT_KEY && tyrantAllies().length > 0 && !G.tyrantHarbor) {
-    G.tyrantHarbor = G.round + 3;
-    addLog(`🦠 THE TYRANT is cornered — harbored by allies. Feed it a tile within 3 rounds or it dies.`);
+    G.tyrantHarbor = G.round + 2;
+    addLog(`🦠 THE TYRANT is cornered! Its allies have 2 rounds to harbor it — or it perishes.`);
     return;
   }
   // Tyrant eliminated — purge corruption for the eliminator, track it
@@ -1226,20 +1226,27 @@ function startRound() {
   }
   for (const k of Object.keys(G.grudges)) { if (G.grudges[k] < G.round) delete G.grudges[k]; }
 
-  // Tyrant harbor reprieve: revive if fed, perish if the 3 rounds lapse, else let AI allies donate.
+  // Tyrant harbor reprieve: revive if fed, perish if the 2 rounds lapse.
+  // AI allies may harbor on their own turn (via runAITurn); humans use the HARBOR action.
   if (G.tyrantHarbor && tyrantOn()) {
     if (tilesOf(TYRANT_KEY).length > 0) {
       G.tyrantHarbor = 0;
     } else if (G.round > G.tyrantHarbor) {
       G.factions[TYRANT_KEY].eliminated = true; G.tyrantHarbor = 0;
       addLog('💀 THE TYRANT perished — no ally harbored it in time.');
-    } else {
-      for (const a of tyrantAllies()) {
-        if (G.factions[a].isAI && aiHarborDecision(a)) {
-          const t = tilesOf(a).sort((x,y)=>x.troops-y.troops)[0];
-          if (t) { t.owner=TYRANT_KEY; t.troops=Math.max(1,t.troops); t.heldRounds=0; G.tyrantHarbor=0;
-            addLog(`🦠 ${G.factions[a].name} harbored the Tyrant — it rises again!`); break; }
+      // Spawn graveyard node at the tile where the Tyrant last fell
+      if (G.tyrantDeathTile) {
+        const dt = G.tiles[G.tyrantDeathTile];
+        if (dt && !dt.isNode) {
+          dt.isNode = true; dt.nodeId = 'node_graveyard'; dt.name = '☠ GRAVEYARD'; dt.short = '☠GRV';
+          addLog(`☠ ${dt.name} rises where the Tyrant fell.`);
+          refreshHex(G.tyrantDeathTile);
         }
+        G.tyrantDeathTile = null;
+      }
+      for (const pk of Object.keys(G.pacts || {})) {
+        const [a, b] = pk.split('|');
+        if (a === TYRANT_KEY || b === TYRANT_KEY) delete G.pacts[pk];
       }
     }
   }
@@ -1473,19 +1480,17 @@ function tyrantInteract(fk) {
     }
   }
   // 1. Harbor: a cornered Tyrant begs an ally to feed it a tile so it can rise again.
+  //    Inform the player — the actual harbor is done via the HARBOR action button.
   if (G.tyrantHarbor && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0) {
+    const roundsLeft = Math.max(0, G.tyrantHarbor - G.round);
     tyrantModal({
       type: 'A CORNERED BEAST',
-      title: '🦠 HARBOR THE TYRANT?',
-      body: `The Tyrant is cornered and begs you — its <b>secret ally</b> — to harbor it. ` +
-            `Give up one of your tiles to revive it, or let it perish?`,
-      confirmLabel: '🩸 HARBOR IT',
-      cancelLabel: '✋ LET IT PERISH',
-      onConfirm: () => {
-        const t = tilesOf(fk).sort((a,b)=>a.troops-b.troops)[0];
-        if (t) { t.owner = TYRANT_KEY; t.troops = Math.max(1, t.troops); t.heldRounds = 0; G.tyrantHarbor = 0;
-          addLog(`🦠 ${G.factions[fk].name} HARBORED the Tyrant — it rises again!`); refreshHex(t.id); renderSidebar(); syncPush(); }
-      }
+      title: '🦠 THE TYRANT CLINGS TO LIFE',
+      body: `The Tyrant is dying — its last stronghold has fallen. As its <b>secret ally</b>, ` +
+            `you can surrender one of your tiles to revive it.<br><br>` +
+            `Use the <b>🦠 HARBOR</b> action and click a tile to donate (costs 1 action). ` +
+            `<b>${roundsLeft} round${roundsLeft !== 1 ? 's' : ''}</b> remain before it perishes forever.`,
+      confirmLabel: '⚔️ UNDERSTOOD',
     });
     return;
   }
@@ -1967,19 +1972,22 @@ function enablePlayerActions(fk) {
     const el = document.getElementById(id);
     el.disabled = false; el.classList.remove('active-action');
   });
-  ['btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
+  ['btn-sabotage','btn-bribe','btn-rally','btn-overclock','btn-harbor'].forEach(id => {
     document.getElementById(id).style.display = 'none';
     document.getElementById(id).disabled = false;
   });
   const ab = G.factions[fk].ability;
   const abEl = document.getElementById('btn-'+ab);
   if (abEl) abEl.style.display = '';
+  if (G.tyrantHarbor && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0 && tilesOf(fk).length > 0) {
+    document.getElementById('btn-harbor').style.display = '';
+  }
   const etb = document.querySelector('.end-turn-btn');
   if (etb) etb.disabled = false;
 }
 
 function disablePlayerActions() {
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock','btn-harbor'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.disabled = true; el.classList.remove('active-action'); }
   });
@@ -1993,7 +2001,7 @@ function setAction(action) {
   selectedTile  = null;
   clearHighlights();
   renderMap();
-  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock'].forEach(id => {
+  ['btn-move','btn-attack','btn-reinforce','btn-pact','btn-renounce','btn-airlift','btn-entrench','btn-sabotage','btn-bribe','btn-rally','btn-overclock','btn-harbor'].forEach(id => {
     document.getElementById(id)?.classList.remove('active-action');
   });
   document.getElementById('btn-'+action)?.classList.add('active-action');
@@ -2010,6 +2018,7 @@ function setAction(action) {
     bribe:     'BRIBE (1 res): Click an adjacent enemy tile — a troop defects to you (−1 them, +1 you).',
     rally:     'RALLY (1 res): Click YOUR tile — it and all adjacent friendlies get +1 troop.',
     overclock: 'OVERCLOCK (1 res): Click YOUR tile — add +3 troops (industrial surge).',
+    harbor:    'HARBOR: Click one of YOUR tiles to surrender it (+ troops) to the Tyrant, reviving it.',
   };
   setActionLog(hints[action] || 'Pick a tile.');
 }
@@ -2461,6 +2470,37 @@ function handleTileClick(id) {
     setActionLog(`Overclocked! ${3-G.actionsUsed} action(s) left. Res: ${f.resources}`);
     refreshHex(id); renderSidebar(); return;
   }
+
+  // ---- HARBOR (Tyrant ally only) ----
+  if (currentAction === 'harbor') {
+    if (tile.owner !== G.playerFaction) { setActionLog('Pick one of YOUR tiles to surrender to the Tyrant.'); return; }
+    if (!G.tyrantHarbor || !hasPact(TYRANT_KEY, G.playerFaction) || tilesOf(TYRANT_KEY).length > 0) {
+      setActionLog('Harbor is not available right now.'); return;
+    }
+    tyrantModal({
+      type: 'DARK SACRIFICE',
+      title: '🦠 SURRENDER THIS TILE?',
+      body: `You will give <b>${tile.name}</b> (${tile.troops} troop${tile.troops !== 1 ? 's' : ''}) to the Tyrant. ` +
+            `It will rise again under the Tyrant's control.<br><br>` +
+            `<b>This cannot be undone.</b>`,
+      confirmLabel: '🩸 SURRENDER',
+      cancelLabel: '✋ CANCEL',
+      onConfirm: () => {
+        tile.owner = TYRANT_KEY; tile.heldRounds = 0;
+        G.tyrantHarbor = 0;
+        G.factions[TYRANT_KEY].eliminated = false;
+        G.actionsUsed++;
+        addLog(`🦠 ${f.name} surrendered ${tile.name} to the Tyrant — it rises again!`);
+        setActionLog(`Harbored! ${3 - G.actionsUsed} action(s) left.`);
+        refreshHex(id); renderMap(); renderSidebar(); syncPush();
+        document.getElementById('btn-harbor').style.display = 'none';
+        currentAction = null;
+        document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active-action'));
+      },
+      onCancel: () => setActionLog('Harbor cancelled.'),
+    });
+    return;
+  }
 }
 
 function clearHighlights() {
@@ -2573,6 +2613,10 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
         // Bounty: wiping a rival grants +3 resources (encourages PvP without breaking node count).
         af.resources = Math.min((af.resources||0)+3, RES_CAP);
         addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +3 resources bounty.`);
+        // Track where the Tyrant fell for graveyard placement after reprieve
+        if (prev === TYRANT_KEY && !G.factions[TYRANT_KEY].eliminated) {
+          G.tyrantDeathTile = tgtId;
+        }
         // GRAVEYARD: when the Tyrant dies (its last tile falls in combat), THIS tile becomes a
         // node — counts toward the "3 nodes for 3 rounds" win for whoever holds it. No perk,
         // just the bounty for slaying the blob. Steal-able like any other node afterwards.
@@ -3038,6 +3082,17 @@ function tyrantConquestAction(fk, f, myTiles, enemyTiles) {
 
 // One AI action. Returns 'combat' if it fought, true for any other action, false if nothing to do.
 function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
+  // AI harbor: if the Tyrant is dying and this AI is an ally, consider donating a tile.
+  if (G.tyrantHarbor && fk !== TYRANT_KEY && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0 && aiHarborDecision(fk)) {
+    const t = tilesOf(fk).sort((x,y) => x.troops - y.troops)[0];
+    if (t) {
+      t.owner = TYRANT_KEY; t.heldRounds = 0; G.tyrantHarbor = 0;
+      G.factions[TYRANT_KEY].eliminated = false;
+      addLog(`🦠 ${f.name} harbored the Tyrant — it rises again!`);
+      refreshHex(t.id);
+      return true;
+    }
+  }
   // Conquest Tyrant ignores the generic playbook — it only reinforces and assaults nodes.
   if (fk === TYRANT_KEY && G.tyrantConquest) return tyrantConquestAction(fk, f, myTiles, enemyTiles);
   const best = findBestAttack();
