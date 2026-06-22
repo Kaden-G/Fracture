@@ -12,7 +12,7 @@ import {
   DISTRICT_NAMES, REGION_NAMES,
   factionDef, regionOf, adjacent,
   tilesOf, nodesOf, countNodes, controlsNode, livingKeys,
-  hasPact, pairKey,
+  hasPact, pairKey, hasTrait,
   reinforceCost, reinforceAmount, moveTroopCount, moveRange, moveReachable, airliftCost,
   grudgeAtkBonus, grudgeDefBonus, coalitionAtkBonus, mkFaction,
 } from './state.js';
@@ -365,7 +365,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   const effects = [];
 
   // --- Base dice (2d6 bell curve) ---
-  const attRoll = roll2d6(state.rng, af.trait === 'tactician');
+  const attRoll = roll2d6(state.rng, hasTrait(af, 'tactician'));
   state.rng = attRoll.rng;
   const defRoll = roll2d6(state.rng, false);
   state.rng = defRoll.rng;
@@ -380,8 +380,8 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   const overextend = tgt.owner === TYRANT_KEY ? 0 : priorStrikes * 2;
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);
   if (af.ability === 'sabotage') entrench = 0;
-  const lastStand = (df?.trait === 'last_stand' && tgt.troops <= 2) ? 3 : 0;
-  const fortifyVal = df?.trait === 'fortify' ? (tgt.heldRounds > 0 ? 2 : 1) : 0;
+  const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops <= 2) ? 3 : 0;
+  const fortifyVal = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;
   const comms = controlsNode(state, attackerFk, 'node_comms') ? 1 : 0;
   const data  = controlsNode(state, tgt.owner, 'node_data') ? 1 : 0;
   const coalition = coalitionAtkBonus(state, tgt.owner, attackerFk);
@@ -422,18 +422,25 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
       tgt.heldRounds = 0;
       src.troops = Math.max(1, src.troops - 1);
       // Scavenger loot (denied by last stand)
-      const lootDenied = df?.trait === 'last_stand';
-      if (af.trait === 'scavenger' && !lootDenied) {
+      const lootDenied = df && hasTrait(df, 'last_stand');
+      if (hasTrait(af, 'scavenger') && !lootDenied) {
         af.resources = Math.min((af.resources || 0) + 1, RES_CAP);
       }
-      const lootMsg = af.trait === 'scavenger' ? (lootDenied ? ' 🚫 loot denied' : ' 💰+1 res') : '';
+      const lootMsg = hasTrait(af, 'scavenger') ? (lootDenied ? ' 🚫 loot denied' : ' 💰+1 res') : '';
       log.push(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${lootMsg}`);
       effects.push({kind:'capture', tile:tgtId, by:attackerFk, from:prev});
       const defLeft = Object.values(state.tiles).filter(t => t.owner === prev).length;
       if (defLeft === 0) {
         killFaction(state, prev, log);
-        af.resources = Math.min((af.resources || 0) + 3, RES_CAP);
-        log.push(`🏆 ${af.icon} eliminated ${state.factions[prev]?.name || prev}! +3 resources bounty.`);
+        const lootRes = Math.floor((state.factions[prev]?.resources || 0) / 2);
+        af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
+        const victimTrait = state.factions[prev]?.trait;
+        if (victimTrait && victimTrait !== af.trait) {
+          if (!af.inheritedTraits) af.inheritedTraits = [];
+          if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+        }
+        const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
+        log.push(`🏆 ${af.icon} eliminated ${state.factions[prev]?.name || prev}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
         // GRAVEYARD: when the Tyrant dies in combat, the killing tile becomes a 6th node —
         // counts toward the "3 to win" condition for whoever holds it. No perk.
         if (prev === TYRANT_KEY && state.factions[TYRANT_KEY].eliminated && !tgt.isNode) {
@@ -502,7 +509,7 @@ function checkWinCondition(state, log) {
 function applyIncome(state, fk, log, effects) {
   const f = state.factions[fk];
   const nodes = countNodes(state, fk);
-  let income = 2 + nodes * (f.trait === 'hoard' ? 2 : 1);
+  let income = 2 + nodes * (hasTrait(f, 'hoard') ? 2 : 1);
   if (controlsNode(state, fk, 'node_water')) income += 1;
   if (f.ability === 'bribe') income += 1;
   f.resources = Math.min(f.resources + income, RES_CAP);

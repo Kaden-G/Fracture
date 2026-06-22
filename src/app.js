@@ -241,11 +241,12 @@ function reinforceCost(fk){
 }
 function reinforceAmount(fk){ return 2; }  // all factions reinforce +2; GRID's perk is the cost discount
 function airliftCost(fk){ return controlsNode(fk,'node_transit') ? 0 : 3; }             // 🚇 TRANSIT: free airlifts
+function hasTrait(f, id) { return f.trait === id || (f.inheritedTraits && f.inheritedTraits.includes(id)); }
 function moveRange(fk){
   const f = G.factions[fk];
   if (!f) return 1;
   const phantom = f.ability === 'sabotage';  // ghost faction perk
-  const step    = f.trait === 'ghost_step';   // trait
+  const step    = hasTrait(f, 'ghost_step');   // trait (native or inherited)
   // Phase 5b: phantom+ghost_step stacks to 3; either alone = 2; otherwise 1
   if (phantom && step) return 3;
   if (phantom || step) return 2;
@@ -1069,7 +1070,7 @@ function renderSidebar() {
     <div class="res-chip">🔋 ${f.resources} RES</div>
     <div class="res-chip">🏠 ${tilesOf(G.playerFaction).length} TILES</div>
     <div class="res-chip">⭐ ${countNodes(G.playerFaction)}/3 TO WIN</div>
-    <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}</div>
+    <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}${f.inheritedTraits && f.inheritedTraits.length ? ' + ' + f.inheritedTraits.map(id => TRAITS.find(t=>t.id===id)?.name||id).join(', ') : ''}</div>
   `;
 
   // Quick-reference: your faction's ability + perk
@@ -1371,7 +1372,7 @@ function fireRoundEvent() {
 function applyIncome(fk) {
   const f = G.factions[fk];
   const nodes = countNodes(fk);
-  let income = 2 + nodes * (f.trait==='hoard' ? 2 : 1);
+  let income = 2 + nodes * (hasTrait(f, 'hoard') ? 2 : 1);
   if (controlsNode(fk,'node_water')) income += 1;   // 💧 WATER node
   if (f.ability==='bribe')           income += 1;   // 💰 SYNDICATE cartel perk
   f.resources = Math.min(f.resources + income, RES_CAP);
@@ -2486,7 +2487,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const df  = G.factions[tgt.owner];
 
   // --- Base dice (2d6 bell curve, centered on 7) ---
-  const attRoll = roll2d6(af.trait==='tactician');
+  const attRoll = roll2d6(hasTrait(af, 'tactician'));
   const defRoll = roll2d6(false);
   const attDice = attRoll.sum;
   const defDice = defRoll.sum;
@@ -2507,8 +2508,8 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
   // 4. Trait modifiers
-  const lastStand = (df?.trait==='last_stand' && tgt.troops<=2) ? 3 : 0;  // triggers at 1-2 troops
-  const fortify  = df?.trait==='fortify' ? (tgt.heldRounds > 0 ? 2 : 1) : 0;  // +2 fresh, decays to +1 after casualty
+  const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops<=2) ? 3 : 0;  // triggers at 1-2 troops
+  const fortify  = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;  // +2 fresh, decays to +1 after casualty
   // 5. Node bonuses — 📡 COMMS (+1 atk), 🖧 DATA (+1 def)
   const comms = controlsNode(attackerFk,'node_comms') ? 1 : 0;
   const data  = controlsNode(tgt.owner,'node_data')   ? 1 : 0;
@@ -2561,16 +2562,24 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       tgt.heldRounds = 0;   // freshly taken — not dug in yet
       src.troops   = Math.max(1, src.troops-1);
       // SCAVENGER trait: loot +1 resource on capture (denied by LAST STAND defenders)
-      const lootDenied = df?.trait==='last_stand';
-      if (af.trait==='scavenger' && !lootDenied) { af.resources = Math.min((af.resources||0)+1, RES_CAP); }
-      const lootMsg = af.trait==='scavenger' ? (lootDenied ? ' 🚫 loot denied' : ' 💰+1 res') : '';
+      const lootDenied = df && hasTrait(df, 'last_stand');
+      if (hasTrait(af, 'scavenger') && !lootDenied) { af.resources = Math.min((af.resources||0)+1, RES_CAP); }
+      const lootMsg = hasTrait(af, 'scavenger') ? (lootDenied ? ' 🚫 loot denied' : ' 💰+1 res') : '';
       addLog(`🏴 ${af.icon} CAPTURED ${tgt.name}! [${attTotal} vs ${defTotal}]${lootMsg}`);
       const defLeft = Object.values(G.tiles).filter(t=>t.owner===prev).length;
       if (defLeft===0) {
         killFaction(prev);
-        // Bounty: wiping a rival grants +3 resources (encourages PvP without breaking node count).
-        af.resources = Math.min((af.resources||0)+3, RES_CAP);
-        addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +3 resources bounty.`);
+        // Bounty: wiping a rival grants +3 resources + half the victim's stash.
+        const lootRes = Math.floor((G.factions[prev]?.resources || 0) / 2);
+        af.resources = Math.min((af.resources||0) + 3 + lootRes, RES_CAP);
+        // Inherit the victim's passive trait (stacks with your own).
+        const victimTrait = G.factions[prev]?.trait;
+        if (victimTrait && victimTrait !== af.trait) {
+          if (!af.inheritedTraits) af.inheritedTraits = [];
+          if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+        }
+        const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
+        addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
         // Track where the Tyrant fell for graveyard placement after reprieve
         if (prev === TYRANT_KEY && !G.factions[TYRANT_KEY].eliminated) {
           G.tyrantDeathTile = tgtId;

@@ -3,6 +3,8 @@
 // PURE: no DOM, no timers, no network, no Math.random in engine paths.
 // ============================================================
 
+export function hasTrait(f, id) { return f.trait === id || (f.inheritedTraits && f.inheritedTraits.includes(id)); }
+
 export const RES_CAP = 14;
 // Max troops on a single tile. Past the force cap (+2 at 8 troops) extra troops only buy
 // attrition-resistance, which trivializes sabotage and other chip effects — so we cap the
@@ -221,7 +223,7 @@ export function moveRange(state, fk) {
   const f = state.factions[fk];
   if (!f) return 1;
   const phantom = f.ability === 'sabotage';  // ghost faction perk
-  const step    = f.trait === 'ghost_step';   // trait
+  const step    = hasTrait(f, 'ghost_step');   // trait (native or inherited)
   // Phase 5b: phantom+ghost_step stacks to 3; either alone = 2; otherwise 1
   if (phantom && step) return 3;
   if (phantom || step) return 2;
