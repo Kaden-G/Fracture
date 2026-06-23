@@ -3976,12 +3976,21 @@ function renderStepReview(data) {
   const fk = mySeatKey(data);
   const f = fk && FACTIONS[fk];
   const t = TRAITS.find(x => x.id === myTrait);
+  const tyrantToggle = lobbyIsHost ? `
+    <div style="margin-top:14px;padding:10px 12px;border:1px solid ${TYRANT_DEF.color};border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="hostSetTyrant()">
+      <span style="font-size:20px;">${data.tyrant ? '☠' : '🦠'}</span>
+      <div style="flex:1;">
+        <div style="color:${TYRANT_DEF.color};font-family:'Bangers';font-size:16px;letter-spacing:1px;">THE TYRANT</div>
+        <div style="font-size:11px;color:#888;">Tap to toggle — a virus AI that festers at the center.</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${data.tyrant ? '#e74c3c' : '#888'};">${data.tyrant ? 'ON' : 'OFF'}</span>
+    </div>` : '';
   return wizShell('Ready to deploy?', 4, `
     <div class="wiz-review">
       <div><span>NAME</span><b>${esc(myName) || '—'}</b></div>
       <div><span>FACTION</span><b style="color:${f ? f.color : '#fff'}">${f ? f.icon + ' ' + f.name : '—'}</b></div>
       <div><span>PASSIVE</span><b>${t ? t.name : '—'}</b></div>
-    </div>
+    </div>${tyrantToggle}
     <p style="font-size:12px;color:#888;margin-top:10px;">Tap READY to lock in. The host starts once everyone is ready.</p>
   `, `
     <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
