@@ -74,7 +74,12 @@ const AI_PROFILES = {
     thrift: 1.0, lookahead: 1, coordinate: true, tyrantAggro: 1.3,
   },
 };
-function aiProfile(fk) { return AI_PROFILES[(G.factions[fk] && G.factions[fk].diff)] || AI_PROFILES[DEFAULT_TIER]; }
+function aiProfile(fk) {
+  // The Tyrant is the shared threat — always sharp & relentless, never blunders or wastes tempo.
+  // (Its difficulty knob is the Tyrant aggression dial, applied separately in a later phase.)
+  if (fk === TYRANT_KEY) return AI_PROFILES.bloodbath;
+  return AI_PROFILES[(G.factions[fk] && G.factions[fk].diff)] || AI_PROFILES[DEFAULT_TIER];
+}
 
 const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
@@ -3133,6 +3138,31 @@ function tyrantConquestAction(fk, f, myTiles, enemyTiles) {
 }
 
 // One AI action. Returns 'combat' if it fought, true for any other action, false if nothing to do.
+// A deliberately weak action for low-skill tiers (driven by profile.blunder). It squanders the
+// turn on something plausible-but-bad — a reckless strike that ignores the odds, or a random
+// reinforce — so lower tiers visibly misplay. Returns a combat result / true, or null if it
+// couldn't even find a weak move (the caller then runs the real playbook).
+function aiLazyAction(fk, f, myTiles, enemyTiles) {
+  const mine = myTiles();
+  // ~half the time: reckless strike on a random reachable enemy, ignoring the odds entirely.
+  if (Math.random() < 0.5) {
+    for (const a of mine.filter(t => t.troops >= 2)) {
+      const targets = enemyTiles().filter(d => moveReachable(fk, a, d) && !hasPact(fk, d.owner));
+      if (targets.length) return aiAttackWithAdvance(fk, a, targets[(Math.random() * targets.length) | 0]);
+    }
+  }
+  // Otherwise fritter a reinforce onto a random tile (rarely the one that actually needs it).
+  if (f.resources >= reinforceCost(fk) && mine.length) {
+    const t = mine[(Math.random() * mine.length) | 0];
+    t.troops = Math.min(t.troops + reinforceAmount(fk), TROOP_CAP);
+    f.resources -= reinforceCost(fk);
+    addLog(`${f.icon} ${f.name} mills troops around ${t.name}`);
+    refreshHex(t.id);
+    return true;
+  }
+  return null;
+}
+
 function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // AI harbor: if the Tyrant is dying and this AI is an ally, consider donating a tile.
   if (G.tyrantHarbor && fk !== TYRANT_KEY && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0 && aiHarborDecision(fk)) {
@@ -3147,12 +3177,23 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   }
   // Conquest Tyrant ignores the generic playbook — it only reinforces and assaults nodes.
   if (fk === TYRANT_KEY && G.tyrantConquest) return tyrantConquestAction(fk, f, myTiles, enemyTiles);
+
+  // Skill tier governs the rest of this turn's choices (Phase 2 knobs).
+  const prof = aiProfile(fk);
+  // Low tiers squander a fraction of their actions — but the Tyrant is never careless.
+  if (fk !== TYRANT_KEY && prof.blunder && Math.random() < prof.blunder) {
+    const lazy = aiLazyAction(fk, f, myTiles, enemyTiles);
+    if (lazy !== null) return lazy;
+  }
+
   const best = findBestAttack();
   const attackable = best && best.atk.troops >= 2 && !signalJamActive;
+  const edge = best ? (best.atk.troops - best.def.troops) : -99;
   const myNodes = nodesOf(fk);
 
   // 0. DEFEND LEAD: when holding 2+ nodes, prioritize reinforcing/entrenching them over expansion.
-  if (myNodes.length >= 2) {
+  //    Low tiers (defendLead off) never bother — they leak their own nodes.
+  if (prof.defendLead && myNodes.length >= 2) {
     // Entrench an under-defended node first
     const weakNode = myNodes
       .filter(t => (t.heldRounds||0) < (t.isNode?2:3) && t.troops >= 2 && enemyTiles().some(e=>adjacent(t,e)))
@@ -3175,7 +3216,9 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   }
 
   // 1. Seize an enemy-held NODE when we have the edge — it's the win condition.
-  if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
+  //    minEdge scales how much cushion the tier demands (top tiers strike at even odds —
+  //    the attacker wins ties — while Sandbox waits for a fat advantage it rarely gets).
+  if (attackable && best.def.isNode && edge >= prof.minEdge) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
     return aiAttackWithAdvance(fk, best.atk, best.def);
   }
@@ -3200,15 +3243,15 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 2. Grab an unclaimed Node we can reach, or march a troop toward the nearest Node.
   if (aiNodePush(fk)) return true;
 
-  // 3. Take any other favorable attack.
-  if (attackable && best.atk.troops > best.def.troops) {
+  // 3. Take any other favorable attack (plain tiles want a real edge, not just a tie).
+  if (attackable && edge >= Math.max(1, prof.minEdge)) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
     return aiAttackWithAdvance(fk, best.atk, best.def);
   }
-  // 4. Use special ability opportunistically.
-  if (aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
+  // 4. Use special ability opportunistically (low tiers ignore their ability entirely).
+  if (prof.abilities && aiUseAbility(f, fk, myTiles, enemyTiles)) return true;
   // 4b. Entrench a well-stacked frontline Node that isn't yet maxed — buy defense.
-  if (f.resources >= 2) {
+  if (prof.defendLead && f.resources >= 2) {
     const maxDig = (t) => t.isNode ? 2 : 3;
     const node = nodesOf(fk)
       .filter(t => t.troops >= 3 && (t.heldRounds||0) < maxDig(t) && enemyTiles().some(e=>adjacent(t,e)))
@@ -3221,11 +3264,15 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
       return true;
     }
   }
-  // 5. Reinforce — prefer a Node or frontline tile we already hold.
+  // 5. Reinforce — disciplined tiers feed the weakest Node/frontline tile; undisciplined ones
+  //    (low thrift) just dump troops on a random tile, wasting the tempo.
   const cost = reinforceCost(fk);
   if (f.resources >= cost && myTiles().length > 0) {
+    const smart = Math.random() < prof.thrift;
     const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
-    const target = (priority.length ? priority : myTiles()).sort((a,b)=>a.troops-b.troops)[0];
+    const pool = (smart && priority.length) ? priority : myTiles();
+    const target = smart ? pool.sort((a,b)=>a.troops-b.troops)[0]
+                         : pool[(Math.random() * pool.length) | 0];
     target.troops += reinforceAmount(fk); f.resources -= cost;
     addLog(`${f.icon} ${f.name} reinforced ${target.name}`);
     refreshHex(target.id);
