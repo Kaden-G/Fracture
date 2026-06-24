@@ -39,8 +39,9 @@ function findBestAttack(state, fk, turnAttacks) {
     for (const def of enemyT) {
       if (!moveReachable(state, fk, atk, def)) continue;   // ghost-attack: leapfrog reach for phantom/ghost_step
       const pact = hasPact(state, fk, def.owner);
-      // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
-      const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY;
+      // The TYRANT never opportunistically betrays an ally; its break is the conquest flip. And a
+      // pact WITH the Tyrant is binding — a bound faction can't betray it either (only the Reckoning).
+      const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY && def.owner !== TYRANT_KEY;
       if (pact && !canBetray) continue;
 
       const atkPower = Math.min(2, Math.floor(atk.troops / 4));

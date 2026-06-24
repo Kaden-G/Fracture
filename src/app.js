@@ -351,7 +351,13 @@ function hasPact(a,b){ return !!(a && b && a!==b && G.pacts && G.pacts[pairKey(a
 function formPact(a,b){ G.pacts[pairKey(a,b)] = G.round; }
 function breakPactBetrayal(betrayer, victim){
   delete G.pacts[pairKey(betrayer,victim)];
-  G.grudges[victim+'>'+betrayer] = G.round + 2;  // victim seethes for 2 rounds
+  const key = victim+'>'+betrayer;
+  G.grudges[key] = G.round + 2;  // victim seethes for 2 rounds
+  // SURPRISE ATTACK: the grudge (defender bonus) does NOT kick in during the traitor's OWN turn —
+  // betrayal catches the victim flat-footed. We stamp the betrayer's current turn; the grudge goes
+  // live the moment that turn ends (see grudgeActive). turnToken is unique per (round, turn index).
+  if (!G.freshGrudges) G.freshGrudges = {};
+  G.freshGrudges[key] = G.round * 100 + (G.currentTurnIdx || 0);
   // Part 2: clear boon if a Tyrant pact is broken
   if (betrayer === TYRANT_KEY && G.factions[victim]) G.factions[victim].boon = null;
   if (victim === TYRANT_KEY && G.factions[betrayer]) G.factions[betrayer].boon = null;
@@ -367,8 +373,30 @@ function corruptionBand(n) {
   return                                           { label: 'Thrall of the Tyrant',  tier: 4 };
 }
 
-function grudgeAtkBonus(atk, def){ return (G.grudges[atk+'>'+def] >= G.round) ? 2 : 0; }
-function grudgeDefBonus(atk, def){ return (G.grudges[def+'>'+atk] >= G.round) ? 2 : 0; }
+// A grudge is live if it hasn't expired AND we're past the betrayer's surprise window — it stays
+// suppressed only during the betrayer's own turn (the turn the pact was broken), then activates.
+function grudgeActive(key){
+  if (!(G.grudges[key] >= G.round)) return false;
+  const fresh = G.freshGrudges && G.freshGrudges[key];
+  if (fresh !== undefined && fresh === G.round * 100 + (G.currentTurnIdx || 0)) return false;  // traitor's turn — surprise
+  return true;
+}
+function grudgeAtkBonus(atk, def){ return grudgeActive(atk+'>'+def) ? 2 : 0; }
+function grudgeDefBonus(atk, def){ return grudgeActive(def+'>'+atk) ? 2 : 0; }
+
+// A pact with the Tyrant is BINDING: while it holds you cannot attack, sabotage, or bribe the
+// Tyrant, nor renounce at will. The only exit is the Reckoning's press-on / renounce fork, offered
+// when victory is near. This themed refusal stands in for the old "break the pact?" prompts.
+function tyrantBoundRefusal(){
+  tyrantModal({
+    type: 'BOUND IN SHADOW',
+    title: '🦠 NO BETRAYING THE TYRANT',
+    body: `You are bound to the Tyrant by a <b>secret pact</b>. While it holds, you cannot attack, sabotage, or bribe it — there is no slipping the leash.<br><br>` +
+          `The only way out is the <b>Reckoning</b>: when victory is within your grasp, you'll choose to <i>press on</i> or <i>renounce</i>.`,
+    confirmLabel: 'SO BE IT', cancelLabel: null,
+  });
+  setActionLog('You are bound to the Tyrant — you cannot strike it. Only the Reckoning can free you.');
+}
 // Coalition: everyone piles on whoever already holds 2+ Nodes (anti-snowball)
 function coalitionAtkBonus(defFk, atkFk){ return (defFk!==atkFk && countNodes(defFk)>=2) ? 1 : 0; }
 
@@ -2412,6 +2440,9 @@ function handleTileClick(id) {
       if (won && captured) assaultCaptures++;
       renderSidebar();
       if (checkWin()) return;
+      // One popup at a time: wait for the player to dismiss the combat result before the advance
+      // picker or the next assault prompt appears (their own turn — nothing auto-dismisses here).
+      onCombatAck(() => {
       const contAssault = () => {
         // Press the assault: a win lets you keep striking for free, but each strike rallies defenders +2.
         // Hard cap: 3 captures per assault chain.
@@ -2451,21 +2482,10 @@ function handleTileClick(id) {
         return;
       }
       contAssault();
+      });
     };
     if (hasPact(G.playerFaction, tile.owner)) {
-      if (tile.owner === TYRANT_KEY) {
-        tyrantModal({
-          type: 'A PACT IN THE WAY',
-          title: '🦠 STRIKE YOUR DARK ALLY?',
-          body: `You are bound to the Tyrant by a <b>secret pact</b>. Strike it now and the pact shatters — ` +
-                `<span style="color:#d98fd9;">it will hold a grudge (+2 against you for 2 rounds)</span>.`,
-          confirmLabel: '🗡️ BREAK THE PACT',
-          cancelLabel: '✋ HOLD',
-          onConfirm: () => { breakPactBetrayal(G.playerFaction, tile.owner); doAttack(); },
-          onCancel:  () => setActionLog('Attack cancelled — pact held.'),
-        });
-        return;
-      }
+      if (tile.owner === TYRANT_KEY) { tyrantBoundRefusal(); return; }
       if (!confirm(`You have a pact with ${G.factions[tile.owner].name}. Break it and attack? They'll hold a grudge (+2 vs you for 2 rounds).`)) {
         setActionLog('Attack cancelled — pact held.'); return;
       }
@@ -2512,19 +2532,7 @@ function handleTileClick(id) {
       syncPush();   // broadcast so online opponents see the troop drop immediately
     };
     if (hasPact(G.playerFaction, tile.owner)) {
-      if (tile.owner === TYRANT_KEY) {
-        tyrantModal({
-          type: 'A PACT IN THE WAY',
-          title: '🦠 SABOTAGE YOUR DARK ALLY?',
-          body: `You are bound to the Tyrant by a <b>secret pact</b>. Sabotage it and the pact shatters — ` +
-                `<span style="color:#d98fd9;">it will hold a grudge (+2 against you for 2 rounds)</span>.`,
-          confirmLabel: '🗡️ BREAK THE PACT',
-          cancelLabel: '✋ HOLD',
-          onConfirm: () => { breakPactBetrayal(G.playerFaction, tile.owner); doSabotage(); },
-          onCancel:  () => setActionLog('Sabotage cancelled — pact held.'),
-        });
-        return;
-      }
+      if (tile.owner === TYRANT_KEY) { tyrantBoundRefusal(); return; }
       if (!confirm(`Sabotaging ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Sabotage cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
@@ -2568,19 +2576,7 @@ function handleTileClick(id) {
       refreshHex(id); renderSidebar(); checkWin();
     };
     if (hasPact(G.playerFaction, tile.owner)) {
-      if (tile.owner === TYRANT_KEY) {
-        tyrantModal({
-          type: 'A PACT IN THE WAY',
-          title: '🦠 BRIBE YOUR DARK ALLY?',
-          body: `You are bound to the Tyrant by a <b>secret pact</b>. Turn its troops and the pact shatters — ` +
-                `<span style="color:#d98fd9;">it will hold a grudge (+2 against you for 2 rounds)</span>.`,
-          confirmLabel: '🗡️ BREAK THE PACT',
-          cancelLabel: '✋ HOLD',
-          onConfirm: () => { breakPactBetrayal(G.playerFaction, tile.owner); doBribe(); },
-          onCancel:  () => setActionLog('Bribe cancelled — pact held.'),
-        });
-        return;
-      }
+      if (tile.owner === TYRANT_KEY) { tyrantBoundRefusal(); return; }
       if (!confirm(`Bribing ${G.factions[tile.owner].name} breaks your pact. Proceed?`)) { setActionLog('Bribe cancelled — pact held.'); return; }
       breakPactBetrayal(G.playerFaction, tile.owner);
     }
@@ -3127,7 +3123,10 @@ function runAITurn(fk) {
         // Honor pacts — unless we can seize a NODE with a commanding edge (betrayal).
         // The TYRANT never opportunistically betrays an ally; its break is the conquest flip.
         const pact = hasPact(fk, def.owner);
-        const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY;
+        // A pact bars an attack — except betraying for a commanding NODE seize. The TYRANT never
+        // betrays an ally (its break is the conquest flip), and a Tyrant pact is BINDING the other
+        // way too: a bound faction can't betray the Tyrant either (only the Reckoning frees them).
+        const canBetray = def.isNode && atk.troops >= def.troops + 2 && fk !== TYRANT_KEY && def.owner !== TYRANT_KEY;
         if (pact && !canBetray) continue;
         const atkPower = Math.min(2, Math.floor(atk.troops/4));
         const defPower = Math.min(2, Math.floor(def.troops/4)) + Math.min(def.heldRounds||0, def.isNode?2:3) + (def.owner===TYRANT_KEY ? 0 : (turnStrikes[atk.id+'|'+def.id]||0)*2);  // rally: per-encounter (this tile vs that tile), none vs Tyrant
