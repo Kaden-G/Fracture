@@ -79,6 +79,30 @@ function runGame(seed, opts = {}) {
   let state = initGame(seed, opts);
   const verbose = opts.verbose || false;
   let _dbgPhase = 'init', _dbgFk = '';
+  // Phase 5 instrumentation: track the FIRST faction to hit 3 nodes and how the game resolved
+  // from there. The lever Phase 5 tests is "is a 3-node lead near-impregnable?" — answered by
+  // first3.winRate = (games where first3.fk also wins) / (games where first3.fk exists).
+  let first3 = null;            // { fk, round } — first faction to hit 3 nodes, and when
+  let first3MaxHeld = 0;        // longest consecutive-turn streak they held 3 (in END_TURN samples)
+  let first3CurrentStreak = 0;  // resets if they drop below 3
+  function noteThreeNodeState() {
+    for (const fk of livingKeys(state)) {
+      if (fk === TYRANT_KEY) continue;
+      const n = countNodes(state, fk);
+      if (!first3 && n >= 3) {
+        first3 = { fk, round: state.round };
+        first3CurrentStreak = 1;
+        first3MaxHeld = 1;
+      } else if (first3 && fk === first3.fk) {
+        if (n >= 3) {
+          first3CurrentStreak++;
+          if (first3CurrentStreak > first3MaxHeld) first3MaxHeld = first3CurrentStreak;
+        } else {
+          first3CurrentStreak = 0;
+        }
+      }
+    }
+  }
   try {
   for (let round = 1; round <= ROUND_CAP + 1; round++) {
     // Start round
@@ -166,7 +190,7 @@ function runGame(seed, opts = {}) {
         if (verbose) result.log.forEach(l => console.log(`    ${fk}: ${l}`));
         // Tyrant is now dead — check if game ended
         const winEffect = result.effects.find(e => e.kind === 'win');
-        if (winEffect || state.winner) return summarize(state, seed);
+        if (winEffect || state.winner) return summarize(state, seed, first3, first3MaxHeld);
       }
 
       // AI actions (up to 3 + assault chains)
@@ -190,7 +214,7 @@ function runGame(seed, opts = {}) {
         // Check for win
         const winEffect = result.effects.find(e => e.kind === 'win');
         if (winEffect || state.winner) {
-          return summarize(state, seed);
+          return summarize(state, seed, first3, first3MaxHeld);
         }
 
         // Action accounting
@@ -211,6 +235,7 @@ function runGame(seed, opts = {}) {
       // End turn
       result = reduce(state, { type: 'END_TURN' });
       state = result.state;
+      noteThreeNodeState();   // Phase 5 instrumentation — sample after every turn
     }
 
     // End round
@@ -220,19 +245,19 @@ function runGame(seed, opts = {}) {
 
     const winEffect = result.effects.find(e => e.kind === 'win');
     if (winEffect || state.winner) {
-      return summarize(state, seed);
+      return summarize(state, seed, first3, first3MaxHeld);
     }
   }
 
   // Should not reach here (ROUND_CAP triggers TIMED OUT)
-  return summarize(state, seed);
+  return summarize(state, seed, first3, first3MaxHeld);
   } catch (e) {
     e.message = `[R${state.round} phase=${_dbgPhase} fk=${_dbgFk}] ${e.message}`;
     throw e;
   }
 }
 
-function summarize(state, seed) {
+function summarize(state, seed, first3 = null, first3MaxHeld = 0) {
   const winner = state.winner;
   // Count pacts at game end
   const pactCount = Object.keys(state.pacts || {}).length;
@@ -243,6 +268,11 @@ function summarize(state, seed) {
     winnerFk: winner?.fk || null,
     condition: winner?.condition || 'UNKNOWN',
     detail: winner?.detail || '',
+    // Phase 5 instrumentation: which faction first hit 3 nodes, when, did they hold/win
+    first3Fk: first3 ? first3.fk : null,
+    first3Round: first3 ? first3.round : null,
+    first3MaxHeld,
+    first3Won: first3 && winner ? (first3.fk === winner.fk) : false,
     factions: Object.fromEntries(
       Object.entries(state.factions).map(([k, f]) => [k, {
         name: f.name,
@@ -273,6 +303,12 @@ export function runBatch(numGames, baseSeed = 1, opts = {}) {
   const traitWins = {};
   const roundSum = [];
   const factionCondBreakdown = {};  // fk -> { condition -> count }
+  // Phase 5: 3-node-leader conversion. The headline question: of games where SOMEONE reaches
+  // 3 nodes, what fraction of those games does that someone win? Target after Phase 5 levers
+  // land: ~55-65%. Today's prediction: very high (>90%).
+  let first3Total = 0;        // games where a faction reached 3 nodes (denominator)
+  let first3Wins = 0;         // ...and went on to win
+  const first3HeldDist = {};  // longest 3-node streak (in rounds) -> count, for shape of the win
   let errors = 0;
 
   for (let i = 0; i < numGames; i++) {
@@ -293,6 +329,13 @@ export function runBatch(numGames, baseSeed = 1, opts = {}) {
       if (result.winnerFk && result.factions[result.winnerFk]) {
         const trait = result.factions[result.winnerFk].trait;
         traitWins[trait] = (traitWins[trait] || 0) + 1;
+      }
+
+      if (result.first3Fk) {
+        first3Total++;
+        if (result.first3Won) first3Wins++;
+        const bucket = result.first3MaxHeld;
+        first3HeldDist[bucket] = (first3HeldDist[bucket] || 0) + 1;
       }
     } catch (e) {
       if (errors < 5) console.error(`Game ${i} (seed=${seed}) phase=${e._dbgPhase||'?'} fk=${e._dbgFk||'?'} crashed:`, e.message, '\n', e.stack);
@@ -315,6 +358,11 @@ export function runBatch(numGames, baseSeed = 1, opts = {}) {
     avgRound,
     medianRound,
     earlyEndings,
+    first3Total,
+    first3Wins,
+    first3WinRate: first3Total ? (first3Wins / first3Total) : 0,
+    first3Rate: numGames ? (first3Total / numGames) : 0,
+    first3HeldDist,
     results,
   };
 }
@@ -351,4 +399,17 @@ if (isCLI) {
   }
 
   console.log(`\nAvg rounds per game: ${stats.avgRound}`);
+
+  // Phase 5: 3-node-leader conversion — the headline difficulty metric.
+  console.log('\n--- 3-Node Leader Conversion ---');
+  console.log(`  Games where someone reached 3 nodes: ${stats.first3Total}/${numGames}  (${(stats.first3Rate*100).toFixed(1)}%)`);
+  if (stats.first3Total > 0) {
+    console.log(`  Of those, that faction went on to WIN: ${stats.first3Wins}/${stats.first3Total}  (${(stats.first3WinRate*100).toFixed(1)}%)`);
+    console.log(`  Longest 3-node streak (in turn-ends; ~4 per round, 12 ≈ winning hold of 3 full rounds):`);
+    const buckets = Object.keys(stats.first3HeldDist).map(Number).sort((a,b)=>a-b);
+    for (const b of buckets) {
+      const n = stats.first3HeldDist[b];
+      console.log(`    ${b.toString().padStart(2)} turns: ${n.toString().padStart(4)}  (${(n/stats.first3Total*100).toFixed(1)}%)`);
+    }
+  }
 }
