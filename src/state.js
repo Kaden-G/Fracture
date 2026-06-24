@@ -3,6 +3,8 @@
 // PURE: no DOM, no timers, no network, no Math.random in engine paths.
 // ============================================================
 
+import { AI_PROFILES, DEFAULT_TIER } from './ai_profiles.js';
+
 export function hasTrait(f, id) { return f.trait === id || (f.inheritedTraits && f.inheritedTraits.includes(id)); }
 
 export const RES_CAP = 14;
@@ -157,13 +159,15 @@ export const START_CORNERS = [
 ];
 
 // ---- Factory helpers ----
-export function mkFaction(name, key, isAI, trait) {
+export function mkFaction(name, key, isAI, trait, diff) {
   const def = factionDef(key);
   return {
     name, icon: def.icon, color: def.color,
     // The Tyrant never carries a passive trait — it's the shared enemy, kept clean & predictable.
     ability: def.ability, isAI, trait: key === TYRANT_KEY ? null : trait, resources: 4, eliminated: false,
     isTyrant: key === TYRANT_KEY,
+    // AI skill tier — drives the difficulty knobs in later phases. null for humans & the Tyrant.
+    diff: (isAI && key !== TYRANT_KEY) ? (AI_PROFILES[diff] ? diff : DEFAULT_TIER) : null,
     corruption: 0,   // Part 2: Tyrant corruption clock (exact integer, display via corruptionBand)
     boon: null,       // Part 2: chosen boon when allied to Tyrant ('tithe' | 'sic' | null)
   };

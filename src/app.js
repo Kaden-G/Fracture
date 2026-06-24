@@ -43,6 +43,39 @@ const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'r
                      perk:'Virus: spreads into adjacent tiles every turn · harbored allies can revive it' };
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
 
+// AI DIFFICULTY TIERS — inline twin of src/ai_profiles.js (app.js is self-contained; KEEP IN SYNC).
+// Phase 1: the knobs are declared and selectable in setup, but NOT yet read by the AI decision
+// logic — every tier plays identically until Phase 2 wires them into aiOneAction/findBestAttack.
+const AI_TIERS = ['sandbox', 'jv', 'varsity', 'bloodbath'];
+const DEFAULT_TIER = 'varsity';
+const AI_PROFILES = {
+  sandbox: {
+    id: 'sandbox', name: 'Sandbox', icon: '🎈',
+    blurb: 'Barely tries — random moves, no defense, wastes resources. For learning the ropes.',
+    blunder: 0.6, minEdge: 2, abilities: false, defendLead: false,
+    thrift: 0.3, lookahead: 0, coordinate: false, tyrantAggro: 0.6,
+  },
+  jv: {
+    id: 'jv', name: 'JV', icon: '🏫',
+    blurb: "Solid basics but no foresight — a fair fight you can outthink.",
+    blunder: 0.2, minEdge: 1, abilities: true, defendLead: true,
+    thrift: 0.6, lookahead: 0, coordinate: false, tyrantAggro: 0.85,
+  },
+  varsity: {
+    id: 'varsity', name: 'Varsity', icon: '🎯',
+    blurb: 'Plays the odds, defends its lead, concentrates force. The standard challenge.',
+    blunder: 0.04, minEdge: 0, abilities: true, defendLead: true,
+    thrift: 0.9, lookahead: 1, coordinate: false, tyrantAggro: 1.0,
+  },
+  bloodbath: {
+    id: 'bloodbath', name: 'Bloodbath', icon: '💀',
+    blurb: 'Flawless and merciless — the AIs gang up on the leader and share secrets. They cheat.',
+    blunder: 0, minEdge: 0, abilities: true, defendLead: true,
+    thrift: 1.0, lookahead: 1, coordinate: true, tyrantAggro: 1.3,
+  },
+};
+function aiProfile(fk) { return AI_PROFILES[(G.factions[fk] && G.factions[fk].diff)] || AI_PROFILES[DEFAULT_TIER]; }
+
 const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
   { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
@@ -193,6 +226,7 @@ let myTurnActive   = false;   // is it currently a local human's turn we've begu
 let applyingRemote = false;   // suppress pushes while loading a remote snapshot
 let onlineStarting = false;   // host: round 1 in progress, flip room to started after first turn
 let lastShownEventN = 0;      // highest round-event card this client has already displayed
+let lastShownReckoningN = 0;  // highest Reckoning report this client has already displayed
 let roomCode       = null;
 let roomRef        = null;    // Firebase ref to /rooms/{CODE}
 let stateRef       = null;    // Firebase ref to /rooms/{CODE}/state
@@ -517,23 +551,30 @@ function maybeReckoningApp(fk) {
     // top of the win banner until dismissed, so the player understands they were spared.
     if (hasPact(TYRANT_KEY, fk)) {
       addLog(`⚖️ ${G.factions[fk].name}'s soul was weighed — untainted. The Tyrant lets them ascend.`);
-      tyrantModal({
+      showReckoningReport({
         type: 'THE WEIGHING',
         title: '⚖️ SOUL UNTAINTED',
-        body: `<b>${G.factions[fk].name}</b> was bound to the Tyrant — but your soul was untainted by corruption.<br><br>` +
-              `You ascend without trial.`,
-        confirmLabel: 'SO BE IT',
-        cancelLabel: null,
+        body: `<b>${G.factions[fk].name}</b> stood bound to the Tyrant as victory neared — and the Tyrant weighed their soul.<br><br>` +
+              `Corruption: <b>0 / ${THRALLDOM_CAP}</b> — untainted.<br><br>` +
+              `There is nothing for the Tyrant to claim. You ascend without trial.`,
       });
     }
     return false;
   }
 
-  // Thralldom cap — auto-loss
+  // Thralldom cap — auto-loss. No duel: corruption has already maxed, so the Tyrant simply
+  // claims a soul that is already its own. Still weigh them on-screen so the loss lands.
   if (corr >= THRALLDOM_CAP) {
     addLog(`🦠 THRALLDOM! ${G.factions[fk].name} is consumed — corruption reached the cap!`);
+    showReckoningReport({
+      type: 'THE RECKONING',
+      title: '🦠 CONSUMED BY THRALLDOM',
+      body: `<b>${G.factions[fk].name}</b> reached the brink of victory — and the Tyrant weighed their soul.<br><br>` +
+            `Corruption: <b>${corr} / ${THRALLDOM_CAP}</b> — the threshold of thralldom.<br><br>` +
+            `There is no duel. A soul this corrupted is already the Tyrant's. ${G.factions[fk].name} is consumed, and the Tyrant claims Nexus through its thrall.`,
+    });
     showWin(TYRANT_KEY, 'RECKONING (THRALLDOM)',
-      `${G.factions[fk].name} was consumed by corruption — the Tyrant wins through its thrall.`);
+      `${G.factions[fk].name} was consumed by corruption (${corr}/${THRALLDOM_CAP}) — the Tyrant wins through its thrall.`);
     return 'thralldom';
   }
 
@@ -592,16 +633,16 @@ function runReckoning(conspirator) {
   const moonMsg = inMoon ? '<br>🌙 <b>MOON BAND</b> — jackpot spike!' : '';
   const fallenMsg = (fallenForTyrant || fallenForCon)
     ? `<br>Fallen votes: +${fallenForCon} conspirator · +${fallenForTyrant} Tyrant` : '';
-  tyrantModal({
+  showReckoningReport({
     type: 'THE RECKONING',
     title: tWins >= 2 ? '🦠 THE TYRANT PREVAILS' : '⚔️ THE TYRANT FALLS',
-    body: `<b>${G.factions[conspirator].name}</b> challenges the Tyrant in the final duel.<br><br>` +
+    body: `<b>${G.factions[conspirator].name}</b> stood on the brink of victory — bound to the Tyrant, ` +
+          `their soul is weighed and dragged into the final duel.<br><br>` +
+          `Corruption: <b>${corr} / ${THRALLDOM_CAP}</b><br>` +
           `Tyrant Essence <b>${tEssence}</b> · Conspirator Essence <b>${cEssence}</b>` +
           skimMsg + moonMsg + fallenMsg +
           `<br><br><span style="font-family:monospace; font-size:12px;">${rounds.join('<br>')}</span>` +
           `<br><br><b>${winner} wins the Reckoning!</b>`,
-    confirmLabel: 'SO BE IT',
-    cancelLabel: null,
   });
 
   return tWins >= 2;
@@ -639,12 +680,18 @@ function switchScreen(id) {
 // ============================================================
 // SETUP — one card per faction; each is HUMAN (pass-and-play) or AI
 // ============================================================
+function savedDiff() {
+  let id = null;
+  try { id = localStorage.getItem('fracture_aiDiff'); } catch (e) {}
+  return AI_PROFILES[id] ? id : DEFAULT_TIER;
+}
 function defaultSetup() {
+  const diff = savedDiff();
   const seats = {};
   Object.keys(FACTIONS).forEach((k, i) => {
     seats[k] = (i === 0)
-      ? { type:'human', name:'', trait:'' }   // first faction starts as the lone human
-      : { type:'ai',    name:'', trait:'' };
+      ? { type:'human', name:'', trait:'', diff }   // first faction starts as the lone human
+      : { type:'ai',    name:'', trait:'', diff };
   });
   return { seats, tyrant: false };
 }
@@ -677,11 +724,29 @@ function renderSetup() {
               </div>`).join('')}
           </div>
         </div>
-        <div style="display:${human?'none':'block'}; font-size:12px; color:#888; margin-top:8px; line-height:1.5;">
-          🤖 Computer-controlled · random trait · same event deck & dice as everyone. No handicaps.
+        <div style="display:${human?'none':'block'}; margin-top:8px;">
+          <label style="font-size:11px; color:#888; letter-spacing:1px;">DIFFICULTY</label>
+          <div class="diff-select" style="display:flex; gap:4px; flex-wrap:wrap; margin:4px 0;">
+            ${AI_TIERS.map(id => {
+              const p = AI_PROFILES[id];
+              const sel = (s.diff||DEFAULT_TIER) === id;
+              return `<div class="seat-opt ${sel?'selected':''}" style="flex:1; min-width:62px; font-size:11px; padding:6px 3px;" title="${p.blurb}" onclick="setSeatDiff('${k}','${id}')">${p.icon} ${p.name}</div>`;
+            }).join('')}
+          </div>
+          <div style="font-size:11px; color:#888; line-height:1.4;">${AI_PROFILES[s.diff||DEFAULT_TIER].blurb}</div>
         </div>
       </div>`;
   }).join('') + `
+      <div class="setup-card" style="grid-column:1/-1; border-color:#888;">
+        <h3 style="color:#bbb; border-color:#888;">🤖 AI DIFFICULTY</h3>
+        <div style="font-size:12px; color:#888; margin-bottom:8px; line-height:1.5;">Set every AI at once — or override a single AI on its card above. Same dice & event deck for everyone; higher tiers just decide better (Bloodbath also gangs up).</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${AI_TIERS.map(id => {
+            const p = AI_PROFILES[id];
+            return `<div class="seat-opt" style="flex:1; min-width:96px;" title="${p.blurb}" onclick="setAllDiff('${id}')">${p.icon} ${p.name}</div>`;
+          }).join('')}
+        </div>
+      </div>` + `
       <div class="setup-card" style="grid-column:1/-1; border-color:${TYRANT_DEF.color}; cursor:pointer;" onclick="toggleTyrant()">
         <h3 style="color:${TYRANT_DEF.color}; border-color:${TYRANT_DEF.color}">${TYRANT_DEF.icon} THE TYRANT</h3>
         <div style="display:flex; align-items:center; gap:12px;">
@@ -705,6 +770,17 @@ function setSeatName(fk, val) {
 }
 function setSeatTrait(fk, id) {
   G.setup.seats[fk].trait = id;
+  renderSetup();
+}
+function setSeatDiff(fk, id) {
+  if (!AI_PROFILES[id]) return;
+  G.setup.seats[fk].diff = id;
+  renderSetup();
+}
+function setAllDiff(id) {
+  if (!AI_PROFILES[id]) return;
+  Object.keys(G.setup.seats).forEach(k => { G.setup.seats[k].diff = id; });
+  try { localStorage.setItem('fracture_aiDiff', id); } catch (e) {}
   renderSetup();
 }
 
@@ -759,7 +835,7 @@ function startGame() {
     const s = seats[k];
     factions[k] = (s.type === 'human')
       ? mkFaction(s.name.trim() || FACTIONS[k].name, k, false, s.trait || randTrait(k))
-      : mkFaction('NEXUS-'+k.slice(0,3).toUpperCase(), k, true, randTrait(k));
+      : mkFaction('NEXUS-'+k.slice(0,3).toUpperCase(), k, true, randTrait(k), s.diff || DEFAULT_TIER);
   });
 
   const turnOrder = order.slice();
@@ -804,13 +880,15 @@ function startGame() {
   startRound();
 }
 
-function mkFaction(name, key, isAI, trait) {
+function mkFaction(name, key, isAI, trait, diff) {
   const def = factionDef(key);
   return { name, icon: def.icon, color: def.color,
            // The Tyrant never carries a passive trait (no last stand, ghost step, fortify, etc.) —
            // it's the shared enemy and should be a clean, predictable threat.
            ability: def.ability, isAI, trait: key === TYRANT_KEY ? null : trait, resources: 4, eliminated: false,
            isTyrant: key === TYRANT_KEY,
+           // AI skill tier — drives the difficulty knobs in later phases. null for humans & the Tyrant.
+           diff: (isAI && key !== TYRANT_KEY) ? (AI_PROFILES[diff] ? diff : DEFAULT_TIER) : null,
            corruption: 0, boon: null };
 }
 
@@ -902,11 +980,27 @@ function shuffle(a) {
 // #map-area; the styles.css rule references var(--map-bg, …). Update MAP_BG_COUNT
 // when you drop more art into assets/raw/map_bg_N.png.
 const MAP_BG_COUNT = 5;
-let lastBackdrop = 0;
+// Remember the last backdrop ACROSS page reloads (localStorage), so a "new game" that reloads
+// the page still never repeats the one you just saw. Falls back to in-memory if storage is blocked.
+let lastBackdrop = (() => {
+  try { return parseInt(localStorage.getItem('fracture_lastBg'), 10) || 0; } catch (e) { return 0; }
+})();
+let appliedBackdrop = 0;   // which backdrop the CSS var currently shows (avoids redundant re-applies)
+// Pick a fresh random backdrop, never the same one twice in a row, and apply it. Also records
+// the choice on G.mapBg so online games ride it through synced state (every player matches the
+// host instead of falling back to the CSS default).
 function pickMapBackdrop() {
   let n;
   do { n = Math.floor(Math.random() * MAP_BG_COUNT) + 1; } while (n === lastBackdrop && MAP_BG_COUNT > 1);
   lastBackdrop = n;
+  try { localStorage.setItem('fracture_lastBg', String(n)); } catch (e) {}
+  if (typeof G !== 'undefined' && G) G.mapBg = n;   // synced to joiners online; harmless offline
+  applyMapBackdrop(n);
+}
+// Paint a specific backdrop onto the map. Used directly by online joiners replaying G.mapBg.
+function applyMapBackdrop(n) {
+  if (!n || n === appliedBackdrop) return;
+  appliedBackdrop = n;
   const el = document.getElementById('map-area');
   if (el && el.style && typeof el.style.setProperty === 'function') {
     el.style.setProperty('--map-bg', `url('assets/raw/map_bg_${n}.png?v=1')`);
@@ -1569,6 +1663,18 @@ function tyrantModal({ type = 'THE TYRANT', title, body, confirmLabel = 'CONFIRM
   _tyrantModalCb = { onConfirm, onCancel };
   document.getElementById('tyrant-confirm-overlay').classList.add('show');
 }
+// The Reckoning report — corruption weighed, the duel rounds, thralldom — must reach EVERY
+// player, not just the engine-driver who computed it. So it rides on synced game state: the
+// driver stamps G.reckoningReport here and shows it immediately; other clients replay it from
+// onRemoteState the moment it arrives (sequence-gated so it never shows twice or re-shows on echo).
+function showReckoningReport({ type, title, body }) {
+  G.reckoningSeq = (G.reckoningSeq || 0) + 1;
+  G.reckoningReport = { n: G.reckoningSeq, type, title, body };
+  lastShownReckoningN = G.reckoningSeq;
+  syncPush();   // broadcast so non-driver clients can replay it (no-op offline)
+  tyrantModal({ type, title, body, confirmLabel: 'SO BE IT', cancelLabel: null });
+}
+
 function tyrantModalConfirm() {
   const cb = _tyrantModalCb; _tyrantModalCb = null;
   document.getElementById('tyrant-confirm-overlay').classList.remove('show');
@@ -3729,7 +3835,23 @@ function onRemoteState(s) {
   applyingRemote = false;
 
   ensureGameScreen();
+  if (G.mapBg) applyMapBackdrop(G.mapBg);   // match the host's randomized backdrop (joiners)
   renderMap(); renderSidebar();
+
+  // Replay the Reckoning report for non-driver clients — the duel/weighing ran on the driver,
+  // but every player must witness it (corruption weighed, the dice, thralldom). Sequence-gated
+  // so it shows exactly once. Done before the gameOver early-return below so it layers on top
+  // of the win banner (the Tyrant modal sits at z-index 200, the conquest overlay at 180).
+  if (G.reckoningReport && G.reckoningReport.n > lastShownReckoningN) {
+    lastShownReckoningN = G.reckoningReport.n;
+    tyrantModal({
+      type: G.reckoningReport.type,
+      title: G.reckoningReport.title,
+      body: G.reckoningReport.body,
+      confirmLabel: 'SO BE IT',
+      cancelLabel: null,
+    });
+  }
 
   // Deliver pending pact offers and expiry votes immediately — the recipient responds
   // out of turn, like the online choice events below.
@@ -3814,7 +3936,7 @@ function hostRoom() {
   // All seats OPEN by default so anyone can claim one; unclaimed seats become AI at START.
   const seats = {};
   Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'human', by: null, name: '', trait: '', ready: false });
-  roomRef.set({ host: myClientId, started: false, seats, tyrant: false })
+  roomRef.set({ host: myClientId, started: false, seats, tyrant: false, diff: savedDiff() })
     .then(() => roomRef.on('value', onRoom))
     .catch(e => alert('Could not create room: ' + e.message));
 }
@@ -3848,6 +3970,14 @@ function setMyName(v) {
 function hostSetTyrant() {
   if (!lobbyIsHost) return;
   roomRef.update({ tyrant: !(lastRoomData && lastRoomData.tyrant) });
+}
+// Host-only: cycle the AI difficulty for the room (sandbox → jv → varsity → bloodbath → …).
+function hostSetDiff() {
+  if (!lobbyIsHost) return;
+  const cur = (lastRoomData && lastRoomData.diff) || DEFAULT_TIER;
+  const next = AI_TIERS[(AI_TIERS.indexOf(cur) + 1) % AI_TIERS.length];
+  try { localStorage.setItem('fracture_aiDiff', next); } catch (e) {}
+  roomRef.update({ diff: next });
 }
 
 // ============================================================
@@ -4007,12 +4137,22 @@ function renderStepReview(data) {
       </div>
       <span style="font-size:13px;font-weight:700;color:${data.tyrant ? '#e74c3c' : '#888'};">${data.tyrant ? 'ON' : 'OFF'}</span>
     </div>` : '';
+  const dp = AI_PROFILES[data.diff] || AI_PROFILES[DEFAULT_TIER];
+  const diffToggle = lobbyIsHost ? `
+    <div style="margin-top:10px;padding:10px 12px;border:1px solid #888;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="hostSetDiff()" title="${dp.blurb}">
+      <span style="font-size:20px;">${dp.icon}</span>
+      <div style="flex:1;">
+        <div style="color:#bbb;font-family:'Bangers';font-size:16px;letter-spacing:1px;">AI DIFFICULTY</div>
+        <div style="font-size:11px;color:#888;">Tap to cycle — ${dp.blurb}</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#bbb;">${dp.name.toUpperCase()}</span>
+    </div>` : '';
   return wizShell('Ready to deploy?', 4, `
     <div class="wiz-review">
       <div><span>NAME</span><b>${esc(myName) || '—'}</b></div>
       <div><span>FACTION</span><b style="color:${f ? f.color : '#fff'}">${f ? f.icon + ' ' + f.name : '—'}</b></div>
       <div><span>PASSIVE</span><b>${t ? t.name : '—'}</b></div>
-    </div>${tyrantToggle}
+    </div>${tyrantToggle}${diffToggle}
     <p style="font-size:12px;color:#888;margin-top:10px;">Tap READY to lock in. The host starts once everyone is ready.</p>
   `, `
     <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
@@ -4036,8 +4176,10 @@ function renderRoster(data) {
   }).join('');
   const everyoneReady = claimed.length > 0 && claimed.every(([, s]) => s.ready);
   const iAmReady = mySeatKey(data) && seats[mySeatKey(data)].ready;
+  const diffProf = AI_PROFILES[data.diff] || AI_PROFILES[DEFAULT_TIER];
   const hostFoot = lobbyIsHost
-    ? `<button class="btn btn-secondary" style="font-size:14px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
+    ? `<button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
+       <button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetDiff()" title="${diffProf.blurb}">AI: ${diffProf.icon} ${diffProf.name}</button>
        <button class="btn btn-primary" style="flex:1;font-size:18px;${everyoneReady ? '' : 'opacity:.45;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
     : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${everyoneReady ? 'WAITING FOR HOST…' : 'WAITING FOR PLAYERS…'}</div>`;
   return `
@@ -4047,7 +4189,7 @@ function renderRoster(data) {
         <span style="font-size:11px;color:${iAmReady ? '#27ae60' : '#888'};font-weight:700;">${iAmReady ? '✓ YOU ARE READY' : ''}</span>
       </div>
       <h3 style="margin-bottom:6px;">Lobby</h3>
-      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI (${diffProf.icon} ${diffProf.name}) at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}</p>
       ${rows}
       <div class="wizard-foot" style="margin-top:14px;">
         <button class="btn btn-secondary" style="font-size:13px;" onclick="lobbyEdit()">EDIT</button>
@@ -4074,7 +4216,8 @@ function hostStart() {
   // A claim from before an exclusion check (or a tampered write) falls back to a legal random trait.
   Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
 
-  buildOnlineGame(seats, !!lastRoomData.tyrant);
+  buildOnlineGame(seats, !!lastRoomData.tyrant, lastRoomData.diff || DEFAULT_TIER);
+  pickMapBackdrop();   // fresh random backdrop, recorded on G.mapBg so every joiner matches the host
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
   G.playerFaction = mySeats[0] || G.turnOrder[0];
@@ -4089,14 +4232,15 @@ function hostStart() {
   roomRef.update({ seats, started: true, state: snap }).then(() => startRound());
 }
 
-function buildOnlineGame(seats, tyrant) {
+function buildOnlineGame(seats, tyrant, diff) {
+  const tier = AI_PROFILES[diff] ? diff : DEFAULT_TIER;
   const order = shuffle(Object.keys(FACTIONS));
   const factions = {};
   order.forEach(k => {
     const s = seats[k];
     factions[k] = (s.type === 'human')
       ? mkFaction(s.name || FACTIONS[k].name, k, false, s.trait || randTrait(k))
-      : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k));
+      : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k), tier);
   });
   const turnOrder = order.slice();
   if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null); turnOrder.push(TYRANT_KEY); }
@@ -4117,8 +4261,8 @@ function buildOnlineGame(seats, tyrant) {
 // ============================================================
 Object.assign(window, {
   showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant,
-  setSeatType, setSeatName, setSeatTrait,
-  hostRoom, joinRoomPrompt, hostSetTyrant, hostStart,
+  setSeatType, setSeatName, setSeatTrait, setSeatDiff, setAllDiff,
+  hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostStart,
   setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
   acceptTyrantPact, refuseTyrantPact, pickRoundBoon,
   tyrantModalConfirm, tyrantModalCancel,
