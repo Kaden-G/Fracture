@@ -335,6 +335,44 @@ describe('Reducer', () => {
     }
   });
 
+  it('BRIBE elimination grants the full bounty (half stash + inherited trait)', () => {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; t.isNode = false; });
+    state.currentTurnIdx = state.turnOrder.indexOf('syndicate');
+    state.factions.syndicate.trait = 'scavenger';
+    state.factions.syndicate.resources = 5;
+    state.factions.commune.trait = 'fortify';
+    state.factions.commune.resources = 8;
+    state.tiles['tile_0_0'].owner = 'syndicate'; state.tiles['tile_0_0'].troops = 4;
+    state.tiles['tile_0_1'].owner = 'commune';   state.tiles['tile_0_1'].troops = 1;
+
+    const { state: next, log } = reduce(state, { type: 'ABILITY', kind: 'bribe', target: 'tile_0_1' });
+    assert.equal(next.factions.commune.eliminated, true, 'commune is wiped out');
+    // 5 start − 1 bribe cost + 3 base + floor(8/2)=4 stash = 11
+    assert.equal(next.factions.syndicate.resources, 11, 'gets +3 bounty plus half the victim stash');
+    assert.ok((next.factions.syndicate.inheritedTraits || []).includes('fortify'), 'inherits the victim trait');
+    assert.ok(log.some(l => l.includes('eliminated') && l.includes('inherited')), 'logs the bounty');
+  });
+
+  it('SABOTAGE elimination grants the full bounty (half stash + inherited trait)', () => {
+    const state = makeTestState();
+    Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; t.isNode = false; });
+    state.currentTurnIdx = state.turnOrder.indexOf('ghost');
+    state.factions.ghost.trait = 'ghost_step';
+    state.factions.ghost.resources = 5;
+    state.factions.commune.trait = 'hoard';
+    state.factions.commune.resources = 6;
+    state.tiles['tile_0_0'].owner = 'ghost';   state.tiles['tile_0_0'].troops = 4;
+    state.tiles['tile_0_1'].owner = 'commune'; state.tiles['tile_0_1'].troops = 2;  // −2 sabotage wipes it
+
+    const { state: next, log } = reduce(state, { type: 'ABILITY', kind: 'sabotage', target: 'tile_0_1' });
+    assert.equal(next.factions.commune.eliminated, true, 'commune is wiped out');
+    // 5 start − 1 sabotage cost + 3 base + floor(6/2)=3 stash = 10
+    assert.equal(next.factions.ghost.resources, 10, 'gets +3 bounty plus half the victim stash');
+    assert.ok((next.factions.ghost.inheritedTraits || []).includes('hoard'), 'inherits the victim trait');
+    assert.ok(log.some(l => l.includes('eliminated') && l.includes('inherited')), 'logs the bounty');
+  });
+
   it('END_ROUND detects node dominance win', () => {
     const state = makeTestState();
     // Give grid 3 nodes and set held timer
