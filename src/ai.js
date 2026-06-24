@@ -7,9 +7,57 @@
 import {
   TYRANT_KEY, THRALLDOM_CAP, MOON_BAND,
   adjacent, tilesOf, nodesOf, countNodes, controlsNode,
-  livingKeys, hasPact, pairKey,
+  livingKeys, hasPact, pairKey, hasTrait,
   reinforceCost, reinforceAmount, moveReachable, moveRange, airliftCost,
+  RES_CAP,
 } from './state.js';
+import { AI_PROFILES, DEFAULT_TIER } from './ai_profiles.js';
+
+// ============================================================
+// PHASE 2-4b MIRROR: difficulty knobs (parallel to app.js's aiProfile)
+// Tyrant always plays at max discipline; humans never see this code.
+// ============================================================
+function aiProfile(state, fk) {
+  if (fk === TYRANT_KEY) return AI_PROFILES.bloodbath;
+  const f = state.factions[fk];
+  return AI_PROFILES[f && f.diff] || AI_PROFILES[DEFAULT_TIER];
+}
+
+// THREAT READ (Phase 4): the rival closest to a node victory, from viewer's seat — the faction
+// the smart play is to STOP, not appease. 3+ nodes always; 2 nodes only if they're SOLE leader.
+function mustStopLeader(state, viewerFk) {
+  let lead = null, leadN = 1;
+  for (const k of livingKeys(state)) {
+    if (k === TYRANT_KEY || k === viewerFk) continue;
+    const n = countNodes(state, k);
+    if (n > leadN) { leadN = n; lead = k; }
+  }
+  if (!lead) return null;
+  if (leadN >= 3) return lead;
+  const others = livingKeys(state).filter(k => k !== lead && k !== TYRANT_KEY && countNodes(state, k) >= 2);
+  return others.length === 0 ? lead : null;
+}
+// EMERGENCY (Phase 4b): rival already at 3+ nodes — triggers Bloodbath dogpile until knocked back.
+function nodeEmergencyLeader(state, viewerFk) {
+  const s = mustStopLeader(state, viewerFk);
+  return (s && countNodes(state, s) >= 3) ? s : null;
+}
+
+// COMBAT ODDS (Phase 3): probability the attacker wins one exchange under the 2d6 dice model
+// (best-2-of-3 for TACTICIAN), including the ±4 swing clamp resolveAttack uses. Mirrors app.js's
+// winProb exactly. Verified against closed-form odds (even mods = 55.6%, +2 force ≈ 76%, etc.).
+const _DIST_2D6 = (() => { const p = {}; for (let a=1;a<=6;a++) for (let b=1;b<=6;b++){ const s=a+b; p[s]=(p[s]||0)+1; } for (const k in p) p[k]/=36; return p; })();
+const _DIST_BEST2OF3 = (() => { const p = {}; for (let a=1;a<=6;a++) for (let b=1;b<=6;b++) for (let c=1;c<=6;c++){ const s=a+b+c-Math.min(a,b,c); p[s]=(p[s]||0)+1; } for (const k in p) p[k]/=216; return p; })();
+function _diffAtLeast(attDist, t) {
+  let prob = 0;
+  for (const a in attDist) for (const d in _DIST_2D6) { if ((+a) - (+d) >= t) prob += attDist[a] * _DIST_2D6[d]; }
+  return prob;
+}
+function winProb(attMod, defMod, fortify, tactician) {
+  let swing = attMod - defMod;
+  if (swing > 4) swing = 4; else if (swing < -4) swing = -4;
+  return _diffAtLeast(tactician ? _DIST_BEST2OF3 : _DIST_2D6, -swing + (fortify || 0));
+}
 
 // ---- BFS from a set of source tiles ----
 function bfsFromTiles(state, sources) {
@@ -33,6 +81,11 @@ function bfsFromTiles(state, sources) {
 function findBestAttack(state, fk, turnAttacks) {
   const myT = Object.values(state.tiles).filter(t => t.owner === fk);
   const enemyT = Object.values(state.tiles).filter(t => t.owner && t.owner !== fk);
+  const prof = aiProfile(state, fk);
+  const useEV = prof.lookahead >= 1;
+  const af = state.factions[fk];
+  const myNodeCount = nodesOf(state, fk).length;
+  const stop = useEV ? mustStopLeader(state, fk) : null;   // focus-fire target (Phase 4)
   let best = null;
 
   for (const atk of myT.filter(t => t.troops >= 2)) {
@@ -49,8 +102,32 @@ function findBestAttack(state, fk, turnAttacks) {
         + Math.min(def.heldRounds || 0, def.isNode ? 2 : 3)
         + (def.owner === TYRANT_KEY ? 0 : ((state.turnStrikes && state.turnStrikes[atk.id + '|' + def.id]) || 0) * 2);  // rally: per-encounter (this tile vs that tile), none vs Tyrant
       const edge = (atk.troops - def.troops) + (atkPower - defPower) * 2;
-      const score = (def.isNode ? 100 : 0) + edge * 10 - def.troops - (pact ? 15 : 0);
-      if (!best || score > best.score) best = { atk, def, score, betray: pact };
+      let score, p = null;
+      if (useEV) {
+        // EV scoring (Phase 3): weight prize by real odds, charge for likely loss, dock fragile
+        // captures an enemy could immediately recapture, and pile a focus-fire bonus on the leader.
+        const df = state.factions[def.owner];
+        const fortify  = (df && hasTrait(df, 'fortify')) ? ((def.heldRounds||0) > 0 ? 2 : 1) : 0;
+        const lastStand = (df && hasTrait(df, 'last_stand') && def.troops <= 2) ? 3 : 0;
+        p = winProb(atkPower, defPower + lastStand, fortify, af && hasTrait(af, 'tactician'));
+        const winsTheGame = def.isNode && (myNodeCount + 1) >= 3;
+        const stopBonus = (def.owner === stop) ? (def.isNode ? 180 : 45) : 0;
+        const captureValue = (def.isNode ? 120 : 16 + def.troops) + (winsTheGame ? 220 : 0) + stopBonus;
+        const lossCost = 6 + def.troops;
+        // 1-ply counter: strongest adjacent enemy recapturing our freshly-taken (1-troop) tile.
+        let counterP = 0;
+        for (const e of enemyT) {
+          if (e.owner === fk || e.troops < 2 || !adjacent(e, def) || hasPact(state, fk, e.owner)) continue;
+          const ePow = Math.min(2, Math.floor(e.troops/4));
+          const pRe = winProb(ePow, 0, 0, hasTrait(state.factions[e.owner] || {}, 'tactician'));
+          if (pRe > counterP) counterP = pRe;
+        }
+        score = p*captureValue - (1-p)*lossCost - counterP*captureValue*0.7 - (pact?40:0);
+      } else {
+        // Greedy heuristic (Sandbox / JV): nodes, then weaker targets, then a troop edge.
+        score = (def.isNode ? 100 : 0) + edge * 10 - def.troops - (pact ? 15 : 0);
+      }
+      if (!best || score > best.score) best = { atk, def, score, edge, p, betray: pact };
     }
   }
   return best;
@@ -162,6 +239,28 @@ function chooseAbility(state, fk) {
   return null;
 }
 
+// A deliberately weak action for low-skill tiers (driven by profile.blunder). Mirrors
+// app.js's aiLazyAction: reckless strike on a random reachable enemy, or a wasteful reinforce.
+function aiLazyAction(state, fk) {
+  const f = state.factions[fk];
+  const myT = Object.values(state.tiles).filter(t => t.owner === fk);
+  const enemyT = Object.values(state.tiles).filter(t => t.owner && t.owner !== fk);
+  if (Math.random() < 0.5) {
+    for (const a of myT.filter(t => t.troops >= 2)) {
+      const targets = enemyT.filter(d => moveReachable(state, fk, a, d) && !hasPact(state, fk, d.owner));
+      if (targets.length) {
+        const d = targets[(Math.random() * targets.length) | 0];
+        return { type: 'ATTACK', src: a.id, tgt: d.id, attackerFk: fk, advance: 0 };
+      }
+    }
+  }
+  if (f.resources >= reinforceCost(state, fk) && myT.length) {
+    const t = myT[(Math.random() * myT.length) | 0];
+    return { type: 'REINFORCE', tile: t.id };
+  }
+  return null;
+}
+
 // ============================================================
 // MAIN: chooseAction(state, fk) -> action | null
 // ============================================================
@@ -174,11 +273,31 @@ export function chooseAction(state, fk) {
   const myNodes = nodesOf(state, fk);
   const turnAttacks = state.turnAttacks || 0;
 
+  const prof = aiProfile(state, fk);
+  // Low tiers squander a fraction of actions on something bad (Tyrant never blunders).
+  if (fk !== TYRANT_KEY && prof.blunder && Math.random() < prof.blunder) {
+    const lazy = aiLazyAction(state, fk);
+    if (lazy) return lazy;
+  }
+
   const best = findBestAttack(state, fk, turnAttacks);
   const attackable = best && best.atk.troops >= 2 && !state.signalJam;
+  const edge = best ? (best.atk.troops - best.def.troops) : -99;
+  const useEV = prof.lookahead >= 1;
 
-  // 0. DEFEND LEAD: when holding 2+ nodes, entrench/reinforce them
-  if (myNodes.length >= 2) {
+  // EMERGENCY (Phase 4b): a rival ALREADY holds 3 nodes — win timer is running. Coordinate tiers
+  // (Bloodbath) drop everything to knock them back below the line at coalition odds (≥ 0.4).
+  // Outranks even defending our own lead.
+  const emLeader = (fk !== TYRANT_KEY && useEV && prof.coordinate) ? nodeEmergencyLeader(state, fk) : null;
+  if (emLeader && attackable && best.def.owner === emLeader && best.p >= 0.4) {
+    const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk,
+                     advance: advanceFor(state, fk, best.atk, best.def) };
+    if (best.betray) action.breakPact = { betrayer: fk, victim: best.def.owner };
+    return action;
+  }
+
+  // 0. DEFEND LEAD: low tiers (defendLead off) never bother and leak their own nodes.
+  if (prof.defendLead && myNodes.length >= 2) {
     const weakNode = myNodes
       .filter(t => (t.heldRounds||0) < (t.isNode?2:3) && t.troops >= 2 && enemyT().some(e => adjacent(t,e)))
       .sort((a,b) => (a.heldRounds||0) - (b.heldRounds||0))[0];
@@ -191,8 +310,8 @@ export function chooseAction(state, fk) {
     }
   }
 
-  // 0b. GHOST PRIORITY: sabotage a weak node garrison to clear it for capture
-  if (f.ability === 'sabotage' && f.resources >= 1) {
+  // 0b. GHOST PRIORITY: sabotage a weak node garrison to clear it for capture (abilities gate).
+  if (prof.abilities && f.ability === 'sabotage' && f.resources >= 1) {
     const foes = enemyT().filter(t => !hasPact(state, fk, t.owner));
     const clearable = foes.filter(t => t.isNode && t.troops <= 2
       && myT().some(m => m.troops >= 2 && adjacent(m, t)))
@@ -200,8 +319,12 @@ export function chooseAction(state, fk) {
     if (clearable) return { type: 'ABILITY', kind: 'sabotage', target: clearable.id };
   }
 
-  // 1. Seize enemy-held NODE
-  if (attackable && best.def.isNode && best.atk.troops >= best.def.troops) {
+  // 1. Seize enemy-held NODE. Lookahead tiers commit on win-probability (coordinate tier piles
+  // onto the leader's node at sub-even odds 0.4); greedy tiers use the old troop-edge gate with
+  // minEdge cushion (top tier 0 — they strike at even troops since the attacker wins ties).
+  const stopLeader = useEV ? mustStopLeader(state, fk) : null;
+  const nodeThresh = (prof.coordinate && best && best.def.owner === stopLeader && best.def.isNode) ? 0.4 : 0.5;
+  if (attackable && best.def.isNode && (useEV ? best.p >= nodeThresh : edge >= prof.minEdge)) {
     const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk,
                      advance: advanceFor(state, fk, best.atk, best.def) };
     if (best.betray) action.breakPact = { betrayer: fk, victim: best.def.owner };
@@ -224,20 +347,22 @@ export function chooseAction(state, fk) {
   const push = aiNodePush(state, fk);
   if (push) return push;
 
-  // 3. Any favorable attack
-  if (attackable && best.atk.troops > best.def.troops) {
+  // 3. Any favorable attack. Lookahead: solid odds AND positive EV (won't trade into recapture).
+  if (attackable && (useEV ? (best.p >= 0.6 && best.score > 0) : edge >= Math.max(1, prof.minEdge))) {
     const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk,
                      advance: advanceFor(state, fk, best.atk, best.def) };
     if (best.betray) action.breakPact = { betrayer: fk, victim: best.def.owner };
     return action;
   }
 
-  // 4. Use special ability
-  const ability = chooseAbility(state, fk);
-  if (ability) return ability;
+  // 4. Use special ability (low tiers ignore abilities entirely)
+  if (prof.abilities) {
+    const ability = chooseAbility(state, fk);
+    if (ability) return ability;
+  }
 
-  // 4b. Entrench a frontline node
-  if (f.resources >= 2) {
+  // 4b. Entrench a frontline node (defendLead gate)
+  if (prof.defendLead && f.resources >= 2) {
     const maxDig = (t) => t.isNode ? 2 : 3;
     const node = nodesOf(state, fk)
       .filter(t => t.troops >= 3 && (t.heldRounds||0) < maxDig(t) && enemyT().some(e => adjacent(t,e)))
@@ -245,11 +370,14 @@ export function chooseAction(state, fk) {
     if (node) return { type: 'ENTRENCH', tile: node.id };
   }
 
-  // 5. Reinforce
+  // 5. Reinforce — disciplined tiers feed weakest frontline; undisciplined (low thrift) reinforce randomly.
   const cost = reinforceCost(state, fk);
   if (f.resources >= cost && myT().length > 0) {
+    const smart = Math.random() < prof.thrift;
     const priority = myT().filter(t => t.isNode || enemyT().some(e => adjacent(t,e)));
-    const target = (priority.length ? priority : myT()).sort((a,b) => a.troops - b.troops)[0];
+    const pool = (smart && priority.length) ? priority : myT();
+    const target = smart ? pool.sort((a,b) => a.troops - b.troops)[0]
+                         : pool[(Math.random() * pool.length) | 0];
     if (target) return { type: 'REINFORCE', tile: target.id };
   }
 

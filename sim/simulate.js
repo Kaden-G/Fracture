@@ -10,11 +10,15 @@ import {
   RES_CAP, ROUND_CAP, FACTIONS, TYRANT_KEY, TRAITS, EVENT_DEFS,
   factionDef, mkFaction, livingKeys, hasPact, pairKey, countNodes, tilesOf, traitsFor,
 } from '../src/state.js';
+import { AI_PROFILES, DEFAULT_TIER } from '../src/ai_profiles.js';
 import { makeRng, nextInt, shuffleWithRng } from '../src/rng.js';
 
 // ---- Create initial game state ----
 function initGame(seed, opts = {}) {
   let rng = makeRng(seed);
+  // Phase 5 step 2: AI difficulty tier (sandbox|jv|varsity|bloodbath). Default tracks the live
+  // game's default so the baseline sim matches what a fresh single-player game would feel like.
+  const diff = AI_PROFILES[opts.diff] ? opts.diff : DEFAULT_TIER;
 
   // Assign random traits
   const factions = {};
@@ -23,7 +27,7 @@ function initGame(seed, opts = {}) {
     const pool = traitsFor(k);  // Phase 5b: faction-specific trait pool
     const r = nextInt(rng, pool.length);
     rng = r.rng;
-    factions[k] = mkFaction(FACTIONS[k].name, k, true, pool[r.value].id);
+    factions[k] = mkFaction(FACTIONS[k].name, k, true, pool[r.value].id, diff);
   }
 
   // Shuffle turn order
@@ -315,6 +319,7 @@ export function runBatch(numGames, baseSeed = 1, opts = {}) {
     const seed = baseSeed + i;
     try {
       const result = runGame(seed, opts);
+      result.diff = opts.diff || DEFAULT_TIER;
       results.push(result);
 
       const fk = result.winnerFk || 'none';
@@ -371,14 +376,22 @@ export function runBatch(numGames, baseSeed = 1, opts = {}) {
 const isCLI = typeof process !== 'undefined' && process.argv;
 if (isCLI) {
   const args = (typeof process !== 'undefined' && process.argv) || [];
-  const numGames = parseInt(args[2]) || 100;
-  const baseSeed = parseInt(args[3]) || 1;
+  // Strip optional --tier= flag from the positional args (so `--tier=jv 1000 1` still works).
+  const tierArg = args.find(a => a.startsWith('--tier='));
+  const tier = tierArg ? tierArg.slice(7) : DEFAULT_TIER;
+  const pos = args.slice(2).filter(a => !a.startsWith('--'));
+  const numGames = parseInt(pos[0]) || 100;
+  const baseSeed = parseInt(pos[1]) || 1;
+  if (!AI_PROFILES[tier]) {
+    console.error(`Unknown tier "${tier}". Valid: ${Object.keys(AI_PROFILES).join(', ')}`);
+    process.exit(1);
+  }
 
   console.log(`\n=== FRACTURE HEADLESS SIM ===`);
-  console.log(`Running ${numGames} AI-vs-AI games (base seed: ${baseSeed})...\n`);
+  console.log(`Running ${numGames} AI-vs-AI games at tier=${tier} (base seed: ${baseSeed})...\n`);
 
   const t0 = Date.now();
-  const stats = runBatch(numGames, baseSeed);
+  const stats = runBatch(numGames, baseSeed, { diff: tier });
   const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
 
   console.log(`Completed in ${elapsed}s\n`);
