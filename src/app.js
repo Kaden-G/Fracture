@@ -419,6 +419,15 @@ function mustStopLeader(viewerFk) {
   return others.length === 0 ? lead : null;    // 2 nodes: only if they're the lone frontrunner
 }
 
+// EMERGENCY threat (Phase 4b): a rival ALREADY holding 3+ nodes — actively winning (its 3-round
+// hold-timer is running). This is the trigger for Bloodbath's "drop everything and gang them"
+// coalition. Once that faction is knocked back to <= 2 nodes this returns null again and the
+// coalition relaxes into normal play.
+function nodeEmergencyLeader(viewerFk) {
+  const s = mustStopLeader(viewerFk);
+  return (s && countNodes(s) >= 3) ? s : null;
+}
+
 // Does an AI accept a non-aggression pact proposal?
 function aiConsiderPact(aiFk, propFk){
   // The Tyrant accepts EVERY pact — every ally brings it closer to winning by diplomacy —
@@ -433,6 +442,9 @@ function aiConsiderPact(aiFk, propFk){
   // victory is worthless, so no pact buys safety from it. (Greedy tiers still appease out of
   // self-preservation — part of why they're easier to beat.)
   if (aiProfile(aiFk).lookahead >= 1 && mustStopLeader(aiFk) === propFk) return false;
+  // EMERGENCY coalition (Bloodbath): when a rival already holds 3 nodes, every other faction is a
+  // welcome ally — unite now, sort out the spoils later. Accept any non-leader's pact instantly.
+  if (aiProfile(aiFk).coordinate && nodeEmergencyLeader(aiFk) && propFk !== nodeEmergencyLeader(aiFk)) return true;
   const alive = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
   const leadNodes = Math.max(...alive.map(countNodes));
   const aiNodes = countNodes(aiFk), propNodes = countNodes(propFk);
@@ -450,8 +462,21 @@ function aiConsiderPact(aiFk, propFk){
 // every other turn so the board doesn't freeze into a web of pacts.
 function aiTryDiplomacy(fk) {
   const me = G.factions[fk];
-  if (me.eliminated || Math.random() < 0.5) return;
+  if (me.eliminated) return;
   const renounced = G.renouncedThisTurn || {};
+  // EMERGENCY coalition (Bloodbath): the instant a rival hits 3 nodes, unite the whole field —
+  // sign a pact with EVERY non-leader AI we can, right now, un-throttled, so nobody wastes a turn
+  // fighting an ally while the frontrunner runs out the clock. (Humans still decide via their modal.)
+  const emLeader = aiProfile(fk).coordinate ? nodeEmergencyLeader(fk) : null;
+  if (emLeader) {
+    for (const k of livingKeys()) {
+      if (k === fk || k === emLeader || k === TYRANT_KEY || hasPact(fk, k) || renounced[k]) continue;
+      if (!G.factions[k].isAI) continue;        // a human ally would need to accept via modal — skip the instant pact
+      if (aiConsiderPact(k, fk)) { formPact(fk, k); addLog(`🤝 ${me.name} and ${G.factions[k].name} unite against ${G.factions[emLeader].name}'s bid for victory.`); }
+    }
+    return;   // diplomacy done this turn — the action loop will do the ganging
+  }
+  if (Math.random() < 0.5) return;
   // Lookahead tiers won't court the frontrunner (allying a near-winner is suicidal) — so the
   // weaker factions naturally band together against them instead.
   const stop = aiProfile(fk).lookahead >= 1 ? mustStopLeader(fk) : null;
@@ -3281,6 +3306,15 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   const edge = best ? (best.atk.troops - best.def.troops) : -99;
   const useEV = prof.lookahead >= 1;   // lookahead tiers gate on win-probability, not raw troop edge
   const myNodes = nodesOf(fk);
+
+  // EMERGENCY (Bloodbath coordination): a rival already holds 3 nodes — its win timer is ticking.
+  // Knocking it back below the line outranks EVERYTHING (even defending our own lead). Focus-fire
+  // has already made that rival's tile the top-scored target; commit to it at coalition odds (>=0.4),
+  // throwing the whole coalition at it until it drops to <= 2 nodes and normal play resumes.
+  if (fk !== TYRANT_KEY && useEV && prof.coordinate && attackable && best.def.owner === nodeEmergencyLeader(fk) && best.p >= 0.4) {
+    if (best.betray) breakPactBetrayal(fk, best.def.owner);
+    return aiAttackWithAdvance(fk, best.atk, best.def);
+  }
 
   // 0. DEFEND LEAD: when holding 2+ nodes, prioritize reinforcing/entrenching them over expansion.
   //    Low tiers (defendLead off) never bother — they leak their own nodes.
