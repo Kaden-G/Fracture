@@ -123,6 +123,25 @@ function killFaction(state, fk, log) {
   log.push(`💀 ${state.factions[fk].name} ELIMINATED!`);
 }
 
+// Bounty for wiping out a rival: +3 resources, half the victim's stash, and inherit their
+// chosen passive trait (stacks). Applies no matter HOW the kill landed — combat, sabotage, or
+// bribe. Call AFTER killFaction: no-ops unless the victim is actually eliminated (a harbored
+// Tyrant grants nothing until it truly dies).
+function awardEliminationBounty(state, killerFk, victimFk, log) {
+  const af = state.factions[killerFk];
+  const victim = state.factions[victimFk];
+  if (!af || !victim || killerFk === victimFk || !victim.eliminated) return;
+  const lootRes = Math.floor((victim.resources || 0) / 2);
+  af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
+  const victimTrait = victim.trait;
+  if (victimTrait && victimTrait !== af.trait) {
+    if (!af.inheritedTraits) af.inheritedTraits = [];
+    if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+  }
+  const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
+  log.push(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+}
+
 // Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties, fallen vote, host-skim
 // Host-skim: corruption eats the conspirator's army going into the duel.
 // Moon band: corruption in [CAP-MOON_BAND .. CAP-1] gives conspirator a jackpot spike.
@@ -260,7 +279,10 @@ const EVENT_HANDLERS = {
     const prev = target.owner;
     target.owner = w; target.heldRounds = 0;
     effects.push({kind:'hit', tile:target.id});
-    if (prev !== w && tilesOf(state, prev).length === 0) killFaction(state, prev, log);
+    if (prev !== w && tilesOf(state, prev).length === 0) {
+      killFaction(state, prev, log);
+      awardEliminationBounty(state, w, prev, log);
+    }
     log.push(`🔥 EVENT: RIOT — ${target.name} in ${REGION_NAMES[reg]} falls to ${state.factions[w].name}`);
   },
   siege(state, reg, log, effects) {
@@ -432,15 +454,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
       const defLeft = Object.values(state.tiles).filter(t => t.owner === prev).length;
       if (defLeft === 0) {
         killFaction(state, prev, log);
-        const lootRes = Math.floor((state.factions[prev]?.resources || 0) / 2);
-        af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
-        const victimTrait = state.factions[prev]?.trait;
-        if (victimTrait && victimTrait !== af.trait) {
-          if (!af.inheritedTraits) af.inheritedTraits = [];
-          if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
-        }
-        const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
-        log.push(`🏆 ${af.icon} eliminated ${state.factions[prev]?.name || prev}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+        awardEliminationBounty(state, attackerFk, prev, log);
         // GRAVEYARD: when the Tyrant dies in combat, the killing tile becomes a 6th node —
         // counts toward the "3 to win" condition for whoever holds it. No perk.
         if (prev === TYRANT_KEY && state.factions[TYRANT_KEY].eliminated && !tgt.isNode) {
@@ -826,6 +840,7 @@ export function reduce(inputState, action) {
           else { tile.owner = null; tile.troops = 0; }
           if (tile.owner === null && tilesOf(state, sabPrev).length === 0) {
             killFaction(state, sabPrev, log);
+            awardEliminationBounty(state, fk, sabPrev, log);
           }
           // Siphon: +2 to saboteur's weakest frontline tile — only if the target survived the −2
           // (had 3+) and only once per turn (cap +2/turn, never +6).
@@ -867,7 +882,10 @@ export function reduce(inputState, action) {
           if (defectTo) defectTo.troops++;
           if (tile.troops <= 0) {
             tile.owner = fk; tile.troops = 1;
-            if (tilesOf(state, bribedPrev).length === 0) killFaction(state, bribedPrev, log);
+            if (tilesOf(state, bribedPrev).length === 0) {
+              killFaction(state, bribedPrev, log);
+              awardEliminationBounty(state, fk, bribedPrev, log);
+            }
           }
           state.actionsUsed++;
           log.push(`💰 ${f.icon} bribed ${tile.name} — a troop defects${defectTo ? ' to ' + defectTo.name : ''}!`);

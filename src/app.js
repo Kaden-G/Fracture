@@ -484,6 +484,25 @@ function killFaction(fk){
   addLog(`💀 ${G.factions[fk].name} ELIMINATED!`);
 }
 
+// Bounty for wiping out a rival: +3 resources, half the victim's stash, and you inherit their
+// chosen passive trait (stacks with your own). Applies no matter HOW the kill landed — combat,
+// sabotage, or bribe. Call it AFTER killFaction: it no-ops unless the victim is actually
+// eliminated, so a harbored Tyrant (killFaction returns early) grants nothing until it truly dies.
+function awardEliminationBounty(killerFk, victimFk) {
+  const af = G.factions[killerFk];
+  const victim = G.factions[victimFk];
+  if (!af || !victim || killerFk === victimFk || !victim.eliminated) return;
+  const lootRes = Math.floor((victim.resources || 0) / 2);
+  af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
+  const victimTrait = victim.trait;
+  if (victimTrait && victimTrait !== af.trait) {
+    if (!af.inheritedTraits) af.inheritedTraits = [];
+    if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+  }
+  const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
+  addLog(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+}
+
 // Reckoning intercept — called when a faction would win.
 // Returns: 'freedom' (conspirator won), 'thralldom' (Tyrant won), or false (no Reckoning).
 function maybeReckoningApp(fk) {
@@ -2314,6 +2333,7 @@ function handleTileClick(id) {
       if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
       if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
         killFaction(sabPrev);
+        awardEliminationBounty(G.playerFaction, sabPrev);
       }
       // Siphon: the knocked-off troops defect — +2 to the Ghost's weakest frontline tile, but
       // ONLY if the target survived the −2 (had 3+) and ONLY once per turn (cap +2/turn, never +6).
@@ -2376,7 +2396,10 @@ function handleTileClick(id) {
       if (defectTo) { defectTo.troops++; refreshHex(defectTo.id); }
       if (tile.troops<=0) {
         tile.owner=G.playerFaction; tile.troops=1;
-        if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) killFaction(bribedPrev);
+        if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) {
+          killFaction(bribedPrev);
+          awardEliminationBounty(G.playerFaction, bribedPrev);
+        }
       }
       G.actionsUsed++;
       addLog(`💰 ${f.name} bribed ${tile.name} — a troop defects${defectTo ? ' to ' + defectTo.name : ''}!`);
@@ -2569,17 +2592,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       const defLeft = Object.values(G.tiles).filter(t=>t.owner===prev).length;
       if (defLeft===0) {
         killFaction(prev);
-        // Bounty: wiping a rival grants +3 resources + half the victim's stash.
-        const lootRes = Math.floor((G.factions[prev]?.resources || 0) / 2);
-        af.resources = Math.min((af.resources||0) + 3 + lootRes, RES_CAP);
-        // Inherit the victim's passive trait (stacks with your own).
-        const victimTrait = G.factions[prev]?.trait;
-        if (victimTrait && victimTrait !== af.trait) {
-          if (!af.inheritedTraits) af.inheritedTraits = [];
-          if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
-        }
-        const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
-        addLog(`🏆 ${af.icon} eliminated ${G.factions[prev]?.name||prev}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+        awardEliminationBounty(attackerFk, prev);
         // Track where the Tyrant fell for graveyard placement after reprieve
         if (prev === TYRANT_KEY && !G.factions[TYRANT_KEY].eliminated) {
           G.tyrantDeathTile = tgtId;
@@ -3128,7 +3141,10 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       const aiPreTroops = target.troops;  // before the hit
       const aiSabDrop = (target.heldRounds || 0) >= 2 ? 1 : 2;
       if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
-      if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
+      if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
+        killFaction(prev);
+        awardEliminationBounty(fk, prev);
+      }
       let aiGain = null;
       if (aiPreTroops > aiSabDrop && !G.siphonedThisTurn) {
         aiGain = ghostSiphonTarget(fk);
@@ -3148,7 +3164,10 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
         f.resources-=1; tgt.troops--; mt.troops++;   // −1 them, +1 you (2-point swing)
         if (tgt.troops<=0) {
           tgt.owner=fk; tgt.troops=1;
-          if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) killFaction(prev);
+          if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
+            killFaction(prev);
+            awardEliminationBounty(fk, prev);
+          }
         }
         addLog(`💰 ${f.name} bribed ${tgt.name} — a troop defects to ${mt.name}!`);
         refreshHex(tgt.id); refreshHex(mt.id);
@@ -3219,7 +3238,10 @@ function applyRiot(reg) {
   const target = tiles[Math.floor(Math.random() * tiles.length)];
   const prev = target.owner;
   target.owner = w; target.heldRounds = 0; refreshHex(target.id);
-  if (prev !== w && tilesOf(prev).length === 0) killFaction(prev);
+  if (prev !== w && tilesOf(prev).length === 0) {
+    killFaction(prev);
+    awardEliminationBounty(w, prev);
+  }
   addLog(`🔥 EVENT: RIOT — ${target.name} in ${REGION_NAMES[reg]} falls to ${G.factions[w].name}`);
 }
 function applySiege(reg) {
