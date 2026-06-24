@@ -43,6 +43,39 @@ const TYRANT_DEF = { name:'THE TYRANT', icon:'🦠', color:'#7b1fa2', ability:'r
                      perk:'Virus: spreads into adjacent tiles every turn · harbored allies can revive it' };
 function factionDef(key) { return FACTIONS[key] || (key===TYRANT_KEY ? TYRANT_DEF : null); }
 
+// AI DIFFICULTY TIERS — inline twin of src/ai_profiles.js (app.js is self-contained; KEEP IN SYNC).
+// Phase 1: the knobs are declared and selectable in setup, but NOT yet read by the AI decision
+// logic — every tier plays identically until Phase 2 wires them into aiOneAction/findBestAttack.
+const AI_TIERS = ['sandbox', 'jv', 'varsity', 'bloodbath'];
+const DEFAULT_TIER = 'varsity';
+const AI_PROFILES = {
+  sandbox: {
+    id: 'sandbox', name: 'Sandbox', icon: '🎈',
+    blurb: 'Barely tries — random moves, no defense, wastes resources. For learning the ropes.',
+    blunder: 0.6, minEdge: 2, abilities: false, defendLead: false,
+    thrift: 0.3, lookahead: 0, coordinate: false, tyrantAggro: 0.6,
+  },
+  jv: {
+    id: 'jv', name: 'JV', icon: '🏫',
+    blurb: "Solid basics but no foresight — a fair fight you can outthink.",
+    blunder: 0.2, minEdge: 1, abilities: true, defendLead: true,
+    thrift: 0.6, lookahead: 0, coordinate: false, tyrantAggro: 0.85,
+  },
+  varsity: {
+    id: 'varsity', name: 'Varsity', icon: '🎯',
+    blurb: 'Plays the odds, defends its lead, concentrates force. The standard challenge.',
+    blunder: 0.04, minEdge: 0, abilities: true, defendLead: true,
+    thrift: 0.9, lookahead: 1, coordinate: false, tyrantAggro: 1.0,
+  },
+  bloodbath: {
+    id: 'bloodbath', name: 'Bloodbath', icon: '💀',
+    blurb: 'Flawless and merciless — the AIs gang up on the leader and share secrets. They cheat.',
+    blunder: 0, minEdge: 0, abilities: true, defendLead: true,
+    thrift: 1.0, lookahead: 1, coordinate: true, tyrantAggro: 1.3,
+  },
+};
+function aiProfile(fk) { return AI_PROFILES[(G.factions[fk] && G.factions[fk].diff)] || AI_PROFILES[DEFAULT_TIER]; }
+
 const TRAITS = [
   { id:'last_stand', name:'LAST STAND',   desc:'1-2 troop defenders get +3 def (no loot on capture)' },
   { id:'scavenger',  name:'SCAVENGER',    desc:'+1 resource per tile captured'      },
@@ -647,12 +680,18 @@ function switchScreen(id) {
 // ============================================================
 // SETUP — one card per faction; each is HUMAN (pass-and-play) or AI
 // ============================================================
+function savedDiff() {
+  let id = null;
+  try { id = localStorage.getItem('fracture_aiDiff'); } catch (e) {}
+  return AI_PROFILES[id] ? id : DEFAULT_TIER;
+}
 function defaultSetup() {
+  const diff = savedDiff();
   const seats = {};
   Object.keys(FACTIONS).forEach((k, i) => {
     seats[k] = (i === 0)
-      ? { type:'human', name:'', trait:'' }   // first faction starts as the lone human
-      : { type:'ai',    name:'', trait:'' };
+      ? { type:'human', name:'', trait:'', diff }   // first faction starts as the lone human
+      : { type:'ai',    name:'', trait:'', diff };
   });
   return { seats, tyrant: false };
 }
@@ -685,11 +724,29 @@ function renderSetup() {
               </div>`).join('')}
           </div>
         </div>
-        <div style="display:${human?'none':'block'}; font-size:12px; color:#888; margin-top:8px; line-height:1.5;">
-          🤖 Computer-controlled · random trait · same event deck & dice as everyone. No handicaps.
+        <div style="display:${human?'none':'block'}; margin-top:8px;">
+          <label style="font-size:11px; color:#888; letter-spacing:1px;">DIFFICULTY</label>
+          <div class="diff-select" style="display:flex; gap:4px; flex-wrap:wrap; margin:4px 0;">
+            ${AI_TIERS.map(id => {
+              const p = AI_PROFILES[id];
+              const sel = (s.diff||DEFAULT_TIER) === id;
+              return `<div class="seat-opt ${sel?'selected':''}" style="flex:1; min-width:62px; font-size:11px; padding:6px 3px;" title="${p.blurb}" onclick="setSeatDiff('${k}','${id}')">${p.icon} ${p.name}</div>`;
+            }).join('')}
+          </div>
+          <div style="font-size:11px; color:#888; line-height:1.4;">${AI_PROFILES[s.diff||DEFAULT_TIER].blurb}</div>
         </div>
       </div>`;
   }).join('') + `
+      <div class="setup-card" style="grid-column:1/-1; border-color:#888;">
+        <h3 style="color:#bbb; border-color:#888;">🤖 AI DIFFICULTY</h3>
+        <div style="font-size:12px; color:#888; margin-bottom:8px; line-height:1.5;">Set every AI at once — or override a single AI on its card above. Same dice & event deck for everyone; higher tiers just decide better (Bloodbath also gangs up).</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${AI_TIERS.map(id => {
+            const p = AI_PROFILES[id];
+            return `<div class="seat-opt" style="flex:1; min-width:96px;" title="${p.blurb}" onclick="setAllDiff('${id}')">${p.icon} ${p.name}</div>`;
+          }).join('')}
+        </div>
+      </div>` + `
       <div class="setup-card" style="grid-column:1/-1; border-color:${TYRANT_DEF.color}; cursor:pointer;" onclick="toggleTyrant()">
         <h3 style="color:${TYRANT_DEF.color}; border-color:${TYRANT_DEF.color}">${TYRANT_DEF.icon} THE TYRANT</h3>
         <div style="display:flex; align-items:center; gap:12px;">
@@ -713,6 +770,17 @@ function setSeatName(fk, val) {
 }
 function setSeatTrait(fk, id) {
   G.setup.seats[fk].trait = id;
+  renderSetup();
+}
+function setSeatDiff(fk, id) {
+  if (!AI_PROFILES[id]) return;
+  G.setup.seats[fk].diff = id;
+  renderSetup();
+}
+function setAllDiff(id) {
+  if (!AI_PROFILES[id]) return;
+  Object.keys(G.setup.seats).forEach(k => { G.setup.seats[k].diff = id; });
+  try { localStorage.setItem('fracture_aiDiff', id); } catch (e) {}
   renderSetup();
 }
 
@@ -767,7 +835,7 @@ function startGame() {
     const s = seats[k];
     factions[k] = (s.type === 'human')
       ? mkFaction(s.name.trim() || FACTIONS[k].name, k, false, s.trait || randTrait(k))
-      : mkFaction('NEXUS-'+k.slice(0,3).toUpperCase(), k, true, randTrait(k));
+      : mkFaction('NEXUS-'+k.slice(0,3).toUpperCase(), k, true, randTrait(k), s.diff || DEFAULT_TIER);
   });
 
   const turnOrder = order.slice();
@@ -812,13 +880,15 @@ function startGame() {
   startRound();
 }
 
-function mkFaction(name, key, isAI, trait) {
+function mkFaction(name, key, isAI, trait, diff) {
   const def = factionDef(key);
   return { name, icon: def.icon, color: def.color,
            // The Tyrant never carries a passive trait (no last stand, ghost step, fortify, etc.) —
            // it's the shared enemy and should be a clean, predictable threat.
            ability: def.ability, isAI, trait: key === TYRANT_KEY ? null : trait, resources: 4, eliminated: false,
            isTyrant: key === TYRANT_KEY,
+           // AI skill tier — drives the difficulty knobs in later phases. null for humans & the Tyrant.
+           diff: (isAI && key !== TYRANT_KEY) ? (AI_PROFILES[diff] ? diff : DEFAULT_TIER) : null,
            corruption: 0, boon: null };
 }
 
@@ -3866,7 +3936,7 @@ function hostRoom() {
   // All seats OPEN by default so anyone can claim one; unclaimed seats become AI at START.
   const seats = {};
   Object.keys(FACTIONS).forEach(k => seats[k] = { type: 'human', by: null, name: '', trait: '', ready: false });
-  roomRef.set({ host: myClientId, started: false, seats, tyrant: false })
+  roomRef.set({ host: myClientId, started: false, seats, tyrant: false, diff: savedDiff() })
     .then(() => roomRef.on('value', onRoom))
     .catch(e => alert('Could not create room: ' + e.message));
 }
@@ -3900,6 +3970,14 @@ function setMyName(v) {
 function hostSetTyrant() {
   if (!lobbyIsHost) return;
   roomRef.update({ tyrant: !(lastRoomData && lastRoomData.tyrant) });
+}
+// Host-only: cycle the AI difficulty for the room (sandbox → jv → varsity → bloodbath → …).
+function hostSetDiff() {
+  if (!lobbyIsHost) return;
+  const cur = (lastRoomData && lastRoomData.diff) || DEFAULT_TIER;
+  const next = AI_TIERS[(AI_TIERS.indexOf(cur) + 1) % AI_TIERS.length];
+  try { localStorage.setItem('fracture_aiDiff', next); } catch (e) {}
+  roomRef.update({ diff: next });
 }
 
 // ============================================================
@@ -4059,12 +4137,22 @@ function renderStepReview(data) {
       </div>
       <span style="font-size:13px;font-weight:700;color:${data.tyrant ? '#e74c3c' : '#888'};">${data.tyrant ? 'ON' : 'OFF'}</span>
     </div>` : '';
+  const dp = AI_PROFILES[data.diff] || AI_PROFILES[DEFAULT_TIER];
+  const diffToggle = lobbyIsHost ? `
+    <div style="margin-top:10px;padding:10px 12px;border:1px solid #888;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="hostSetDiff()" title="${dp.blurb}">
+      <span style="font-size:20px;">${dp.icon}</span>
+      <div style="flex:1;">
+        <div style="color:#bbb;font-family:'Bangers';font-size:16px;letter-spacing:1px;">AI DIFFICULTY</div>
+        <div style="font-size:11px;color:#888;">Tap to cycle — ${dp.blurb}</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#bbb;">${dp.name.toUpperCase()}</span>
+    </div>` : '';
   return wizShell('Ready to deploy?', 4, `
     <div class="wiz-review">
       <div><span>NAME</span><b>${esc(myName) || '—'}</b></div>
       <div><span>FACTION</span><b style="color:${f ? f.color : '#fff'}">${f ? f.icon + ' ' + f.name : '—'}</b></div>
       <div><span>PASSIVE</span><b>${t ? t.name : '—'}</b></div>
-    </div>${tyrantToggle}
+    </div>${tyrantToggle}${diffToggle}
     <p style="font-size:12px;color:#888;margin-top:10px;">Tap READY to lock in. The host starts once everyone is ready.</p>
   `, `
     <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
@@ -4088,8 +4176,10 @@ function renderRoster(data) {
   }).join('');
   const everyoneReady = claimed.length > 0 && claimed.every(([, s]) => s.ready);
   const iAmReady = mySeatKey(data) && seats[mySeatKey(data)].ready;
+  const diffProf = AI_PROFILES[data.diff] || AI_PROFILES[DEFAULT_TIER];
   const hostFoot = lobbyIsHost
-    ? `<button class="btn btn-secondary" style="font-size:14px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
+    ? `<button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
+       <button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetDiff()" title="${diffProf.blurb}">AI: ${diffProf.icon} ${diffProf.name}</button>
        <button class="btn btn-primary" style="flex:1;font-size:18px;${everyoneReady ? '' : 'opacity:.45;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
     : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${everyoneReady ? 'WAITING FOR HOST…' : 'WAITING FOR PLAYERS…'}</div>`;
   return `
@@ -4099,7 +4189,7 @@ function renderRoster(data) {
         <span style="font-size:11px;color:${iAmReady ? '#27ae60' : '#888'};font-weight:700;">${iAmReady ? '✓ YOU ARE READY' : ''}</span>
       </div>
       <h3 style="margin-bottom:6px;">Lobby</h3>
-      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI (${diffProf.icon} ${diffProf.name}) at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}</p>
       ${rows}
       <div class="wizard-foot" style="margin-top:14px;">
         <button class="btn btn-secondary" style="font-size:13px;" onclick="lobbyEdit()">EDIT</button>
@@ -4126,7 +4216,7 @@ function hostStart() {
   // A claim from before an exclusion check (or a tampered write) falls back to a legal random trait.
   Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
 
-  buildOnlineGame(seats, !!lastRoomData.tyrant);
+  buildOnlineGame(seats, !!lastRoomData.tyrant, lastRoomData.diff || DEFAULT_TIER);
   pickMapBackdrop();   // fresh random backdrop, recorded on G.mapBg so every joiner matches the host
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
@@ -4142,14 +4232,15 @@ function hostStart() {
   roomRef.update({ seats, started: true, state: snap }).then(() => startRound());
 }
 
-function buildOnlineGame(seats, tyrant) {
+function buildOnlineGame(seats, tyrant, diff) {
+  const tier = AI_PROFILES[diff] ? diff : DEFAULT_TIER;
   const order = shuffle(Object.keys(FACTIONS));
   const factions = {};
   order.forEach(k => {
     const s = seats[k];
     factions[k] = (s.type === 'human')
       ? mkFaction(s.name || FACTIONS[k].name, k, false, s.trait || randTrait(k))
-      : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k));
+      : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k), tier);
   });
   const turnOrder = order.slice();
   if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null); turnOrder.push(TYRANT_KEY); }
@@ -4170,8 +4261,8 @@ function buildOnlineGame(seats, tyrant) {
 // ============================================================
 Object.assign(window, {
   showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant,
-  setSeatType, setSeatName, setSeatTrait,
-  hostRoom, joinRoomPrompt, hostSetTyrant, hostStart,
+  setSeatType, setSeatName, setSeatTrait, setSeatDiff, setAllDiff,
+  hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostStart,
   setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
   acceptTyrantPact, refuseTyrantPact, pickRoundBoon,
   tyrantModalConfirm, tyrantModalCancel,
