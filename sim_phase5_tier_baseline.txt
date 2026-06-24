@@ -1,0 +1,42 @@
+PHASE 5 STEP 2 BASELINE — AI mirror landed in src/ai.js
+N=300 per tier, seed=1, single-game (no Tyrant)
+=====================================================
+
+3-NODE LEADER CONVERSION (the headline difficulty metric)
+  Of games where a faction reaches 3 nodes, what fraction does that faction win?
+
+  TIER       1ST-TO-3 RATE   CONVERSION   AVG ROUNDS   NODE-WIN %
+  sandbox    295/300 (98%)     37.3%        25.7         46.7%
+  jv         289/300 (96%)     63.7%        22.4         66.0%
+  varsity    280/300 (93%)     79.3%        18.6         79.3%   ← worst (stickiest leader)
+  bloodbath  283/300 (94%)     77.0%        19.3         77.7%
+
+KEY FINDINGS
+
+1) JV matches the pre-mirror baseline (63.7% vs 63.6% pre-mirror) — the JV knobs
+   faithfully reproduce the old AI playbook. Mirror is consistent. Sanity check passed.
+
+2) Varsity is the WORST tier for unseating a 3-node leader (79.3%), worse than the
+   old AI by 16 percentage points. The EV scoring tells the gangers "the dug-in node
+   is -EV, don't bother" — so they stop attacking it. The "smarter" AI is making the
+   leader STICKIER, not less.
+
+3) Bloodbath barely improves on Varsity (77.0%) — the emergency coalition forces
+   some attacks at 0.4 odds and salvages ~2 percentage points, but the underlying
+   EV-pessimism dominates. Phase 4b is partially offsetting Phase 3, not solving it.
+
+4) Sandbox (37.3%) shows the floor works — without lookahead/coordination the leader
+   is genuinely beatable. Quality of the ladder shape: Sandbox < JV < Bloodbath ~ Varsity.
+
+DIAGNOSIS
+The math is clear. At a defended 3-node tile (7 troops, dug-in +2):
+  Today (without #1+#3): single attacker (force+2 vs entrench+2) → ~44% per exchange.
+  EV scoring with 3 gangers each at ~44% concludes: -EV, skip the attack.
+  Result: leader chips slower than they refill, runs out the 3-round timer.
+
+PRESCRIPTION (the planned levers #1 + #3 from the prior analysis)
+- Lever #1: scaling anti-leader surge (+1 per coalition member, capped +3) when defender
+  holds 3+ nodes. Lifts 3-ganger odds from ~44% to ~67-76% per exchange.
+- Lever #3: entrenchment crack — defender's +2 dug-in bonus drops to 0 when 2+ factions
+  have struck the node recently. Removes the fortress effect entirely.
+- Combined target (vs Varsity baseline 79.3%): drop to ~55-65%. Phase 5 step 3+ work.
