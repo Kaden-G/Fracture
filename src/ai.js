@@ -109,7 +109,29 @@ function findBestAttack(state, fk, turnAttacks) {
         const df = state.factions[def.owner];
         const fortify  = (df && hasTrait(df, 'fortify')) ? ((def.heldRounds||0) > 0 ? 2 : 1) : 0;
         const lastStand = (df && hasTrait(df, 'last_stand') && def.troops <= 2) ? 3 : 0;
-        p = winProb(atkPower, defPower + lastStand, fortify, af && hasTrait(af, 'tactician'));
+        // PHASE 5: factor in the anti-leader surge and entrenchment-crack we'd benefit from.
+        // Without this, the AI would underestimate odds against a 3-node leader (~33%) and never
+        // commit — chicken-and-egg where strikes never accumulate. We inline the logic from
+        // engine.js's nodeLeaderSurge / leaderEntrenchCracked to keep ai.js dependency-free.
+        let lSurge = 0, wouldCrack = false;
+        const leaderActive = def.owner !== TYRANT_KEY && fk !== TYRANT_KEY && !pact && countNodes(state, def.owner) >= 3;
+        if (leaderActive) {
+          const rec = state.leaderStruck && state.leaderStruck[def.id];
+          const fresh = rec && (state.round - rec.round) <= 1;
+          if (fresh) {
+            lSurge = Math.min(3, Object.keys(rec.attackers).filter(k => k !== fk).length);
+            // Crack triggers when the besieging count (including me, if I'm new) hits 2+.
+            const willBeMembers = (rec.attackers[fk] ? 0 : 1) + Object.keys(rec.attackers).length;
+            wouldCrack = willBeMembers >= 2;
+          } else {
+            // First strike of a new siege: I'm member #1, no crack yet, no surge for me.
+          }
+        }
+        const effEntrench = wouldCrack ? 0 : Math.min(def.heldRounds || 0, def.isNode ? 2 : 3);
+        const effDefMod = Math.min(2, Math.floor(def.troops / 4))
+          + effEntrench
+          + (def.owner === TYRANT_KEY ? 0 : ((state.turnStrikes && state.turnStrikes[atk.id + '|' + def.id]) || 0) * 2);
+        p = winProb(atkPower + lSurge, effDefMod + lastStand, fortify, af && hasTrait(af, 'tactician'));
         const winsTheGame = def.isNode && (myNodeCount + 1) >= 3;
         const stopBonus = (def.owner === stop) ? (def.isNode ? 180 : 45) : 0;
         const captureValue = (def.isNode ? 120 : 16 + def.troops) + (winsTheGame ? 220 : 0) + stopBonus;
@@ -323,8 +345,17 @@ export function chooseAction(state, fk) {
   // onto the leader's node at sub-even odds 0.4); greedy tiers use the old troop-edge gate with
   // minEdge cushion (top tier 0 — they strike at even troops since the attacker wins ties).
   const stopLeader = useEV ? mustStopLeader(state, fk) : null;
-  const nodeThresh = (prof.coordinate && best && best.def.owner === stopLeader && best.def.isNode) ? 0.4 : 0.5;
-  if (attackable && best.def.isNode && (useEV ? best.p >= nodeThresh : edge >= prof.minEdge)) {
+  // Sacrifice rule: when an emergency leader (3+ nodes) is winning, take the FIRST strike at low
+  // odds even if it costs you — it cracks entrenchment and surges the next attacker. Without this,
+  // nobody commits the 1st strike (~33% solo odds) and the levers never get to fire. The +EV check
+  // still applies (we never throw away troops for nothing).
+  const emLead = useEV ? nodeEmergencyLeader(state, fk) : null;
+  const isLeaderNode = best && best.def.isNode && best.def.owner === stopLeader;
+  const isEmNode = best && best.def.isNode && best.def.owner === emLead;
+  const nodeThresh = isEmNode
+    ? (prof.coordinate ? 0.22 : 0.32)   // Bloodbath/Varsity: lean in even on tough odds
+    : (prof.coordinate && isLeaderNode ? 0.4 : 0.5);
+  if (attackable && best.def.isNode && (useEV ? (best.p >= nodeThresh && best.score > 0) : edge >= prof.minEdge)) {
     const action = { type: 'ATTACK', src: best.atk.id, tgt: best.def.id, attackerFk: fk,
                      advance: advanceFor(state, fk, best.atk, best.def) };
     if (best.betray) action.breakPact = { betrayer: fk, victim: best.def.owner };
