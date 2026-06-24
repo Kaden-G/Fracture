@@ -372,6 +372,25 @@ function grudgeDefBonus(atk, def){ return (G.grudges[def+'>'+atk] >= G.round) ? 
 // Coalition: everyone piles on whoever already holds 2+ Nodes (anti-snowball)
 function coalitionAtkBonus(defFk, atkFk){ return (defFk!==atkFk && countNodes(defFk)>=2) ? 1 : 0; }
 
+// THREAT READ (Phase 4): the rival closest to a node victory, from viewerFk's seat — the faction
+// the smart play is to STOP, not appease. Node counts are PUBLIC, so reacting to them is fair (no
+// secret table-talk). A holder of 3 nodes is actively winning (their hold-timer is running) and is
+// always a must-stop; a holder of 2 nodes counts only if they're the SOLE frontrunner (a runaway
+// lead, not a mid-game tie). Returns the threat's fk, or null. The Tyrant is excluded — it's
+// handled by the separate coalition/surge machinery.
+function mustStopLeader(viewerFk) {
+  let lead = null, leadN = 1;   // must hold >= 2 nodes to register
+  for (const k of livingKeys()) {
+    if (k === TYRANT_KEY || k === viewerFk) continue;
+    const n = countNodes(k);
+    if (n > leadN) { leadN = n; lead = k; }
+  }
+  if (!lead) return null;
+  if (leadN >= 3) return lead;                 // on the cusp of winning — always stop them
+  const others = livingKeys().filter(k => k !== lead && k !== TYRANT_KEY && countNodes(k) >= 2);
+  return others.length === 0 ? lead : null;    // 2 nodes: only if they're the lone frontrunner
+}
+
 // Does an AI accept a non-aggression pact proposal?
 function aiConsiderPact(aiFk, propFk){
   // The Tyrant accepts EVERY pact — every ally brings it closer to winning by diplomacy —
@@ -382,6 +401,10 @@ function aiConsiderPact(aiFk, propFk){
     if (countNodes(aiFk) >= 2) return false;
     return tilesOf(TYRANT_KEY).length >= 4 || Math.random() < 0.45;
   }
+  // Threat-aware (lookahead tiers): NEVER prop up a rival who's about to win — outliving their
+  // victory is worthless, so no pact buys safety from it. (Greedy tiers still appease out of
+  // self-preservation — part of why they're easier to beat.)
+  if (aiProfile(aiFk).lookahead >= 1 && mustStopLeader(aiFk) === propFk) return false;
   const alive = Object.keys(G.factions).filter(k=>!G.factions[k].eliminated);
   const leadNodes = Math.max(...alive.map(countNodes));
   const aiNodes = countNodes(aiFk), propNodes = countNodes(propFk);
@@ -401,7 +424,10 @@ function aiTryDiplomacy(fk) {
   const me = G.factions[fk];
   if (me.eliminated || Math.random() < 0.5) return;
   const renounced = G.renouncedThisTurn || {};
-  const rivals = livingKeys().filter(k => k !== fk && !hasPact(fk, k) && !renounced[k]);
+  // Lookahead tiers won't court the frontrunner (allying a near-winner is suicidal) — so the
+  // weaker factions naturally band together against them instead.
+  const stop = aiProfile(fk).lookahead >= 1 ? mustStopLeader(fk) : null;
+  const rivals = livingKeys().filter(k => k !== fk && !hasPact(fk, k) && !renounced[k] && k !== stop);
   // Prefer the strongest available partner — a pact with a leader buys the most safety.
   const strength = (k) => countNodes(k) * 10 + tilesOf(k).length;
   rivals.sort((a, b) => strength(b) - strength(a));
@@ -2170,7 +2196,10 @@ function handleTileClick(id) {
         setActionLog(`${G.factions[other].name} ACCEPTED your non-aggression pact!`);
       } else {
         addLog('✋ A pact proposal was refused.');
-        setActionLog(`${G.factions[other].name} REFUSED — they don't need you yet.`);
+        const wontShelterWinner = aiProfile(other).lookahead >= 1 && mustStopLeader(other) === G.playerFaction;
+        setActionLog(wontShelterWinner
+          ? `${G.factions[other].name} REFUSED — you're too close to winning for anyone to shelter you.`
+          : `${G.factions[other].name} REFUSED — they don't need you yet.`);
       }
     }
     // Human opponent, hot-seat: ask them directly via the pact modal
@@ -2997,6 +3026,17 @@ function runAITurn(fk) {
   // Non-Tyrant AIs do their own diplomacy: court a rival (or the Tyrant) for a pact.
   if (fk !== TYRANT_KEY) aiTryDiplomacy(fk);
 
+  // Threat-aware coalition (lookahead tiers): don't stay sheltered behind a pact with a faction
+  // that's about to win — tear it up so we can move to stop them. This is principled withdrawal,
+  // not opportunistic treachery, so it carries NO grudge (unlike a normal betrayal).
+  if (fk !== TYRANT_KEY && aiProfile(fk).lookahead >= 1) {
+    const stop = mustStopLeader(fk);
+    if (stop && stop !== TYRANT_KEY && hasPact(fk, stop)) {
+      delete G.pacts[pairKey(fk, stop)];
+      addLog(`⚔️ ${G.factions[fk].name} tears up its pact with ${G.factions[stop].name} — too close to victory to shelter!`);
+    }
+  }
+
   if (fk === TYRANT_KEY) {
     tyrantSpread(fk);   // virus expansion before its normal actions
     // Court every un-allied rival (AIs decide now; humans are offered on their own turn).
@@ -3079,6 +3119,7 @@ function runAITurn(fk) {
     const useEV = aiProfile(fk).lookahead >= 1;
     const af = G.factions[fk];
     const myNodeCount = nodesOf(fk).length;
+    const stop = useEV ? mustStopLeader(fk) : null;   // focus-fire the frontrunner (Phase 4)
     let best=null;
     for (const atk of myTiles().filter(t=>t.troops>=2)) {
       for (const def of enemyTiles()) {
@@ -3100,7 +3141,11 @@ function runAITurn(fk) {
           const lastStand = (df && hasTrait(df, 'last_stand') && def.troops <= 2) ? 3 : 0;
           p = winProb(atkPower, defPower + lastStand, fortify, af && hasTrait(af, 'tactician'));
           const winsTheGame = def.isNode && (myNodeCount + 1) >= 3;
-          const captureValue = (def.isNode ? 120 : 16 + def.troops) + (winsTheGame ? 220 : 0);
+          // Focus-fire: taking the frontrunner's tile — above all their NODE (which resets their
+          // 3-round win timer) — is worth far more than expanding elsewhere. This is what makes the
+          // coalition actually converge on whoever's about to win, instead of nibbling the map.
+          const stopBonus = (def.owner === stop) ? (def.isNode ? 180 : 45) : 0;
+          const captureValue = (def.isNode ? 120 : 16 + def.troops) + (winsTheGame ? 220 : 0) + stopBonus;
           const lossCost = 6 + def.troops;
           // 1-ply counter: the strongest adjacent enemy recapturing our freshly-taken (1-troop) tile.
           let counterP = 0;
@@ -3265,7 +3310,11 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 1. Seize an enemy-held NODE — the win condition. Lookahead tiers commit when the odds are at
   //    least a coin flip (and skip a fragile node to build up first via airlift); greedy tiers use
   //    minEdge (top-tier cushion 0 — they strike at even troops since the attacker wins ties).
-  if (attackable && best.def.isNode && (useEV ? best.p >= 0.5 : edge >= prof.minEdge)) {
+  //    Coordinating tiers (Bloodbath) pile onto the FRONTRUNNER's node even at sub-even odds — a
+  //    coordinated grind that knocks them off 3 nodes and resets their win timer.
+  const stopLeader = useEV ? mustStopLeader(fk) : null;
+  const nodeThresh = (prof.coordinate && best && best.def.owner === stopLeader && best.def.isNode) ? 0.4 : 0.5;
+  if (attackable && best.def.isNode && (useEV ? best.p >= nodeThresh : edge >= prof.minEdge)) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
     return aiAttackWithAdvance(fk, best.atk, best.def);
   }
