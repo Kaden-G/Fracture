@@ -910,11 +910,27 @@ function shuffle(a) {
 // #map-area; the styles.css rule references var(--map-bg, …). Update MAP_BG_COUNT
 // when you drop more art into assets/raw/map_bg_N.png.
 const MAP_BG_COUNT = 5;
-let lastBackdrop = 0;
+// Remember the last backdrop ACROSS page reloads (localStorage), so a "new game" that reloads
+// the page still never repeats the one you just saw. Falls back to in-memory if storage is blocked.
+let lastBackdrop = (() => {
+  try { return parseInt(localStorage.getItem('fracture_lastBg'), 10) || 0; } catch (e) { return 0; }
+})();
+let appliedBackdrop = 0;   // which backdrop the CSS var currently shows (avoids redundant re-applies)
+// Pick a fresh random backdrop, never the same one twice in a row, and apply it. Also records
+// the choice on G.mapBg so online games ride it through synced state (every player matches the
+// host instead of falling back to the CSS default).
 function pickMapBackdrop() {
   let n;
   do { n = Math.floor(Math.random() * MAP_BG_COUNT) + 1; } while (n === lastBackdrop && MAP_BG_COUNT > 1);
   lastBackdrop = n;
+  try { localStorage.setItem('fracture_lastBg', String(n)); } catch (e) {}
+  if (typeof G !== 'undefined' && G) G.mapBg = n;   // synced to joiners online; harmless offline
+  applyMapBackdrop(n);
+}
+// Paint a specific backdrop onto the map. Used directly by online joiners replaying G.mapBg.
+function applyMapBackdrop(n) {
+  if (!n || n === appliedBackdrop) return;
+  appliedBackdrop = n;
   const el = document.getElementById('map-area');
   if (el && el.style && typeof el.style.setProperty === 'function') {
     el.style.setProperty('--map-bg', `url('assets/raw/map_bg_${n}.png?v=1')`);
@@ -3749,6 +3765,7 @@ function onRemoteState(s) {
   applyingRemote = false;
 
   ensureGameScreen();
+  if (G.mapBg) applyMapBackdrop(G.mapBg);   // match the host's randomized backdrop (joiners)
   renderMap(); renderSidebar();
 
   // Replay the Reckoning report for non-driver clients — the duel/weighing ran on the driver,
@@ -4110,6 +4127,7 @@ function hostStart() {
   Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
 
   buildOnlineGame(seats, !!lastRoomData.tyrant);
+  pickMapBackdrop();   // fresh random backdrop, recorded on G.mapBg so every joiner matches the host
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
   G.playerFaction = mySeats[0] || G.turnOrder[0];
