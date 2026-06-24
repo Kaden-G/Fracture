@@ -193,6 +193,7 @@ let myTurnActive   = false;   // is it currently a local human's turn we've begu
 let applyingRemote = false;   // suppress pushes while loading a remote snapshot
 let onlineStarting = false;   // host: round 1 in progress, flip room to started after first turn
 let lastShownEventN = 0;      // highest round-event card this client has already displayed
+let lastShownReckoningN = 0;  // highest Reckoning report this client has already displayed
 let roomCode       = null;
 let roomRef        = null;    // Firebase ref to /rooms/{CODE}
 let stateRef       = null;    // Firebase ref to /rooms/{CODE}/state
@@ -517,23 +518,30 @@ function maybeReckoningApp(fk) {
     // top of the win banner until dismissed, so the player understands they were spared.
     if (hasPact(TYRANT_KEY, fk)) {
       addLog(`⚖️ ${G.factions[fk].name}'s soul was weighed — untainted. The Tyrant lets them ascend.`);
-      tyrantModal({
+      showReckoningReport({
         type: 'THE WEIGHING',
         title: '⚖️ SOUL UNTAINTED',
-        body: `<b>${G.factions[fk].name}</b> was bound to the Tyrant — but your soul was untainted by corruption.<br><br>` +
-              `You ascend without trial.`,
-        confirmLabel: 'SO BE IT',
-        cancelLabel: null,
+        body: `<b>${G.factions[fk].name}</b> stood bound to the Tyrant as victory neared — and the Tyrant weighed their soul.<br><br>` +
+              `Corruption: <b>0 / ${THRALLDOM_CAP}</b> — untainted.<br><br>` +
+              `There is nothing for the Tyrant to claim. You ascend without trial.`,
       });
     }
     return false;
   }
 
-  // Thralldom cap — auto-loss
+  // Thralldom cap — auto-loss. No duel: corruption has already maxed, so the Tyrant simply
+  // claims a soul that is already its own. Still weigh them on-screen so the loss lands.
   if (corr >= THRALLDOM_CAP) {
     addLog(`🦠 THRALLDOM! ${G.factions[fk].name} is consumed — corruption reached the cap!`);
+    showReckoningReport({
+      type: 'THE RECKONING',
+      title: '🦠 CONSUMED BY THRALLDOM',
+      body: `<b>${G.factions[fk].name}</b> reached the brink of victory — and the Tyrant weighed their soul.<br><br>` +
+            `Corruption: <b>${corr} / ${THRALLDOM_CAP}</b> — the threshold of thralldom.<br><br>` +
+            `There is no duel. A soul this corrupted is already the Tyrant's. ${G.factions[fk].name} is consumed, and the Tyrant claims Nexus through its thrall.`,
+    });
     showWin(TYRANT_KEY, 'RECKONING (THRALLDOM)',
-      `${G.factions[fk].name} was consumed by corruption — the Tyrant wins through its thrall.`);
+      `${G.factions[fk].name} was consumed by corruption (${corr}/${THRALLDOM_CAP}) — the Tyrant wins through its thrall.`);
     return 'thralldom';
   }
 
@@ -592,16 +600,16 @@ function runReckoning(conspirator) {
   const moonMsg = inMoon ? '<br>🌙 <b>MOON BAND</b> — jackpot spike!' : '';
   const fallenMsg = (fallenForTyrant || fallenForCon)
     ? `<br>Fallen votes: +${fallenForCon} conspirator · +${fallenForTyrant} Tyrant` : '';
-  tyrantModal({
+  showReckoningReport({
     type: 'THE RECKONING',
     title: tWins >= 2 ? '🦠 THE TYRANT PREVAILS' : '⚔️ THE TYRANT FALLS',
-    body: `<b>${G.factions[conspirator].name}</b> challenges the Tyrant in the final duel.<br><br>` +
+    body: `<b>${G.factions[conspirator].name}</b> stood on the brink of victory — bound to the Tyrant, ` +
+          `their soul is weighed and dragged into the final duel.<br><br>` +
+          `Corruption: <b>${corr} / ${THRALLDOM_CAP}</b><br>` +
           `Tyrant Essence <b>${tEssence}</b> · Conspirator Essence <b>${cEssence}</b>` +
           skimMsg + moonMsg + fallenMsg +
           `<br><br><span style="font-family:monospace; font-size:12px;">${rounds.join('<br>')}</span>` +
           `<br><br><b>${winner} wins the Reckoning!</b>`,
-    confirmLabel: 'SO BE IT',
-    cancelLabel: null,
   });
 
   return tWins >= 2;
@@ -1569,6 +1577,18 @@ function tyrantModal({ type = 'THE TYRANT', title, body, confirmLabel = 'CONFIRM
   _tyrantModalCb = { onConfirm, onCancel };
   document.getElementById('tyrant-confirm-overlay').classList.add('show');
 }
+// The Reckoning report — corruption weighed, the duel rounds, thralldom — must reach EVERY
+// player, not just the engine-driver who computed it. So it rides on synced game state: the
+// driver stamps G.reckoningReport here and shows it immediately; other clients replay it from
+// onRemoteState the moment it arrives (sequence-gated so it never shows twice or re-shows on echo).
+function showReckoningReport({ type, title, body }) {
+  G.reckoningSeq = (G.reckoningSeq || 0) + 1;
+  G.reckoningReport = { n: G.reckoningSeq, type, title, body };
+  lastShownReckoningN = G.reckoningSeq;
+  syncPush();   // broadcast so non-driver clients can replay it (no-op offline)
+  tyrantModal({ type, title, body, confirmLabel: 'SO BE IT', cancelLabel: null });
+}
+
 function tyrantModalConfirm() {
   const cb = _tyrantModalCb; _tyrantModalCb = null;
   document.getElementById('tyrant-confirm-overlay').classList.remove('show');
@@ -3730,6 +3750,21 @@ function onRemoteState(s) {
 
   ensureGameScreen();
   renderMap(); renderSidebar();
+
+  // Replay the Reckoning report for non-driver clients — the duel/weighing ran on the driver,
+  // but every player must witness it (corruption weighed, the dice, thralldom). Sequence-gated
+  // so it shows exactly once. Done before the gameOver early-return below so it layers on top
+  // of the win banner (the Tyrant modal sits at z-index 200, the conquest overlay at 180).
+  if (G.reckoningReport && G.reckoningReport.n > lastShownReckoningN) {
+    lastShownReckoningN = G.reckoningReport.n;
+    tyrantModal({
+      type: G.reckoningReport.type,
+      title: G.reckoningReport.title,
+      body: G.reckoningReport.body,
+      confirmLabel: 'SO BE IT',
+      cancelLabel: null,
+    });
+  }
 
   // Deliver pending pact offers and expiry votes immediately — the recipient responds
   // out of turn, like the online choice events below.
