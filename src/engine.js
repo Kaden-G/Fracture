@@ -59,6 +59,52 @@ function recordTyrantStrike(state, attackerFk, defOwner) {
   state.tyrantStruck[attackerFk] = state.round;
 }
 
+// ============================================================
+// PHASE 5: ANTI-LEADER LEVERS — fire only when defender holds 3+ nodes (win timer running).
+// Mirrors the Tyrant surge structure but applies to any node-leader, and ALSO cracks entrenchment
+// on a multi-attacker tile so the coalition's chip rate matters.
+//   Lever #1: +1 per OTHER coalition member who has struck the leader within the window, cap +3.
+//   Lever #3: tile loses dug-in defense once 2+ different factions have struck it within the window.
+// "Within the window" = this round or the previous round, so a coalition doesn't have to fire
+// in one synchronous turn — strikes accumulate across the round. The Tyrant is exempt — it has
+// its own surge machinery and its own playbook.
+// state.leaderStruck = { [tileId]: { round, attackers: { fk: round } } }
+// ============================================================
+function _strikeWindowOpen(rec, round) { return rec && (round - rec.round) <= 1; }
+function recordLeaderStrike(state, tileId, attackerFk, defOwner) {
+  if (defOwner === TYRANT_KEY || attackerFk === TYRANT_KEY) return;
+  if (countNodes(state, defOwner) < 3) return;
+  if (hasPact(state, attackerFk, defOwner)) return;   // allies don't earn it
+  if (!state.leaderStruck) state.leaderStruck = {};
+  let rec = state.leaderStruck[tileId];
+  if (!rec || !_strikeWindowOpen(rec, state.round)) {
+    rec = { round: state.round, attackers: {} };
+    state.leaderStruck[tileId] = rec;
+  } else {
+    rec.round = state.round;   // keep window fresh as long as strikes keep landing
+  }
+  rec.attackers[attackerFk] = state.round;
+}
+// +1 per OTHER coalition member who struck the leader, capped at +3. Only when defender at 3 nodes.
+// Allies of the leader earn 0 (you don't get the bonus for striking your own pact partner).
+function nodeLeaderSurge(state, attackerFk, tileId, defOwner) {
+  if (defOwner === TYRANT_KEY || attackerFk === TYRANT_KEY) return 0;
+  if (countNodes(state, defOwner) < 3) return 0;
+  if (hasPact(state, attackerFk, defOwner)) return 0;
+  const rec = state.leaderStruck && state.leaderStruck[tileId];
+  if (!_strikeWindowOpen(rec, state.round)) return 0;
+  const others = Object.keys(rec.attackers).filter(k => k !== attackerFk).length;
+  return Math.min(3, others);
+}
+// True once a 3-node leader's tile has been struck by 2+ different factions in the window.
+function leaderEntrenchCracked(state, tileId, defOwner) {
+  if (defOwner === TYRANT_KEY) return false;
+  if (countNodes(state, defOwner) < 3) return false;
+  const rec = state.leaderStruck && state.leaderStruck[tileId];
+  if (!_strikeWindowOpen(rec, state.round)) return false;
+  return Object.keys(rec.attackers).length >= 2;
+}
+
 // ---- Helper: region tiles from state ----
 function regionTiles(state, reg) {
   return Object.values(state.tiles).filter(t => t.region === reg);
@@ -400,8 +446,14 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   // Rally: +2 per prior strike by THIS attacker on THIS victim this turn — but the Tyrant
   // never rallies (it's the shared enemy; the coalition can grind it down without the brake).
   const overextend = tgt.owner === TYRANT_KEY ? 0 : priorStrikes * 2;
+  // Record THIS strike BEFORE computing the leader-surge so a 2nd attacker into the same tile
+  // immediately benefits from the 1st's pressure (mirror of how a real coalition works on the
+  // ground — once two factions are besieging, the fortress is in trouble).
+  recordLeaderStrike(state, tgtId, attackerFk, tgt.owner);
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);
   if (af.ability === 'sabotage') entrench = 0;
+  // PHASE 5 lever #3: a 3-node leader's tile loses dug-in defense once 2+ factions are besieging it.
+  if (leaderEntrenchCracked(state, tgtId, tgt.owner)) entrench = 0;
   const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops <= 2) ? 3 : 0;
   const fortifyVal = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;
   const comms = controlsNode(state, attackerFk, 'node_comms') ? 1 : 0;
@@ -412,8 +464,12 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   const war = state.totalWar ? 1 : 0;
   // Step 3: coalition surge — human-only attack bonus vs the Tyrant (0 otherwise).
   const surge = tyrantSurgeBonus(state, attackerFk, tgt.owner);
+  // PHASE 5 lever #1: +1 per other coalition member striking the leader, cap +3. Replaces the
+  // flat coalitionAtkBonus when the leader is at 3 nodes (avoids stacking both anti-snowball bonuses).
+  const leaderSurge = nodeLeaderSurge(state, attackerFk, tgtId, tgt.owner);
+  const effCoalition = leaderSurge > 0 ? 0 : coalition;   // top tier subsumes the lower
 
-  let attMods = attForce + comms + coalition + grudgeA + war + surge;
+  let attMods = attForce + comms + effCoalition + grudgeA + war + surge + leaderSurge;
   let defMods = defForce + entrench + lastStand + data + grudgeD + overextend;
   const modSwing = attMods - defMods;
   if (modSwing > 4)       attMods -= (modSwing - 4);
@@ -430,7 +486,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   // Combat effect for UI rendering
   effects.push({
     kind: 'combat', src: srcId, tgt: tgtId, won: attWins, captured,
-    att: { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, surge, total: attTotal },
+    att: { dice: attRoll.dice, force: attForce, comms, coalition: effCoalition, grudge: grudgeA, war, surge, leaderSurge, total: attTotal },
     def: { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify: fortifyVal, data, grudge: grudgeD, overextend, total: defTotal },
     attackerFk, defenderFk: tgt.owner,
   });
@@ -1164,6 +1220,13 @@ export function reduce(inputState, action) {
       if (state.winner) {
         effects.push({kind:'win', winner:state.winner});
         return { state, effects, log };
+      }
+      // PHASE 5: expire stale leader-strike records so a tile that hasn't been hit in 2+ rounds
+      // loses its "under siege" state and the leader can recover entrenchment normally.
+      if (state.leaderStruck) {
+        for (const tid in state.leaderStruck) {
+          if (state.round - state.leaderStruck[tid].round >= 2) delete state.leaderStruck[tid];
+        }
       }
       state.round++;
       if (state.round > ROUND_CAP) {
