@@ -598,6 +598,48 @@ function recordTyrantStrike(attackerFk, defOwner) {
   G.tyrantStruck[attackerFk] = G.round;
 }
 
+// ============================================================
+// PHASE 5: ANTI-LEADER LEVERS — fire only when defender holds 3+ nodes (win timer running).
+// Mirror of engine.js (KEEP IN SYNC):
+//   Lever #1: nodeLeaderSurge — +1 per OTHER coalition member who has struck the leader within
+//             the window (this round or last), cap +3. When firing, suppresses the flat
+//             coalitionAtkBonus so they don't stack.
+//   Lever #3: leaderEntrenchCracked — 2+ different attackers within the window strips dug-in.
+// Strike record is per-tile, recorded BEFORE the surge is computed so a 2nd attacker
+// immediately benefits from the 1st's pressure. Cleared per round in endRound.
+// ============================================================
+function _leaderStrikeWindowOpen(rec) { return rec && (G.round - rec.round) <= 1; }
+function recordLeaderStrike(tileId, attackerFk, defOwner) {
+  if (defOwner === TYRANT_KEY || attackerFk === TYRANT_KEY) return;
+  if (countNodes(defOwner) < 3) return;
+  if (hasPact(attackerFk, defOwner)) return;
+  if (!G.leaderStruck) G.leaderStruck = {};
+  let rec = G.leaderStruck[tileId];
+  if (!rec || !_leaderStrikeWindowOpen(rec)) {
+    rec = { round: G.round, attackers: {} };
+    G.leaderStruck[tileId] = rec;
+  } else {
+    rec.round = G.round;
+  }
+  rec.attackers[attackerFk] = G.round;
+}
+function nodeLeaderSurge(attackerFk, tileId, defOwner) {
+  if (defOwner === TYRANT_KEY || attackerFk === TYRANT_KEY) return 0;
+  if (countNodes(defOwner) < 3) return 0;
+  if (hasPact(attackerFk, defOwner)) return 0;
+  const rec = G.leaderStruck && G.leaderStruck[tileId];
+  if (!_leaderStrikeWindowOpen(rec)) return 0;
+  const others = Object.keys(rec.attackers).filter(k => k !== attackerFk).length;
+  return Math.min(3, others);
+}
+function leaderEntrenchCracked(tileId, defOwner) {
+  if (defOwner === TYRANT_KEY) return false;
+  if (countNodes(defOwner) < 3) return false;
+  const rec = G.leaderStruck && G.leaderStruck[tileId];
+  if (!_leaderStrikeWindowOpen(rec)) return false;
+  return Object.keys(rec.attackers).length >= 2;
+}
+
 // All elimination flows route through here so the Tyrant can get its harbor reprieve.
 function killFaction(fk){
   if (fk === TYRANT_KEY && tyrantAllies().length > 0 && !G.tyrantHarbor) {
@@ -2133,6 +2175,13 @@ function endRound() {
       }
     }
   }
+  // PHASE 5: expire stale leader-strike records so a tile that hasn't been hit in 2+ rounds
+  // loses its "under siege" state (mirror of engine.js).
+  if (G.leaderStruck) {
+    for (const tid in G.leaderStruck) {
+      if (G.round - G.leaderStruck[tid].round >= 2) delete G.leaderStruck[tid];
+    }
+  }
   G.round++;
   if (G.round > ROUND_CAP) {
     // Tiebreak: most nodes (Tyrant excluded from timeout)
@@ -2709,9 +2758,14 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   //    repeatedly without the escalating-defense penalty.
   const rallyKey = srcId + '|' + tgtId;
   const overextend = tgt.owner === TYRANT_KEY ? 0 : (turnStrikes[rallyKey] || 0) * 2;
-  // 3. Entrenchment — GHOST's Phantom assault ignores it entirely
+  // PHASE 5: record THIS strike before computing the leader-surge, so a 2nd attacker into the same
+  // tile immediately benefits from the 1st's pressure (mirror of engine.js).
+  recordLeaderStrike(tgtId, attackerFk, tgt.owner);
+  // 3. Entrenchment — GHOST's Phantom assault ignores it entirely, AND a 3-node leader's tile
+  //    cracks once 2+ factions are besieging it (Phase 5 lever #3).
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
+  if (leaderEntrenchCracked(tgtId, tgt.owner)) entrench = 0;
   // 4. Trait modifiers
   const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops<=2) ? 3 : 0;  // triggers at 1-2 troops
   const fortify  = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;  // +2 fresh, decays to +1 after casualty
@@ -2727,9 +2781,14 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const war = totalWar ? 1 : 0;
   // 9. Step 3 coalition surge — human-only attack bonus vs the Tyrant (0 otherwise)
   const surge = tyrantSurgeBonus(attackerFk, tgt.owner);
+  // 10. PHASE 5 lever #1: anti-leader surge — +1 per other coalition member striking a 3-node
+  //     leader, cap +3. Suppresses the flat coalitionAtkBonus when firing (don't stack two anti-
+  //     snowball bonuses).
+  const leaderSurge = nodeLeaderSurge(attackerFk, tgtId, tgt.owner);
+  const effCoalition = leaderSurge > 0 ? 0 : coalition;
 
   // Raw modifier totals (before clamping)
-  let attMods = attForce + comms + coalition + grudgeA + war + surge;
+  let attMods = attForce + comms + effCoalition + grudgeA + war + surge + leaderSurge;
   let defMods = defForce + entrench + lastStand + data + grudgeD + overextend;
   // Clamp net modifier swing to ±4 — no combination of perks fully removes chance
   const modSwing = attMods - defMods;
@@ -2752,7 +2811,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   const captured = attWins && tgt.troops <= 1;   // the defender's last troop falls → tile flips
   if (isPlayer || tgt.owner===G.playerFaction) {
     showCombatResult(
-      { dice: attRoll.dice, force: attForce, comms, coalition, grudge: grudgeA, war, surge, total: attTotal },
+      { dice: attRoll.dice, force: attForce, comms, coalition: effCoalition, grudge: grudgeA, war, surge, leaderSurge, total: attTotal },
       { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
       attWins, isPlayer, af, df, captured
     );
@@ -2822,7 +2881,7 @@ function renderCombatFlash() {
   const { att, def, win, playerIsAttacker, af, df, captured } = combatQueue[0];
   const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
   const diceStr = (arr) => arr.map(d => faces[d-1]).join('');
-  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'}]);
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'},{v:att.leaderSurge||0,label:'anti-leader'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';

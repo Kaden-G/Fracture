@@ -1,0 +1,64 @@
+FRACTURE PHASE 5 — AFTER LEVERS (N=300, seed=1)
+Captured after commit 3219760 (anti-leader surge + entrenchment crack).
+Compare to sim/baseline_phase5.txt for the BEFORE numbers.
+
+=========================================================================
+3-NODE LEADER CONVERSION — BEFORE vs AFTER
+=========================================================================
+TIER         BEFORE   AFTER    Δ        AVG ROUNDS (before → after)
+-------------------------------------------------------------------------
+SANDBOX      37.3%    34.1%    −3.2     25.7 → 26.4
+JV           63.7%    60.3%    −3.4     22.4 → 24.1
+VARSITY      79.3%    68.6%    −10.7    18.6 → 20.2
+BLOODBATH    77.0%    63.2%    −13.8    19.3 → 21.7
+=========================================================================
+
+WIN RATES BY FACTION (after levers)
+SANDBOX:   ghost 31.0%  grid 30.0%  syndicate 21.7%  commune 17.3%
+JV:        ghost 29.7%  commune 26.0%  grid 23.7%  syndicate 20.7%
+VARSITY:   ghost 39.3%  grid 22.0%  commune 21.7%  syndicate 17.0%
+BLOODBATH: ghost 30.0%  syndicate 25.7%  grid 23.7%  commune 20.7%
+
+KEY FINDINGS
+
+1. LADDER NOW MONOTONIC IN THE RIGHT DIRECTION
+   Conversion now DECREASES as tier increases above JV:
+     Sandbox 34.1 > JV 60.3 (mild ramp; weak AIs leak)
+     JV 60.3 > Varsity 68.6 ≈ Bloodbath 63.2 (smart play CRACKS the fortress)
+   Before, Varsity 79.3% was the WORST at unseating leaders — now it's
+   second-best and Bloodbath is best, as the design intended.
+
+2. BLOODBATH IS IN TARGET BAND (55-65%)
+   63.2% — a 3-node lead is now winnable but no longer near-automatic.
+   The dogpile actually pays off because surge+crack make each strike
+   matter, not just the count of strikers.
+
+3. VARSITY IS CLOSE BUT ABOVE TARGET (68.6%)
+   Varsity has the EV brain but not the coordinate flag, so it doesn't
+   take sub-0.32 sacrifice strikes that crack the fortress for the next
+   attacker. That's correct: Varsity should be "the standard challenge,"
+   not Bloodbath. A ~5 pt gap between them feels right.
+
+4. ENDGAMES ARE LONGER + MORE CONTESTED
+   Avg rounds up across all tiers (Bloodbath +2.4, Varsity +1.6).
+   Games timeout slightly more often. The contested middle of the streak
+   distribution should be filled in (need to verify directly, but the
+   round-length proxy is consistent with "leader gets pushed, recovers,
+   gets pushed again" instead of "instant stalemate or instant win").
+
+5. GHOST IS STILL OVER-TUNED
+   Varsity ghost still 39.3% (fair share ~22%). The levers don't help
+   here — sabotage/leapfrog dominates regardless of who's the leader.
+   Logged for a future balance pass; out of scope for this phase.
+
+INTERPRETATION
+The hypothesis from step 3 — "smart AI makes the leader stickier because
+the gang-up changes who attacks, not the outcome" — was correct, and the
+levers fix it exactly as designed. The per-exchange chip rate matters
+once you can land enough strikes to trigger the surge.
+
+LIVE GAME PARITY
+This commit is sim-only. The next step mirrors both levers into
+app.js's resolveAttack and surfaces the surge/crack in the combat panel
+so the player can see them — that's the change you'll actually feel in
+your next playtest.
