@@ -323,7 +323,7 @@ const EVENT_HANDLERS = {
     state.rng = r.rng;
     const target = tiles[r.value];
     const prev = target.owner;
-    target.owner = w; target.heldRounds = 0;
+    target.owner = w; target.heldRounds = 0; target.claimedRound = state.round;
     effects.push({kind:'hit', tile:target.id});
     if (prev !== w && tilesOf(state, prev).length === 0) {
       killFaction(state, prev, log);
@@ -498,6 +498,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
       tgt.owner = attackerFk;
       tgt.troops = 1;
       tgt.heldRounds = 0;
+      tgt.claimedRound = state.round;
       src.troops = Math.max(1, src.troops - 1);
       // Scavenger loot (denied by last stand)
       const lootDenied = df && hasTrait(df, 'last_stand');
@@ -613,13 +614,13 @@ export function buildMap(state) {
       const id = `tile_${r}_${c}`;
       const name = districtNames[dn++ % districtNames.length];
       tiles[id] = { id, name, short: name.slice(0,6), isNode: false,
-                    row: r, col: c, owner: null, troops: 0, heldRounds: 0 };
+                    row: r, col: c, owner: null, troops: 0, heldRounds: 0, claimedRound: 0 };
     }
   }
   for (const [nodeId, pos] of Object.entries(NODE_POSITIONS)) {
     const def = NODE_TILES.find(n => n.id === nodeId);
     const id = `tile_${pos.row}_${pos.col}`;
-    tiles[id] = { ...def, id, nodeId, row: pos.row, col: pos.col, owner: null, troops: 0, heldRounds: 0 };
+    tiles[id] = { ...def, id, nodeId, row: pos.row, col: pos.col, owner: null, troops: 0, heldRounds: 0, claimedRound: 0 };
   }
   const r1 = shuffleWithRng([...START_CORNERS], state.rng);
   state.rng = r1.rng;
@@ -633,6 +634,7 @@ export function buildMap(state) {
       if (tiles[id] && !tiles[id].isNode) {
         tiles[id].owner = fk;
         tiles[id].troops = 3;
+        tiles[id].claimedRound = 0;   // starting tiles: owned since before round 1
       }
     });
   });
@@ -641,7 +643,7 @@ export function buildMap(state) {
     const cId = `tile_${_MID}_${_MID}`;
     // 8-troop garrison: protects against the Ghost round-1 sabotage assassination
     // (sabotage is -2; two hits would wipe a 4-troop start before the Tyrant's first turn).
-    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 8; }
+    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 8; tiles[cId].claimedRound = 0; }
   }
   Object.values(tiles).forEach(t => { t.region = regionOf(t); });
   return tiles;
@@ -864,7 +866,7 @@ export function reduce(inputState, action) {
         ef.resources = 3;
         const count = Math.min(2, neutrals.length);
         for (let i = 0; i < count; i++) {
-          neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+          neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0; neutrals[i].claimedRound = state.round;
           effects.push({kind:'refresh', tiles:[neutrals[i].id]});
         }
         // Grudge against the renouncer (they caused the turmoil)
@@ -937,7 +939,7 @@ export function reduce(inputState, action) {
           tile.troops--;
           if (defectTo) defectTo.troops++;
           if (tile.troops <= 0) {
-            tile.owner = fk; tile.troops = 1; tile.heldRounds = 0;   // freshly taken — drop prior owner's dig-in
+            tile.owner = fk; tile.troops = 1; tile.heldRounds = 0; tile.claimedRound = state.round;   // freshly taken — drop prior owner's dig-in
             if (tilesOf(state, bribedPrev).length === 0) {
               killFaction(state, bribedPrev, log);
               awardEliminationBounty(state, fk, bribedPrev, log);
@@ -1025,7 +1027,7 @@ export function reduce(inputState, action) {
         if (!empties.length) continue;
         empties.sort((a, b) => towardHostile(a) - towardHostile(b));
         const empty = empties[0];
-        s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0;
+        s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0; empty.claimedRound = state.round;
         effects.push({kind:'refresh', tiles:[s.id, empty.id]});
         spread++;
       }
@@ -1101,10 +1103,14 @@ export function reduce(inputState, action) {
       state.currentTurnIdx = 0;
       state.signalJam = false;
       state.totalWar = false;
-      // Entrenchment tick
+      // Entrenchment tick — only ticks tiles held for a FULL round under the same owner.
+      // claimedRound is stamped on every ownership change; tick fires only when the previous
+      // round was a complete round of holding (round - claimedRound >= 2).
       Object.values(state.tiles).forEach(t => {
-        if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, t.isNode ? 2 : 3);
-        else t.heldRounds = 0;
+        if (!t.owner || t.troops < 2) { t.heldRounds = 0; return; }
+        if ((state.round - (t.claimedRound || 0)) >= 2) {
+          t.heldRounds = Math.min((t.heldRounds || 0) + 1, t.isNode ? 2 : 3);
+        }
       });
       // Pact upkeep
       for (const k of Object.keys(state.pacts)) {

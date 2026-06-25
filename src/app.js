@@ -1077,14 +1077,14 @@ function buildMap() {
     const id = `tile_${r}_${c}`;
     const name = districtNames[dn++ % districtNames.length];
     tiles[id] = { id, name, short:name.slice(0,6), isNode:false,
-                  row:r, col:c, owner:null, troops:0, heldRounds:0 };
+                  row:r, col:c, owner:null, troops:0, heldRounds:0, claimedRound:0 };
   }
 
   // 2. Stamp the 5 nodes onto their fixed symmetric positions.
   for (const [nodeId, pos] of Object.entries(NODE_POSITIONS)) {
     const def = NODE_TILES.find(n => n.id === nodeId);
     const id = `tile_${pos.row}_${pos.col}`;
-    tiles[id] = { ...def, id, nodeId, row:pos.row, col:pos.col, owner:null, troops:0, heldRounds:0 };
+    tiles[id] = { ...def, id, nodeId, row:pos.row, col:pos.col, owner:null, troops:0, heldRounds:0, claimedRound:0 };
   }
 
   // 3. Assign each NORMAL faction a symmetric corner (randomized for fairness).
@@ -1098,6 +1098,7 @@ function buildMap() {
       if (tiles[id] && !tiles[id].isNode) {
         tiles[id].owner = fk;
         tiles[id].troops = 3;
+        tiles[id].claimedRound = 0;   // starting tiles count as "owned since before round 1"
       }
     });
   });
@@ -1107,7 +1108,7 @@ function buildMap() {
   //     wipe it before its first turn. Three sabotages cripple it (8 -> 2) but it survives.
   if (G.factions[TYRANT_KEY]) {
     const cId = `tile_${_MID}_${_MID}`;
-    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 8; }
+    if (tiles[cId]) { tiles[cId].owner = TYRANT_KEY; tiles[cId].troops = 8; tiles[cId].claimedRound = 0; }
   }
 
   // Stamp each tile with its cardinal region (used by region-targeted events).
@@ -1460,10 +1461,16 @@ function startRound() {
   signalJamActive = false;
   totalWar = false;
   const tributeQueue = [];   // local human seats owing tribute — prompted via themed modal below
-  // Entrenchment: tiles held with 2+ troops dig in deeper each round
+  // Entrenchment: tiles dig in once they've been held for a FULL round under the same owner.
+  // claimedRound is stamped on every ownership change (combat capture, bribe, move into unclaimed,
+  // Tyrant spread/harbor, RIOT event). The tick fires only when the previous round was a complete
+  // round of holding (round - claimedRound >= 2), so a tile captured mid-round-N stays at 0 dig-in
+  // through the rest of N AND through all of N+1, then ticks to 1 at the start of N+2.
   Object.values(G.tiles).forEach(t => {
-    if (t.owner && t.troops >= 2) t.heldRounds = Math.min((t.heldRounds||0) + 1, t.isNode ? 2 : 3);
-    else t.heldRounds = 0;
+    if (!t.owner || t.troops < 2) { t.heldRounds = 0; return; }
+    if ((G.round - (t.claimedRound || 0)) >= 2) {
+      t.heldRounds = Math.min((t.heldRounds || 0) + 1, t.isNode ? 2 : 3);
+    }
   });
   // Diplomacy upkeep: pacts lapse after 4 rounds (Tyrant deals are durable until betrayed),
   // grudges cool off when their timer passes
@@ -2070,7 +2077,7 @@ function renounceTyrant(fk) {
       if (!neutrals.length) continue;
       ef.eliminated = false; ef.corruption = 0; ef.resources = 3;
       for (let i = 0; i < Math.min(2, neutrals.length); i++) {
-        neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0;
+        neutrals[i].owner = ek; neutrals[i].troops = 2; neutrals[i].heldRounds = 0; neutrals[i].claimedRound = G.round;
         refreshHex(neutrals[i].id);
       }
       G.grudges[ek + '>' + fk] = G.round + 3;
@@ -2457,7 +2464,7 @@ function handleTileClick(id) {
       const wasUnclaimed = !tile.owner;   // moving into a NEW tile is a fresh hold, not dug-in
       s.troops -= moveN;
       tile.owner = G.playerFaction; tile.troops += moveN;
-      if (wasUnclaimed) tile.heldRounds = 0;
+      if (wasUnclaimed) { tile.heldRounds = 0; tile.claimedRound = G.round; }
       G.actionsUsed++;
       currentAction = null;
       document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
@@ -2640,7 +2647,7 @@ function handleTileClick(id) {
       tile.troops--;
       if (defectTo) { defectTo.troops++; refreshHex(defectTo.id); }
       if (tile.troops<=0) {
-        tile.owner=G.playerFaction; tile.troops=1; tile.heldRounds=0;   // freshly taken — drop prior owner's dig-in
+        tile.owner=G.playerFaction; tile.troops=1; tile.heldRounds=0; tile.claimedRound=G.round;   // freshly taken — drop prior owner's dig-in
         if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) {
           killFaction(bribedPrev);
           awardEliminationBounty(G.playerFaction, bribedPrev);
@@ -2701,7 +2708,7 @@ function handleTileClick(id) {
       confirmLabel: '🩸 SURRENDER',
       cancelLabel: '✋ CANCEL',
       onConfirm: () => {
-        tile.owner = TYRANT_KEY; tile.heldRounds = 0;
+        tile.owner = TYRANT_KEY; tile.heldRounds = 0; tile.claimedRound = G.round;
         G.tyrantHarbor = 0;
         G.factions[TYRANT_KEY].eliminated = false;
         G.actionsUsed++;
@@ -2826,6 +2833,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       tgt.owner    = attackerFk;
       tgt.troops   = 1;
       tgt.heldRounds = 0;   // freshly taken — not dug in yet
+      tgt.claimedRound = G.round;
       src.troops   = Math.max(1, src.troops-1);
       // SCAVENGER trait: loot +1 resource on capture (denied by LAST STAND defenders)
       const lootDenied = df && hasTrait(df, 'last_stand');
@@ -3085,7 +3093,7 @@ function aiNodePush(fk) {
     const node = targets.find(n => !n.owner && moveReachable(fk, src, n));
     if (node) {
       const carry = aiCarryCount(fk, src);
-      src.troops -= carry; node.owner = fk; node.troops = (node.troops || 0) + carry; node.heldRounds = 0;
+      src.troops -= carry; node.owner = fk; node.troops = (node.troops || 0) + carry; node.heldRounds = 0; node.claimedRound = G.round;
       addLog(`${f.icon} ${f.name} seized ${node.name}`);
       refreshHex(src.id); refreshHex(node.id);
       return true;
@@ -3122,7 +3130,7 @@ function aiNodePush(fk) {
   if (mv) {
     const carry = aiCarryCount(fk, mv.src);
     mv.src.troops -= carry;
-    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = carry; mv.to.heldRounds = 0; }
+    if (!mv.to.owner) { mv.to.owner = fk; mv.to.troops = carry; mv.to.heldRounds = 0; mv.to.claimedRound = G.round; }
     else mv.to.troops += carry;
     addLog(`${f.icon} ${f.name} advanced toward a Node`);
     refreshHex(mv.src.id); refreshHex(mv.to.id);
@@ -3148,7 +3156,7 @@ function tyrantSpread(fk) {
     if (!empties.length) continue;
     empties.sort((a, b) => towardHostile(a) - towardHostile(b));   // closest to a hostile tile first
     const empty = empties[0];
-    s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0;
+    s.troops--; empty.owner = fk; empty.troops = 1; empty.heldRounds = 0; empty.claimedRound = G.round;
     refreshHex(s.id); refreshHex(empty.id); spread++;
   }
   if (spread) addLog(`🦠 THE TYRANT spreads into ${spread} new tile${spread>1?'s':''}`);
@@ -3423,7 +3431,7 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   if (G.tyrantHarbor && fk !== TYRANT_KEY && hasPact(TYRANT_KEY, fk) && tilesOf(TYRANT_KEY).length === 0 && aiHarborDecision(fk)) {
     const t = tilesOf(fk).sort((x,y) => x.troops - y.troops)[0];
     if (t) {
-      t.owner = TYRANT_KEY; t.heldRounds = 0; G.tyrantHarbor = 0;
+      t.owner = TYRANT_KEY; t.heldRounds = 0; t.claimedRound = G.round; G.tyrantHarbor = 0;
       G.factions[TYRANT_KEY].eliminated = false;
       addLog(`🦠 ${f.name} harbored the Tyrant — it rises again!`);
       refreshHex(t.id);
@@ -3587,7 +3595,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
         const prev = tgt.owner;
         f.resources-=1; tgt.troops--; mt.troops++;   // −1 them, +1 you (2-point swing)
         if (tgt.troops<=0) {
-          tgt.owner=fk; tgt.troops=1; tgt.heldRounds=0;   // freshly taken — drop prior owner's dig-in
+          tgt.owner=fk; tgt.troops=1; tgt.heldRounds=0; tgt.claimedRound=G.round;   // freshly taken — drop prior owner's dig-in
           if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
             killFaction(prev);
             awardEliminationBounty(fk, prev);
@@ -3661,7 +3669,7 @@ function applyRiot(reg) {
   if (!tiles.length || !w) { addLog(`🔥 EVENT: RIOT — ${REGION_NAMES[reg]} stays calm`); return; }
   const target = tiles[Math.floor(Math.random() * tiles.length)];
   const prev = target.owner;
-  target.owner = w; target.heldRounds = 0; refreshHex(target.id);
+  target.owner = w; target.heldRounds = 0; target.claimedRound = G.round; refreshHex(target.id);
   if (prev !== w && tilesOf(prev).length === 0) {
     killFaction(prev);
     awardEliminationBounty(w, prev);

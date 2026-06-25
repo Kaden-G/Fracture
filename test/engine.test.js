@@ -392,17 +392,22 @@ describe('Reducer', () => {
 
   it('START_ROUND ticks entrenchment and respects node cap', () => {
     const state = makeTestState();
+    // Use a later round so the "held for a FULL round" rule fires: claimedRound=0 (starting
+    // tiles), round=3 means the tile has been owned through rounds 1 and 2 already.
+    state.round = 3;
     const nodeId = Object.keys(state.tiles).find(id => state.tiles[id].isNode);
     const regId = Object.keys(state.tiles).find(id => !state.tiles[id].isNode && state.tiles[id].owner);
 
     state.tiles[nodeId].owner = 'grid';
     state.tiles[nodeId].troops = 3;
     state.tiles[nodeId].heldRounds = 1;
+    state.tiles[nodeId].claimedRound = 0;
 
     if (regId) {
       state.tiles[regId].owner = 'grid';
       state.tiles[regId].troops = 3;
       state.tiles[regId].heldRounds = 2;
+      state.tiles[regId].claimedRound = 0;
     }
 
     const { state: next } = reduce(state, { type: 'START_ROUND' });
@@ -410,6 +415,23 @@ describe('Reducer', () => {
     if (regId) {
       assert.equal(next.tiles[regId].heldRounds, 3, 'regular tile should be at 3');
     }
+  });
+
+  it('START_ROUND does NOT tick a freshly-captured tile (full-round rule)', () => {
+    const state = makeTestState();
+    // Tile captured DURING round 2 → claimedRound=2. At start of round 3, no tick (not a full
+    // round of holding yet). At start of round 4, ticks to 1.
+    state.round = 3;
+    const id = Object.keys(state.tiles).find(k => state.tiles[k].owner);
+    state.tiles[id].owner = 'grid';
+    state.tiles[id].troops = 3;
+    state.tiles[id].heldRounds = 0;
+    state.tiles[id].claimedRound = 2;
+    let next = reduce(state, { type: 'START_ROUND' }).state;
+    assert.equal(next.tiles[id].heldRounds, 0, 'should NOT tick — captured mid-round-2, only partial hold');
+    next.round = 4;
+    next = reduce(next, { type: 'START_ROUND' }).state;
+    assert.equal(next.tiles[id].heldRounds, 1, 'should tick now — full round of holding through round 3');
   });
 });
 
