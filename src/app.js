@@ -2871,16 +2871,31 @@ function modParts(arr) {
 // Results that land while one is showing queue up behind it; nothing is lost.
 let combatQueue      = [];
 let combatAckWaiters = [];   // engine continuations waiting for the queue to drain
+// AI TURN BATCH: during an AI's turn we don't flash a popup per strike — they accumulate here
+// and surface as ONE end-of-turn summary modal the player dismisses with a single OK. The map
+// still updates live (refreshHex/flashHex on every strike), so the player sees the action; the
+// summary is the readable post-mortem of what happened to them. Reset at the top of each AI turn.
+let aiTurnPlayerResults = [];
 
 function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
+  // During an AI's turn, batch instead of flashing — surface as one summary at end-of-turn.
+  if (aiTurnActive) {
+    aiTurnPlayerResults.push({ att, def, win, playerIsAttacker, af, df, captured });
+    return;
+  }
   combatQueue.push({ att, def, win, playerIsAttacker, af, df, captured });
   if (combatQueue.length === 1) renderCombatFlash();
 }
 
+// Render a single die as a chunky readable tile (the old ⚀⚁ Unicode glyphs were too small to
+// read at a glance). Big white face, bold black digit, dot pattern as a secondary cue.
+function dieFace(n) {
+  return `<span class="die" data-pip="${n}">${n}</span>`;
+}
+function diceStr(arr) { return `<span class="dice-row">${arr.map(dieFace).join('')}</span>`; }
+
 function renderCombatFlash() {
   const { att, def, win, playerIsAttacker, af, df, captured } = combatQueue[0];
-  const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
-  const diceStr = (arr) => arr.map(d => faces[d-1]).join('');
   const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'},{v:att.leaderSurge||0,label:'anti-leader'}]);
   const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
@@ -2899,24 +2914,79 @@ function renderCombatFlash() {
   el.innerHTML = `
     <div class="combat-side">
       <span class="combat-label">${attLabel}</span>
-      <span class="roll-line">${diceStr(att.dice)} ${attMods} <b>= ${att.total}</b></span>
+      <span class="roll-line">${diceStr(att.dice)} <span class="mods">${attMods}</span> <b>= ${att.total}</b></span>
     </div>
     <div class="combat-side">
       <span class="combat-label">${defLabel}</span>
-      <span class="roll-line">${diceStr(def.dice)} ${defMods} <b>= ${def.total}</b></span>
+      <span class="roll-line">${diceStr(def.dice)} <span class="mods">${defMods}</span> <b>= ${def.total}</b></span>
     </div>
     <div class="result-line ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
     <button class="combat-ok-btn" onclick="acknowledgeCombat()">OK ✓</button>
   `;
   ov.appendChild(el);
   document.body.appendChild(ov);
-  // During an AI turn the human is only a spectator — never make them click to unblock the AI.
-  // Show the result briefly, then auto-dismiss so the turn keeps flowing. (Their own attacks,
-  // on their own turn, still wait for a deliberate OK.)
-  if (aiTurnActive) {
-    const mine = combatQueue[0];
-    setTimeout(() => { if (combatQueue[0] === mine) acknowledgeCombat(); }, 1100);
+  // Human's own turn: no auto-dismiss. (AI turns no longer reach this code — they batch.)
+}
+
+// End-of-AI-turn summary: ONE modal with every attack that involved the player this turn, in
+// order. Player dismisses with a single OK; next turn waits via combatAckWaiters/onCombatAck.
+function showAiTurnSummary(actorFk) {
+  const results = aiTurnPlayerResults.slice();
+  aiTurnPlayerResults = [];
+  if (!results.length) return false;
+  const actor = G.factions[actorFk];
+  document.querySelectorAll('.combat-ack-overlay').forEach(e => e.remove());
+  const ov = document.createElement('div');
+  ov.className = 'combat-ack-overlay';
+  const card = document.createElement('div');
+  card.className = 'combat-flash combat-summary';
+  // Tally totals so the player sees the headline at a glance: how many tiles lost / held.
+  let lost = 0, held = 0, hits = 0;
+  for (const r of results) {
+    if (r.captured) { r.playerIsAttacker ? hits++ : lost++; }
+    else if (!r.win && !r.playerIsAttacker) { held++; }
+    else if (r.win) { hits++; }
   }
+  const tally = [];
+  if (lost) tally.push(`<span class="lose-line">💥 ${lost} tile${lost>1?'s':''} lost</span>`);
+  if (held) tally.push(`<span class="win-line">🛡️ ${held} repel${held>1?'led':'led'}</span>`);
+  if (hits && !lost) tally.push(`<span>💢 ${hits} hit${hits>1?'s':''}</span>`);
+  card.innerHTML = `
+    <div class="summary-head">${actor ? actor.icon + ' ' + actor.name : 'AI'} attacked you</div>
+    <div class="summary-tally">${tally.join(' &middot; ') || 'no captures'}</div>
+    <div class="summary-list">
+      ${results.map(r => renderSummaryRow(r)).join('')}
+    </div>
+    <button class="combat-ok-btn" onclick="acknowledgeAiSummary()">OK ✓</button>
+  `;
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+  return true;
+}
+function renderSummaryRow(r) {
+  const { att, def, win, playerIsAttacker, af, df, captured } = r;
+  const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
+  const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
+  const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'},{v:att.leaderSurge||0,label:'anti-leader'}]);
+  const defMods = modParts([{v:def.force,label:'force'},{v:def.entrench,label:'dug in'},{v:def.lastStand,label:'last stand'},{v:def.fortify,label:'fortify'},{v:def.data,label:'firewall'},{v:def.grudge,label:'grudge'},{v:def.overextend,label:'rally'}]);
+  const goodForLocal = playerIsAttacker ? win : !win;
+  let headline;
+  if (captured) headline = playerIsAttacker ? '⚡ CAPTURED' : '💥 TILE LOST';
+  else if (win) headline = '💢 −1 TROOP';
+  else          headline = playerIsAttacker ? '🛡️ REPELLED' : '🛡️ HELD';
+  return `
+    <div class="summary-row">
+      <div class="summary-row-head ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
+      <div class="combat-side"><span class="combat-label">${attLabel}</span><span class="roll-line">${diceStr(att.dice)} <span class="mods">${attMods}</span> <b>= ${att.total}</b></span></div>
+      <div class="combat-side"><span class="combat-label">${defLabel}</span><span class="roll-line">${diceStr(def.dice)} <span class="mods">${defMods}</span> <b>= ${def.total}</b></span></div>
+    </div>
+  `;
+}
+function acknowledgeAiSummary() {
+  document.querySelectorAll('.combat-ack-overlay').forEach(e => e.remove());
+  const waiters = combatAckWaiters;
+  combatAckWaiters = [];
+  waiters.forEach(cb => cb());
 }
 
 // OK pressed — dismiss the current result, show the next queued one, or release the engine.
@@ -3084,7 +3154,8 @@ function tyrantSpread(fk) {
 
 function runAITurn(fk) {
   if (gameOver) return;
-  aiTurnActive = true;   // spectator mode for the human — popups auto-dismiss, nothing blocks
+  aiTurnActive = true;   // spectator mode for the human — popups now BATCH into one end-of-turn summary
+  aiTurnPlayerResults = [];   // fresh batch for this AI's turn
   turnAttacks = 0; turnStrikes = {};
   G.renouncedThisTurn = {};  // Part 1: clear per-faction renounce guard
   G.siphonedThisTurn = false;  // Ghost sabotage: one siphon gain per turn
@@ -3275,8 +3346,16 @@ function finishAITurn(fk) {
   renderSidebar();
   syncPush();                 // broadcast the AI's completed turn (no-op offline)
   if (checkWin()) return;
-  G.currentTurnIdx++;
-  setTimeout(doNextTurn, online ? 250 : 300);
+  // Show the batched end-of-turn summary (if this AI hit the player), then advance on OK.
+  // Without a summary, advance after the usual short beat.
+  const advance = () => { G.currentTurnIdx++; setTimeout(doNextTurn, online ? 250 : 300); };
+  if (showAiTurnSummary(fk)) {
+    // Wait for the player's OK on the summary modal. The summary is its own overlay (not in
+    // combatQueue), so we push directly to the waiter list that acknowledgeAiSummary drains.
+    combatAckWaiters.push(advance);
+  } else {
+    advance();
+  }
 }
 
 // Conquest-mode Tyrant: diplomacy is exhausted, so it stops courting and just throws itself at
@@ -4503,7 +4582,7 @@ Object.assign(window, {
   setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
   acceptTyrantPact, refuseTyrantPact, pickRoundBoon,
   tyrantModalConfirm, tyrantModalCancel,
-  acknowledgeCombat,
+  acknowledgeCombat, acknowledgeAiSummary,
   qtySync, qtyAdj, qtyConfirm, qtyCancel,
   toggleInfoDrawer, closeInfoDrawer,
   startTutorial, tutorialNext, tutorialBack, endTutorial, firstrunStart, firstrunSkip,
