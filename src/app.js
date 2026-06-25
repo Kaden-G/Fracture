@@ -2454,8 +2454,10 @@ function handleTileClick(id) {
         setActionLog('Move fizzled — the situation changed.'); return;
       }
       const moveN = Math.max(1, Math.min(n, s.troops - 1));
+      const wasUnclaimed = !tile.owner;   // moving into a NEW tile is a fresh hold, not dug-in
       s.troops -= moveN;
       tile.owner = G.playerFaction; tile.troops += moveN;
+      if (wasUnclaimed) tile.heldRounds = 0;
       G.actionsUsed++;
       currentAction = null;
       document.querySelectorAll('.action-btn').forEach(b=>b.classList.remove('active-action'));
@@ -2638,7 +2640,7 @@ function handleTileClick(id) {
       tile.troops--;
       if (defectTo) { defectTo.troops++; refreshHex(defectTo.id); }
       if (tile.troops<=0) {
-        tile.owner=G.playerFaction; tile.troops=1;
+        tile.owner=G.playerFaction; tile.troops=1; tile.heldRounds=0;   // freshly taken — drop prior owner's dig-in
         if (Object.values(G.tiles).filter(t=>t.owner===bribedPrev).length===0) {
           killFaction(bribedPrev);
           awardEliminationBounty(G.playerFaction, bribedPrev);
@@ -3585,7 +3587,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
         const prev = tgt.owner;
         f.resources-=1; tgt.troops--; mt.troops++;   // −1 them, +1 you (2-point swing)
         if (tgt.troops<=0) {
-          tgt.owner=fk; tgt.troops=1;
+          tgt.owner=fk; tgt.troops=1; tgt.heldRounds=0;   // freshly taken — drop prior owner's dig-in
           if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
             killFaction(prev);
             awardEliminationBounty(fk, prev);

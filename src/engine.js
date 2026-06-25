@@ -937,7 +937,7 @@ export function reduce(inputState, action) {
           tile.troops--;
           if (defectTo) defectTo.troops++;
           if (tile.troops <= 0) {
-            tile.owner = fk; tile.troops = 1;
+            tile.owner = fk; tile.troops = 1; tile.heldRounds = 0;   // freshly taken — drop prior owner's dig-in
             if (tilesOf(state, bribedPrev).length === 0) {
               killFaction(state, bribedPrev, log);
               awardEliminationBounty(state, fk, bribedPrev, log);
