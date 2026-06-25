@@ -1123,17 +1123,39 @@
   .combat-flash .roll-line {
     font-family: 'Oswald', sans-serif;
     font-weight: 600;
-    font-size: 19px;
+    font-size: 17px;
     letter-spacing: 0.5px;
     color: var(--card-text);
     text-align: right;
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
   }
+  .combat-flash .roll-line .mods { color: #9aa; font-size: 13px; }
   .combat-flash .roll-line b {
     font-family: 'Bangers', cursive;
-    font-size: 24px;
+    font-size: 26px;
     color: var(--node-glow);
     margin-left: 4px;
+  }
+
+  /* Chunky readable dice — replaces tiny ⚀⚁ Unicode glyphs. */
+  .combat-flash .dice-row { display: inline-flex; gap: 4px; }
+  .combat-flash .die {
+    display: inline-block;
+    width: 30px; height: 30px;
+    line-height: 28px;
+    background: #fafafa;
+    color: #0a0a0a;
+    border: 2px solid #0a0a0a;
+    border-radius: 6px;
+    font-family: 'Bangers', cursive;
+    font-size: 22px;
+    letter-spacing: 0;
+    text-align: center;
+    box-shadow: 1px 1px 0 #000;
   }
 
   .combat-flash .result-line {
@@ -1147,6 +1169,54 @@
 
   .combat-flash .win-line { color: var(--commune); }
   .combat-flash .lose-line { color: var(--syndicate); }
+
+  /* End-of-AI-turn summary modal: list of compact rows, single OK. */
+  .combat-flash.combat-summary {
+    min-width: 360px;
+    max-width: min(560px, 92vw);
+    max-height: 86vh;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .combat-flash .summary-head {
+    font-family: 'Bangers', cursive;
+    font-size: 22px;
+    letter-spacing: 2px;
+    color: var(--node-glow);
+    margin-bottom: 4px;
+  }
+  .combat-flash .summary-tally {
+    font-family: 'Bangers', cursive;
+    font-size: 16px;
+    letter-spacing: 1px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #2a2a3e;
+    margin-bottom: 10px;
+  }
+  .combat-flash .summary-list {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    text-align: left;
+    padding-right: 4px;
+  }
+  .combat-flash .summary-row {
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(255,255,255,0.02);
+  }
+  .combat-flash .summary-row-head {
+    font-family: 'Bangers', cursive;
+    font-size: 16px;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .combat-flash .summary-row .combat-side { margin: 2px 0; }
+  .combat-flash .summary-row .die {
+    width: 24px; height: 24px; line-height: 22px; font-size: 17px;
+  }
+  .combat-flash .summary-row .roll-line b { font-size: 20px; }
 
   @keyframes flashIn {
     from { opacity: 0; transform: translate(-50%,-50%) scale(0.7); }
