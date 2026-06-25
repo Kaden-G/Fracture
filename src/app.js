@@ -495,12 +495,9 @@ function aiTryDiplomacy(fk) {
       addLog(`🦠 ${me.name} strikes a hidden bargain with the Tyrant…`);
       return;
     }
-    // Human targets: queue the offer — the human decides via modal on their turn
-    if (!G.factions[other].isAI) {
-      if (!G.pendingAiPactOffers) G.pendingAiPactOffers = [];
-      G.pendingAiPactOffers.push({ from: fk, to: other });
-      return;
-    }
+    // Human targets: AIs DO NOT initiate pact offers to humans (too disruptive). The human can
+    // still propose pacts to them via their own pact action. AIs keep looking for an AI partner.
+    if (!G.factions[other].isAI) continue;
     if (aiConsiderPact(other, fk)) {   // WE propose, THEY decide
       formPact(fk, other);
       addLog(`🤝 ${me.name} and ${G.factions[other].name} sign a non-aggression pact.`);
