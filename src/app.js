@@ -15,7 +15,7 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // Win-condition / agenda registry (SECRET AGENDAS mode). Versioned import so edits cache-bust.
-import { OBJECTIVES, agendaPool } from './objectives.js?v=1';
+import { OBJECTIVES, agendaPool } from './objectives.js?v=2';
 
 // ============================================================
 // GAME DATA
@@ -309,6 +309,11 @@ function objectiveApi() {
     livingRivals: (fk) => livingKeys().filter(k => k !== fk).length,
     livingFoes:   (fk) => livingKeys().filter(k => k !== fk && k !== TYRANT_KEY).length,
     pactRounds:   (fk) => longestPactRounds(fk),
+    cardinalRegionTiles: (fk) => {
+      const r = { N: 0, S: 0, E: 0, W: 0 };
+      for (const t of tilesOf(fk)) if (r[t.region] !== undefined) r[t.region]++;  // center (C) ignored
+      return r;
+    },
   };
 }
 // Sabotage siphon: where the +1 troop lands — weakest frontline tile, else weakest tile.
@@ -937,7 +942,7 @@ function renderSetup() {
           <div class="seat-opt ${G.setup.secretAgendas?'selected':''}" style="flex:0 0 130px;">${G.setup.secretAgendas?'🎴 ON':'+ ENABLE'}</div>
           <div style="font-size:12px; color:#bbb; line-height:1.5;">
             Each <strong>human</strong> secretly draws a win condition (you pick 1 of 3 at start) — wipe out rivals,
-            sprawl, broker power, hoard. That card is your <em>only</em> path to victory; the AIs still race for the Nodes,
+            sprawl, broker power, span the map. That card is your <em>only</em> path to victory; the AIs still race for the Nodes,
             so you must chase your agenda <em>and</em> stop them. The Tyrant is unaffected.
           </div>
         </div>

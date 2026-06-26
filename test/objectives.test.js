@@ -15,6 +15,7 @@ function mkApi(spec = {}) {
     livingRivals: (fk) => (spec.livingRivals && spec.livingRivals[fk]) ?? 3,
     livingFoes: (fk) => (spec.livingFoes && spec.livingFoes[fk]) ?? 3,
     pactRounds: (fk) => (spec.pactRounds && spec.pactRounds[fk]) || 0,
+    cardinalRegionTiles: (fk) => (spec.cardinalRegionTiles && spec.cardinalRegionTiles[fk]) || { N: 0, S: 0, E: 0, W: 0 },
   };
 }
 
@@ -60,9 +61,18 @@ describe('Objectives registry', () => {
     assert.equal(p.max, 3);
   });
 
-  it('warlord: met at 8 tiles', () => {
-    assert.equal(OBJECTIVES.warlord.check(mkApi({ tiles: { grid: 7 } }), 'grid'), false);
-    assert.equal(OBJECTIVES.warlord.check(mkApi({ tiles: { grid: 8 } }), 'grid'), true);
+  it('warlord: met at 14 tiles', () => {
+    assert.equal(OBJECTIVES.warlord.check(mkApi({ tiles: { grid: 13 } }), 'grid'), false);
+    assert.equal(OBJECTIVES.warlord.check(mkApi({ tiles: { grid: 14 } }), 'grid'), true);
+  });
+
+  it('four_winds: needs 2+ tiles in ALL of N/S/E/W', () => {
+    const three = { cardinalRegionTiles: { grid: { N: 2, S: 2, E: 2, W: 1 } } };
+    const all   = { cardinalRegionTiles: { grid: { N: 2, S: 3, E: 2, W: 2 } } };
+    assert.equal(OBJECTIVES.four_winds.check(mkApi(three), 'grid'), false);
+    assert.equal(OBJECTIVES.four_winds.check(mkApi(all), 'grid'), true);
+    assert.equal(OBJECTIVES.four_winds.progress(mkApi(three), 'grid').cur, 3, '3 of 4 regions covered');
+    assert.equal(OBJECTIVES.four_winds.progress(mkApi(all), 'grid').cur, 4);
   });
 
   it('power_broker: needs BOTH 2 nodes AND a 2-round pact', () => {
@@ -71,13 +81,9 @@ describe('Objectives registry', () => {
     assert.equal(OBJECTIVES.power_broker.check(mkApi({ nodes: { grid: 2 }, pactRounds: { grid: 2 } }), 'grid'), true);
   });
 
-  it('hoarder: met at 14 resources', () => {
-    assert.equal(OBJECTIVES.hoarder.check(mkApi({ resources: { grid: 13 } }), 'grid'), false);
-    assert.equal(OBJECTIVES.hoarder.check(mkApi({ resources: { grid: 14 } }), 'grid'), true);
-  });
-
   it('isObjectiveMet helper guards unknown ids', () => {
-    assert.equal(isObjectiveMet(mkApi({ tiles: { grid: 9 } }), 'grid', 'warlord'), true);
+    assert.equal(isObjectiveMet(mkApi({ tiles: { grid: 15 } }), 'grid', 'warlord'), true);
+    assert.equal(isObjectiveMet(mkApi({ tiles: { grid: 10 } }), 'grid', 'warlord'), false);
     assert.equal(isObjectiveMet(mkApi(), 'grid', 'bogus'), false);
   });
 });

@@ -22,6 +22,7 @@
 //   livingFoes(fk)   -> int    — living NON-TYRANT factions other than fk
 //   foesAtStart      -> int    — non-Tyrant rival count at game start (for "outlast N" goals)
 //   pactRounds(fk)   -> int    — longest CURRENT pact fk holds, measured in rounds held (0 if none)
+//   cardinalRegionTiles(fk) -> {N,S,E,W} — fk's tile count in each cardinal region (center excluded)
 //
 // Each objective: { id, title, kind, desc, check(api, fk) -> bool, progress(api, fk) -> {cur,max,label} }
 // ============================================================
@@ -54,9 +55,9 @@ export const OBJECTIVES = {
   },
   warlord: {
     id: 'warlord', title: 'WARLORD', kind: 'agenda',
-    desc: 'Sprawl across the map — control 8+ tiles at once.',
-    check: (api, fk) => api.tiles(fk) >= 8,
-    progress: (api, fk) => ({ cur: api.tiles(fk), max: 8, label: `${api.tiles(fk)}/8 tiles` }),
+    desc: 'Sprawl across the map — control 14+ tiles at once.',
+    check: (api, fk) => api.tiles(fk) >= 14,
+    progress: (api, fk) => ({ cur: api.tiles(fk), max: 14, label: `${api.tiles(fk)}/14 tiles` }),
   },
   power_broker: {
     id: 'power_broker', title: 'POWER BROKER', kind: 'agenda',
@@ -67,11 +68,19 @@ export const OBJECTIVES = {
       return { cur: Math.min(n, 2) + Math.min(p, 2), max: 4, label: `${Math.min(n,2)}/2 nodes · pact ${Math.min(p,2)}/2 rds` };
     },
   },
-  hoarder: {
-    id: 'hoarder', title: 'HOARDER', kind: 'agenda',
-    desc: 'Amass a war chest — bank 14 resources.',
-    check: (api, fk) => api.resources(fk) >= 14,
-    progress: (api, fk) => ({ cur: api.resources(fk), max: 14, label: `${api.resources(fk)}/14 res` }),
+  // Turtle-proof spread goal: you must project power into every quadrant, so a corner camp can't win.
+  four_winds: {
+    id: 'four_winds', title: 'FOUR WINDS', kind: 'agenda',
+    desc: 'Plant your flag map-wide — control 2+ tiles in EACH region: North, South, East, and West.',
+    check: (api, fk) => {
+      const r = api.cardinalRegionTiles(fk);
+      return r.N >= 2 && r.S >= 2 && r.E >= 2 && r.W >= 2;
+    },
+    progress: (api, fk) => {
+      const r = api.cardinalRegionTiles(fk);
+      const done = ['N','S','E','W'].filter(d => r[d] >= 2).length;
+      return { cur: done, max: 4, label: `${done}/4 regions · N${r.N} S${r.S} E${r.E} W${r.W}` };
+    },
   },
 };
 
