@@ -1228,7 +1228,7 @@ function shuffle(a) {
 // Pick one of the cosmic backdrops at random for this game. Sets a CSS variable on
 // #map-area; the styles.css rule references var(--map-bg, …). Update MAP_BG_COUNT
 // when you drop more art into assets/raw/map_bg_N.png.
-const MAP_BG_COUNT = 7;
+const MAP_BG_COUNT = 13;
 // Remember the last backdrop ACROSS page reloads (localStorage), so a "new game" that reloads
 // the page still never repeats the one you just saw. Falls back to in-memory if storage is blocked.
 let lastBackdrop = (() => {
