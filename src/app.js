@@ -14,6 +14,9 @@ window.addEventListener('unhandledrejection', function(e) {
   console.error('Unhandled rejection:', e.reason);
 });
 
+// Win-condition / agenda registry (SECRET AGENDAS mode). Versioned import so edits cache-bust.
+import { OBJECTIVES } from './objectives.js?v=1';
+
 // ============================================================
 // GAME DATA
 // ============================================================
@@ -282,6 +285,32 @@ function canActNow() { if (!G.turnOrder || gameOver) return false; const a=activ
 function tilesOf(fk)  { return Object.values(G.tiles).filter(t=>t.owner===fk); }
 function nodesOf(fk)  { return tilesOf(fk).filter(t=>t.isNode); }
 function countNodes(fk){ return nodesOf(fk).length; }
+
+// Longest CURRENT pact a faction holds, in rounds held (0 if none). Used by agenda objectives.
+function longestPactRounds(fk) {
+  let best = 0;
+  for (const key of Object.keys(G.pacts || {})) {
+    const [a, b] = key.split('|');
+    if (a !== fk && b !== fk) continue;
+    const other = a === fk ? b : a;
+    if (!G.factions[a] || !G.factions[b] || G.factions[other].eliminated) continue;
+    best = Math.max(best, G.round - G.pacts[key]);
+  }
+  return best;
+}
+// Accessor object the objectives registry reads through (keeps src/objectives.js state-agnostic).
+function objectiveApi() {
+  return {
+    round: G.round,
+    foesAtStart: Object.keys(FACTIONS).length,   // non-Tyrant factions defined for the game
+    nodes:        (fk) => countNodes(fk),
+    tiles:        (fk) => tilesOf(fk).length,
+    resources:    (fk) => (G.factions[fk] && G.factions[fk].resources) || 0,
+    livingRivals: (fk) => livingKeys().filter(k => k !== fk).length,
+    livingFoes:   (fk) => livingKeys().filter(k => k !== fk && k !== TYRANT_KEY).length,
+    pactRounds:   (fk) => longestPactRounds(fk),
+  };
+}
 // Sabotage siphon: where the +1 troop lands — weakest frontline tile, else weakest tile.
 function ghostSiphonTarget(fk){
   const mine = tilesOf(fk);
@@ -1033,6 +1062,8 @@ function mkFaction(name, key, isAI, trait, diff) {
            isTyrant: key === TYRANT_KEY,
            // AI skill tier — drives the difficulty knobs in later phases. null for humans & the Tyrant.
            diff: (isAI && key !== TYRANT_KEY) ? (AI_PROFILES[diff] ? diff : DEFAULT_TIER) : null,
+           // SECRET AGENDAS mode: a human's chosen win-condition card (Phase 2). null = none.
+           objective: null,
            corruption: 0, boon: null };
 }
 
@@ -2167,9 +2198,10 @@ const ROUND_CAP = 30;
 function endRound() {
   // Node dominance win: held 3+ nodes for 3 consecutive round-ends
   if (G.nodesHeldSince) {
+    const api = objectiveApi();
     for (const [k, since] of Object.entries(G.nodesHeldSince)) {
       const f = G.factions[k];
-      if (f && !f.eliminated && countNodes(k) >= 3 && G.round - since >= 2) {
+      if (f && !f.eliminated && OBJECTIVES.node_dominance.check(api, k) && G.round - since >= 2) {
         // Part 2: corrupt faction → Reckoning intercept
         const r = maybeReckoningApp(k);
         if (r === 'thralldom') return; // Tyrant won — showWin already called
@@ -2819,7 +2851,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
     showCombatResult(
       { dice: attRoll.dice, force: attForce, comms, coalition: effCoalition, grudge: grudgeA, war, surge, leaderSurge, total: attTotal },
       { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
-      attWins, isPlayer, af, df, captured
+      attWins, isPlayer, af, df, captured, src.name, tgt.name
     );
   }
 
@@ -2884,13 +2916,13 @@ let combatAckWaiters = [];   // engine continuations waiting for the queue to dr
 // summary is the readable post-mortem of what happened to them. Reset at the top of each AI turn.
 let aiTurnPlayerResults = [];
 
-function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
+function showCombatResult(att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName) {
   // During an AI's turn, batch instead of flashing — surface as one summary at end-of-turn.
   if (aiTurnActive) {
-    aiTurnPlayerResults.push({ att, def, win, playerIsAttacker, af, df, captured });
+    aiTurnPlayerResults.push({ att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName });
     return;
   }
-  combatQueue.push({ att, def, win, playerIsAttacker, af, df, captured });
+  combatQueue.push({ att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName });
   if (combatQueue.length === 1) renderCombatFlash();
 }
 
@@ -2971,7 +3003,7 @@ function showAiTurnSummary(actorFk) {
   return true;
 }
 function renderSummaryRow(r) {
-  const { att, def, win, playerIsAttacker, af, df, captured } = r;
+  const { att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName } = r;
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
   const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'},{v:att.leaderSurge||0,label:'anti-leader'}]);
@@ -2981,9 +3013,11 @@ function renderSummaryRow(r) {
   if (captured) headline = playerIsAttacker ? '⚡ CAPTURED' : '💥 TILE LOST';
   else if (win) headline = '💢 −1 TROOP';
   else          headline = playerIsAttacker ? '🛡️ REPELLED' : '🛡️ HELD';
+  // Which tiles were involved: attacking tile → defending tile.
+  const tiles = (srcName && tgtName) ? `<span class="summary-row-tiles">${srcName} → ${tgtName}</span>` : '';
   return `
     <div class="summary-row">
-      <div class="summary-row-head ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
+      <div class="summary-row-head ${goodForLocal?'win-line':'lose-line'}">${headline}${tiles}</div>
       <div class="combat-side"><span class="combat-label">${attLabel}</span><span class="roll-line">${diceStr(att.dice)} <span class="mods">${attMods}</span> <b>= ${att.total}</b></span></div>
       <div class="combat-side"><span class="combat-label">${defLabel}</span><span class="roll-line">${diceStr(def.dice)} <span class="mods">${defMods}</span> <b>= ${def.total}</b></span></div>
     </div>
@@ -3847,10 +3881,11 @@ function checkWin() {
   // Node dominance tracking: announce when someone reaches 3+ nodes, clear when they drop below.
   // The actual node-hold WIN is checked in endRound (must hold for 3 consecutive round-ends).
   if (!G.nodesHeldSince) G.nodesHeldSince = {};
+  const api = objectiveApi();
   for (const [k,f] of Object.entries(G.factions)) {
     if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
     const n = countNodes(k);
-    if (n >= 3 && !G.nodesHeldSince[k]) {
+    if (OBJECTIVES.node_dominance.check(api, k) && !G.nodesHeldSince[k]) {
       G.nodesHeldSince[k] = G.round;
       addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 3 rounds to win.`);
     } else if (n < 3 && G.nodesHeldSince[k]) {
