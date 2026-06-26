@@ -15,7 +15,7 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // Win-condition / agenda registry (SECRET AGENDAS mode). Versioned import so edits cache-bust.
-import { OBJECTIVES } from './objectives.js?v=1';
+import { OBJECTIVES, agendaPool } from './objectives.js?v=1';
 
 // ============================================================
 // GAME DATA
@@ -866,10 +866,11 @@ function defaultSetup() {
       ? { type:'human', name:'', trait:'', diff }   // first faction starts as the lone human
       : { type:'ai',    name:'', trait:'', diff };
   });
-  return { seats, tyrant: false };
+  return { seats, tyrant: false, secretAgendas: false };
 }
 
 function toggleTyrant() { G.setup.tyrant = !G.setup.tyrant; renderSetup(); }
+function toggleSecretAgendas() { G.setup.secretAgendas = !G.setup.secretAgendas; renderSetup(); }
 
 function renderSetup() {
   if (!G.setup) G.setup = defaultSetup();
@@ -927,6 +928,17 @@ function renderSetup() {
           <div style="font-size:12px; color:#bbb; line-height:1.5;">
             A permanent AI that festers at the center and <strong>spreads like a virus</strong>. It wins normally —
             or by making a (secret) pact with <em>every</em> surviving player. Ally with it, use it, or unite to burn it out.
+          </div>
+        </div>
+      </div>` + `
+      <div class="setup-card" style="grid-column:1/-1; border-color:#c39bd3; cursor:pointer;" onclick="toggleSecretAgendas()">
+        <h3 style="color:#c39bd3; border-color:#c39bd3">🎴 SECRET AGENDAS</h3>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="seat-opt ${G.setup.secretAgendas?'selected':''}" style="flex:0 0 130px;">${G.setup.secretAgendas?'🎴 ON':'+ ENABLE'}</div>
+          <div style="font-size:12px; color:#bbb; line-height:1.5;">
+            Each <strong>human</strong> secretly draws a win condition (you pick 1 of 3 at start) — wipe out rivals,
+            sprawl, broker power, hoard. That card is your <em>only</em> path to victory; the AIs still race for the Nodes,
+            so you must chase your agenda <em>and</em> stop them. The Tyrant is unaffected.
           </div>
         </div>
       </div>`;
@@ -1037,6 +1049,7 @@ function startGame() {
     pacts: {},     // pairKey -> round formed
     grudges: {},   // "victim>betrayer" -> round it expires after
     playerFaction: order[0],  // local "acting/viewing" faction; repointed each human turn
+    secretAgendas: !!G.setup.secretAgendas,   // SECRET AGENDAS mode (humans win only via their card)
   };
   gameOver = false;
   G.tiles = buildMap();
@@ -1050,7 +1063,67 @@ function startGame() {
   document.getElementById('rules-btn').style.display = 'flex';
   renderMap();
   renderSidebar();
-  startRound();
+  // SECRET AGENDAS: each human secretly drafts a win card before the game begins.
+  if (G.secretAgendas) beginAgendaDraft(() => startRound());
+  else startRound();
+}
+
+// ============================================================
+// SECRET AGENDAS — card draft + win wiring
+// ============================================================
+// Walk each human seat through a pick-1-of-3 draft, then run `done`. Hot-seat: humans pick in
+// sequence (pass the device); each card is secret to that seat.
+function beginAgendaDraft(done) {
+  const humans = G.humans.slice();
+  let i = 0;
+  const next = () => {
+    if (i >= humans.length) { renderSidebar(); done(); return; }
+    const fk = humans[i++];
+    const choices = shuffle(agendaPool().slice()).slice(0, 3);
+    showAgendaDraft(fk, choices, (chosenId) => {
+      G.factions[fk].objective = chosenId;
+      addLog(`🎴 ${G.factions[fk].name} drew a secret agenda.`);
+      next();
+    });
+  };
+  next();
+}
+
+function showAgendaDraft(fk, choices, onPick) {
+  const f = G.factions[fk];
+  document.querySelectorAll('.agenda-overlay').forEach(e => e.remove());
+  const ov = document.createElement('div');
+  ov.className = 'agenda-overlay';
+  ov.innerHTML = `
+    <div class="agenda-draft">
+      <div class="agenda-draft-head" style="color:${f.color}">${f.icon} ${f.name}</div>
+      <div class="agenda-draft-sub">Choose your <b>SECRET AGENDA</b> — your only path to victory. ${G.humans.length > 1 ? 'Keep it hidden from the others.' : ''}</div>
+      <div class="agenda-choices">
+        ${choices.map(o => `
+          <div class="agenda-card" data-id="${o.id}">
+            <div class="agenda-card-title">🎴 ${o.title}</div>
+            <div class="agenda-card-desc">${o.desc}</div>
+            <div class="agenda-card-pick">CHOOSE</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.querySelectorAll('.agenda-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = card.getAttribute('data-id');
+      ov.remove();
+      onPick(id);
+    });
+  });
+}
+
+// Has this human completed their secret agenda? (false if no agenda / not a human / mode off)
+function agendaComplete(fk) {
+  if (!G.secretAgendas) return false;
+  const f = G.factions[fk];
+  if (!f || f.isAI || f.eliminated || !f.objective) return false;
+  const o = OBJECTIVES[f.objective];
+  return !!(o && o.check(objectiveApi(), fk));
 }
 
 function mkFaction(name, key, isAI, trait, diff) {
@@ -1355,10 +1428,24 @@ function renderSidebar() {
 
   // Resources
   const f = G.factions[G.playerFaction];
+  // SECRET AGENDAS: the viewing human sees their own card + progress in place of the node-win chip.
+  const myObj = (G.secretAgendas && f && !f.isAI && f.objective) ? OBJECTIVES[f.objective] : null;
+  const agendaApi = myObj ? objectiveApi() : null;
+  const agendaBanner = myObj ? `
+    <div class="agenda-banner" title="${myObj.desc}">
+      <div class="agenda-banner-label">🎴 YOUR SECRET AGENDA</div>
+      <div class="agenda-banner-title">${myObj.title}</div>
+      <div class="agenda-banner-desc">${myObj.desc}</div>
+      <div class="agenda-banner-prog">▸ ${myObj.progress(agendaApi, G.playerFaction).label}</div>
+    </div>` : '';
+  const winChip = myObj
+    ? ''   // the agenda banner replaces the node-win chip for humans in this mode
+    : `<div class="res-chip">⭐ ${countNodes(G.playerFaction)}/3 TO WIN</div>`;
   document.getElementById('resources-display').innerHTML = `
+    ${agendaBanner}
     <div class="res-chip">🔋 ${f.resources} RES</div>
     <div class="res-chip">🏠 ${tilesOf(G.playerFaction).length} TILES</div>
-    <div class="res-chip">⭐ ${countNodes(G.playerFaction)}/3 TO WIN</div>
+    ${winChip}
     <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}${f.inheritedTraits && f.inheritedTraits.length ? ' + ' + f.inheritedTraits.map(id => TRAITS.find(t=>t.id===id)?.name||id).join(', ') : ''}</div>
   `;
 
@@ -2220,10 +2307,14 @@ function endRound() {
   }
   G.round++;
   if (G.round > ROUND_CAP) {
-    // Tiebreak: most nodes (Tyrant excluded from timeout)
+    // Tiebreak: most nodes (Tyrant excluded from timeout). In SECRET AGENDAS mode a human can't
+    // win by node-count — so while any AI is still alive, humans are excluded from the tiebreak
+    // (they failed their card). If only humans remain, the most-nodes human takes it (must end).
+    const aiAlive = livingKeys().some(k => k !== TYRANT_KEY && G.factions[k].isAI);
     let best=null, bestN=-1;
     for (const [k,f] of Object.entries(G.factions)) {
       if (f.eliminated || k === TYRANT_KEY) continue;
+      if (G.secretAgendas && !f.isAI && aiAlive) continue;
       const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
       if (n>bestN) { bestN=n; best=k; }
     }
@@ -3878,12 +3969,25 @@ function dismissEvent() {
 // WIN CHECK
 // ============================================================
 function checkWin() {
+  // SECRET AGENDAS: a human wins the instant their drawn card is complete (can be triggered even
+  // on an AI's turn — e.g. a third party wipes out the rival your "purge" card needed).
+  if (G.secretAgendas) {
+    for (const k of (G.humans || [])) {
+      if (agendaComplete(k)) {
+        const o = OBJECTIVES[G.factions[k].objective];
+        showWin(k, 'SECRET AGENDA', `${G.factions[k].name} completed their secret agenda — ${o.title}!`);
+        return true;
+      }
+    }
+  }
   // Node dominance tracking: announce when someone reaches 3+ nodes, clear when they drop below.
   // The actual node-hold WIN is checked in endRound (must hold for 3 consecutive round-ends).
   if (!G.nodesHeldSince) G.nodesHeldSince = {};
   const api = objectiveApi();
   for (const [k,f] of Object.entries(G.factions)) {
     if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
+    // In agenda mode, humans can't win by nodes — don't track or warn about their node count.
+    if (G.secretAgendas && !f.isAI) { delete G.nodesHeldSince[k]; continue; }
     const n = countNodes(k);
     if (OBJECTIVES.node_dominance.check(api, k) && !G.nodesHeldSince[k]) {
       G.nodesHeldSince[k] = G.round;
@@ -4618,7 +4722,7 @@ function buildOnlineGame(seats, tyrant, diff) {
 // (ES modules scope all declarations; inline handlers need globals)
 // ============================================================
 Object.assign(window, {
-  showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant,
+  showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant, toggleSecretAgendas,
   setSeatType, setSeatName, setSeatTrait, setSeatDiff, setAllDiff,
   hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostStart,
   setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
