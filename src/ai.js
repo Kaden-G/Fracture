@@ -401,9 +401,11 @@ export function chooseAction(state, fk) {
     if (node) return { type: 'ENTRENCH', tile: node.id };
   }
 
-  // 5. Reinforce — disciplined tiers feed weakest frontline; undisciplined (low thrift) reinforce randomly.
+  // 5. Reinforce — disciplined tiers feed weakest frontline; undisciplined (low thrift) reinforce
+  //    randomly. ENCIRCLED (down to last tile) = supply cut, can't reinforce.
   const cost = reinforceCost(state, fk);
-  if (f.resources >= cost && myT().length > 0) {
+  const encircled = fk !== TYRANT_KEY && myT().length <= 1;   // last tile = supply cut
+  if (!encircled && f.resources >= cost && myT().length > 0) {
     const smart = Math.random() < prof.thrift;
     const priority = myT().filter(t => t.isNode || enemyT().some(e => adjacent(t,e)));
     const pool = (smart && priority.length) ? priority : myT();
