@@ -168,6 +168,7 @@ export function mkFaction(name, key, isAI, trait, diff) {
     isTyrant: key === TYRANT_KEY,
     // AI skill tier — drives the difficulty knobs in later phases. null for humans & the Tyrant.
     diff: (isAI && key !== TYRANT_KEY) ? (AI_PROFILES[diff] ? diff : DEFAULT_TIER) : null,
+    objective: null,  // SECRET AGENDAS mode (humans only) — sim factions never carry one
     corruption: 0,   // Part 2: Tyrant corruption clock (exact integer, display via corruptionBand)
     boon: null,       // Part 2: chosen boon when allied to Tyrant ('tithe' | 'sic' | null)
   };
