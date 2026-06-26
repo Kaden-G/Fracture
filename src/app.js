@@ -2819,7 +2819,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
     showCombatResult(
       { dice: attRoll.dice, force: attForce, comms, coalition: effCoalition, grudge: grudgeA, war, surge, leaderSurge, total: attTotal },
       { dice: defRoll.dice, force: defForce, entrench, lastStand, fortify, data, grudge: grudgeD, overextend, total: defTotal },
-      attWins, isPlayer, af, df, captured
+      attWins, isPlayer, af, df, captured, src.name, tgt.name
     );
   }
 
@@ -2884,13 +2884,13 @@ let combatAckWaiters = [];   // engine continuations waiting for the queue to dr
 // summary is the readable post-mortem of what happened to them. Reset at the top of each AI turn.
 let aiTurnPlayerResults = [];
 
-function showCombatResult(att, def, win, playerIsAttacker, af, df, captured) {
+function showCombatResult(att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName) {
   // During an AI's turn, batch instead of flashing — surface as one summary at end-of-turn.
   if (aiTurnActive) {
-    aiTurnPlayerResults.push({ att, def, win, playerIsAttacker, af, df, captured });
+    aiTurnPlayerResults.push({ att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName });
     return;
   }
-  combatQueue.push({ att, def, win, playerIsAttacker, af, df, captured });
+  combatQueue.push({ att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName });
   if (combatQueue.length === 1) renderCombatFlash();
 }
 
@@ -2971,7 +2971,7 @@ function showAiTurnSummary(actorFk) {
   return true;
 }
 function renderSummaryRow(r) {
-  const { att, def, win, playerIsAttacker, af, df, captured } = r;
+  const { att, def, win, playerIsAttacker, af, df, captured, srcName, tgtName } = r;
   const attLabel = playerIsAttacker ? 'YOU' : (af ? af.icon : 'ATK');
   const defLabel = playerIsAttacker ? (df ? df.icon : 'DEF') : 'YOU';
   const attMods = modParts([{v:att.force,label:'force'},{v:att.comms,label:'uplink'},{v:att.coalition,label:'coalition'},{v:att.grudge,label:'grudge'},{v:att.war,label:'war'},{v:att.surge,label:'coalition surge'},{v:att.leaderSurge||0,label:'anti-leader'}]);
@@ -2981,9 +2981,11 @@ function renderSummaryRow(r) {
   if (captured) headline = playerIsAttacker ? '⚡ CAPTURED' : '💥 TILE LOST';
   else if (win) headline = '💢 −1 TROOP';
   else          headline = playerIsAttacker ? '🛡️ REPELLED' : '🛡️ HELD';
+  // Which tiles were involved: attacking tile → defending tile.
+  const tiles = (srcName && tgtName) ? `<span class="summary-row-tiles">${srcName} → ${tgtName}</span>` : '';
   return `
     <div class="summary-row">
-      <div class="summary-row-head ${goodForLocal?'win-line':'lose-line'}">${headline}</div>
+      <div class="summary-row-head ${goodForLocal?'win-line':'lose-line'}">${headline}${tiles}</div>
       <div class="combat-side"><span class="combat-label">${attLabel}</span><span class="roll-line">${diceStr(att.dice)} <span class="mods">${attMods}</span> <b>= ${att.total}</b></span></div>
       <div class="combat-side"><span class="combat-label">${defLabel}</span><span class="roll-line">${diceStr(def.dice)} <span class="mods">${defMods}</span> <b>= ${def.total}</b></span></div>
     </div>

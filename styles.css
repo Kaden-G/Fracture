@@ -1211,6 +1211,18 @@
     font-size: 16px;
     letter-spacing: 1px;
     margin-bottom: 4px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .combat-flash .summary-row-tiles {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+    color: #aab;
+    text-align: right;
   }
   .combat-flash .summary-row .combat-side { margin: 2px 0; }
   .combat-flash .summary-row .die {
