@@ -12,7 +12,7 @@ import {
   DISTRICT_NAMES, REGION_NAMES,
   factionDef, regionOf, adjacent,
   tilesOf, nodesOf, countNodes, controlsNode, livingKeys,
-  hasPact, pairKey, hasTrait,
+  hasPact, pairKey, hasTrait, hasPerkOf, PERK_ABILITIES,
   reinforceCost, reinforceAmount, moveTroopCount, moveRange, moveReachable, airliftCost,
   grudgeAtkBonus, grudgeDefBonus, coalitionAtkBonus, mkFaction,
 } from './state.js';
@@ -179,13 +179,15 @@ function awardEliminationBounty(state, killerFk, victimFk, log) {
   if (!af || !victim || killerFk === victimFk || !victim.eliminated) return;
   const lootRes = Math.floor((victim.resources || 0) / 2);
   af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
-  const victimTrait = victim.trait;
-  if (victimTrait && victimTrait !== af.trait) {
-    if (!af.inheritedTraits) af.inheritedTraits = [];
-    if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+  // Seize the victim's FACTION POWER (its passive perk), not their chosen trait. Can't take twice.
+  const victimPower = victim.ability;
+  let seized = false;
+  if (victimPower && PERK_ABILITIES.includes(victimPower) && !hasPerkOf(af, victimPower)) {
+    if (!af.inheritedPerks) af.inheritedPerks = [];
+    af.inheritedPerks.push(victimPower);
+    seized = true;
   }
-  const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
-  log.push(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+  log.push(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${seized ? `, seized their ${victimPower} power` : ''}.`);
 }
 
 // Reckoning duel (engine) — best-of-3 dice, Tyrant wins ties, fallen vote, host-skim
@@ -453,7 +455,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   // ground — once two factions are besieging, the fortress is in trouble).
   recordLeaderStrike(state, tgtId, attackerFk, tgt.owner);
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);
-  if (af.ability === 'sabotage') entrench = 0;
+  if (hasPerkOf(af, 'sabotage')) entrench = 0;
   // PHASE 5 lever #3: a 3-node leader's tile loses dug-in defense once 2+ factions are besieging it.
   if (leaderEntrenchCracked(state, tgtId, tgt.owner)) entrench = 0;
   if (encircledDef) entrench = 0;   // cut off — no time/space to dig in
@@ -585,12 +587,12 @@ function applyIncome(state, fk, log, effects) {
   const nodes = countNodes(state, fk);
   let income = 2 + nodes * (hasTrait(f, 'hoard') ? 2 : 1);
   if (controlsNode(state, fk, 'node_water')) income += 1;
-  if (f.ability === 'bribe') income += 1;
+  if (hasPerkOf(f, 'bribe')) income += 1;
   f.resources = Math.min(f.resources + income, RES_CAP);
   log.push(`${f.icon} ${f.name} earned +${income} res (${nodes} nodes)`);
 
   // Commune grassroots perk — Phase 5b: grows every OTHER round (odd only)
-  if (f.ability === 'rally' && state.round % 2 === 1) {
+  if (hasPerkOf(f, 'rally') && state.round % 2 === 1) {
     const mine = tilesOf(state, fk);
     if (mine.length) {
       const front = mine.filter(t =>

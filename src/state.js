@@ -6,6 +6,10 @@
 import { AI_PROFILES, DEFAULT_TIER } from './ai_profiles.js';
 
 export function hasTrait(f, id) { return f.trait === id || (f.inheritedTraits && f.inheritedTraits.includes(id)); }
+// FACTION POWER inheritance (wipe-out seizes the victim's PASSIVE perk). Keyed by ability:
+// sabotage=PHANTOM, bribe=CARTEL, rally=GRASSROOTS, overclock=INDUSTRIAL.
+export const PERK_ABILITIES = ['sabotage', 'bribe', 'rally', 'overclock'];
+export function hasPerkOf(f, abilityKey) { return !!f && (f.ability === abilityKey || (f.inheritedPerks && f.inheritedPerks.includes(abilityKey))); }
 
 export const RES_CAP = 14;
 // Max troops on a single tile. Past the force cap (+2 at 8 troops) extra troops only buy
@@ -213,7 +217,7 @@ export function adjacent(a, b) {
 // ---- Economy helpers ----
 export function reinforceCost(state, fk) {
   let c = 2;
-  if (fk === 'grid')                           c -= 1;
+  if (hasPerkOf(state.factions[fk], 'overclock')) c -= 1;  // ⚙️ INDUSTRIAL (Grid or inherited)
   if (controlsNode(state, fk, 'node_power'))   c -= 1;
   return Math.max(1, c);
 }
@@ -227,7 +231,7 @@ export function airliftCost(state, fk) {
 export function moveRange(state, fk) {
   const f = state.factions[fk];
   if (!f) return 1;
-  const phantom = f.ability === 'sabotage';  // ghost faction perk
+  const phantom = hasPerkOf(f, 'sabotage');  // 👁️ PHANTOM (Ghost or inherited)
   const step    = hasTrait(f, 'ghost_step');   // trait (native or inherited)
   // Phase 5b: phantom+ghost_step stacks to 3; either alone = 2; otherwise 1
   if (phantom && step) return 3;

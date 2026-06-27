@@ -7,7 +7,7 @@
 import {
   TYRANT_KEY, THRALLDOM_CAP, MOON_BAND,
   adjacent, tilesOf, nodesOf, countNodes, controlsNode,
-  livingKeys, hasPact, pairKey, hasTrait,
+  livingKeys, hasPact, pairKey, hasTrait, hasPerkOf,
   reinforceCost, reinforceAmount, moveReachable, moveRange, airliftCost,
   RES_CAP,
 } from './state.js';
@@ -179,7 +179,7 @@ function aiNodePush(state, fk) {
   const targets = tiles.filter(t => t.isNode && t.owner !== fk);
   if (!targets.length) return null;
 
-  const phantom = state.factions[fk]?.ability === 'sabotage';
+  const phantom = hasPerkOf(state.factions[fk], 'sabotage');   // PHANTOM perk (native or inherited)
 
   // Step onto adjacent unclaimed/own node (or 2-tile reach for phantom/ghost_step)
   for (const src of movable) {
