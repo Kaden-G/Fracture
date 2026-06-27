@@ -445,7 +445,9 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   const defForce = Math.min(2, Math.floor(tgt.troops / 4));
   // Rally: +2 per prior strike by THIS attacker on THIS victim this turn — but the Tyrant
   // never rallies (it's the shared enemy; the coalition can grind it down without the brake).
-  const overextend = tgt.owner === TYRANT_KEY ? 0 : priorStrikes * 2;
+  // ENCIRCLED: a faction down to its last tile is cut off — no reserves to rally or dig in.
+  const encircledDef = tgt.owner !== TYRANT_KEY && tilesOf(state, tgt.owner).length <= 1;
+  const overextend = (tgt.owner === TYRANT_KEY || encircledDef) ? 0 : priorStrikes * 2;
   // Record THIS strike BEFORE computing the leader-surge so a 2nd attacker into the same tile
   // immediately benefits from the 1st's pressure (mirror of how a real coalition works on the
   // ground — once two factions are besieging, the fortress is in trouble).
@@ -454,6 +456,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   if (af.ability === 'sabotage') entrench = 0;
   // PHASE 5 lever #3: a 3-node leader's tile loses dug-in defense once 2+ factions are besieging it.
   if (leaderEntrenchCracked(state, tgtId, tgt.owner)) entrench = 0;
+  if (encircledDef) entrench = 0;   // cut off — no time/space to dig in
   const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops <= 2) ? 3 : 0;
   const fortifyVal = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;
   const comms = controlsNode(state, attackerFk, 'node_comms') ? 1 : 0;

@@ -285,6 +285,11 @@ function canActNow() { if (!G.turnOrder || gameOver) return false; const a=activ
 function tilesOf(fk)  { return Object.values(G.tiles).filter(t=>t.owner===fk); }
 function nodesOf(fk)  { return tilesOf(fk).filter(t=>t.isNode); }
 function countNodes(fk){ return nodesOf(fk).length; }
+// ENCIRCLED: a faction down to its last tile is cut off — it can't reinforce or dig in, so its
+// final redoubt becomes a finite stack you can grind down instead of an unbreakable 12-fortress.
+// (Its only escape is to attack out and retake a 2nd tile, which lifts the penalty.) The Tyrant
+// is exempt — it has its own harbor/graveyard death mechanic.
+function isEncircled(fk){ return fk && fk !== TYRANT_KEY && tilesOf(fk).length <= 1; }
 
 // Longest CURRENT pact a faction holds, in rounds held (0 if none). Used by agenda objectives.
 function longestPactRounds(fk) {
@@ -1765,8 +1770,8 @@ function applyIncome(fk) {
   f.resources = Math.min(f.resources + income, RES_CAP);
   addLog(`${f.icon} ${f.name} earned +${income} res (${nodes} nodes)`);
 
-  // 🌿 COMMUNE grassroots perk — Phase 5b: grows every OTHER round (odd only)
-  if (f.ability==='rally' && G.round % 2 === 1) {
+  // 🌿 COMMUNE grassroots perk — Phase 5b: grows every OTHER round (odd only). Cut off when encircled.
+  if (f.ability==='rally' && G.round % 2 === 1 && !isEncircled(fk)) {
     const mine = tilesOf(fk);
     if (mine.length) {
       const front = mine.filter(t => Object.values(G.tiles).some(e=>e.owner&&e.owner!==fk&&adjacent(t,e)));
@@ -2490,6 +2495,7 @@ function handleTileClick(id) {
   // ---- REINFORCE ----
   if (currentAction === 'reinforce') {
     if (tile.owner !== G.playerFaction) { setActionLog('Can only reinforce YOUR tiles.'); return; }
+    if (isEncircled(G.playerFaction)) { setActionLog('⛔ ENCIRCLED — your last redoubt is cut off from supply. Break out to reinforce again.'); return; }
     const cost = reinforceCost(G.playerFaction);
     const amt  = reinforceAmount(G.playerFaction);
     if (f.resources < cost) { setActionLog(`Need ${cost} resources.`); return; }
@@ -2544,6 +2550,7 @@ function handleTileClick(id) {
     const cost = 2;
     const maxDig = tile.isNode ? 2 : 3;  // node tiles cap at +2 to stay contestable
     if (tile.owner !== G.playerFaction)   { setActionLog('Entrench YOUR tiles only.'); return; }
+    if (isEncircled(G.playerFaction))     { setActionLog('⛔ ENCIRCLED — no time to dig in. Break out first.'); return; }
     if (tile.troops < 2)                  { setActionLog('Need 2+ troops to dig in.'); return; }
     if ((tile.heldRounds||0) >= maxDig)   { setActionLog(`Already at max dig-in (+${maxDig}).`); return; }
     if (f.resources < cost)               { setActionLog(`Entrench costs ${cost} resources.`); return; }
@@ -2891,7 +2898,9 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   //    EXCEPTION: the Tyrant never rallies — it's the shared enemy, so anyone can hammer it
   //    repeatedly without the escalating-defense penalty.
   const rallyKey = srcId + '|' + tgtId;
-  const overextend = tgt.owner === TYRANT_KEY ? 0 : (turnStrikes[rallyKey] || 0) * 2;
+  // A cornered (encircled) defender has no reserves to rally — chain-assault it freely.
+  const encircledDef = isEncircled(tgt.owner);
+  const overextend = (tgt.owner === TYRANT_KEY || encircledDef) ? 0 : (turnStrikes[rallyKey] || 0) * 2;
   // PHASE 5: record THIS strike before computing the leader-surge, so a 2nd attacker into the same
   // tile immediately benefits from the 1st's pressure (mirror of engine.js).
   recordLeaderStrike(tgtId, attackerFk, tgt.owner);
@@ -2900,6 +2909,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
   if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
   if (leaderEntrenchCracked(tgtId, tgt.owner)) entrench = 0;
+  if (encircledDef) entrench = 0;                     // cut off — no time/space to dig in
   // 4. Trait modifiers
   const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops<=2) ? 3 : 0;  // triggers at 1-2 troops
   const fortify  = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;  // +2 fresh, decays to +1 after casualty
@@ -3673,7 +3683,7 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 5. Reinforce — disciplined tiers feed the weakest Node/frontline tile; undisciplined ones
   //    (low thrift) just dump troops on a random tile, wasting the tempo.
   const cost = reinforceCost(fk);
-  if (f.resources >= cost && myTiles().length > 0) {
+  if (!isEncircled(fk) && f.resources >= cost && myTiles().length > 0) {   // encircled = supply cut, can't reinforce
     const smart = Math.random() < prof.thrift;
     const priority = myTiles().filter(t => t.isNode || enemyTiles().some(e=>adjacent(t,e)));
     const pool = (smart && priority.length) ? priority : myTiles();
