@@ -1605,6 +1605,9 @@ function startRound() {
   G.currentTurnIdx = 0;
   signalJamActive = false;
   totalWar = false;
+  // Keep it fresh: rotate the cosmic backdrop every 5 rounds (rounds 6, 11, 16, …). pickMapBackdrop
+  // re-picks with no immediate repeat and records G.mapBg so online joiners shift in sync.
+  if (G.round > 1 && G.round % 5 === 1) { pickMapBackdrop(); addLog('🌌 The cosmos shifts — a new sky over Nexus.'); }
   const tributeQueue = [];   // local human seats owing tribute — prompted via themed modal below
   // Entrenchment: tiles dig in once they've been held for a FULL round under the same owner.
   // claimedRound is stamped on every ownership change (combat capture, bribe, move into unclaimed,
