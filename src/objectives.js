@@ -45,12 +45,12 @@ export const OBJECTIVES = {
   // ---- Agenda cards (SECRET AGENDAS mode, humans only) ----
   purge: {
     id: 'purge', title: 'PURGE', kind: 'agenda',
-    desc: 'Outlast your rivals — be standing when only ONE non-Tyrant rival remains.',
-    check: (api, fk) => api.livingFoes(fk) <= 1,
+    desc: 'Draw first blood — outlast a rival, so one of your starting rivals has fallen.',
+    check: (api, fk) => api.livingFoes(fk) <= api.foesAtStart - 2,   // one fewer non-Tyrant rival than at start
     progress: (api, fk) => {
-      const gone = Math.max(0, (api.foesAtStart - 1) - api.livingFoes(fk));
-      const need = Math.max(1, api.foesAtStart - 1);
-      return { cur: gone, max: need, label: `${gone}/${need} rivals purged` };
+      const rivals = api.foesAtStart - 1;             // non-Tyrant rivals at game start
+      const gone = Math.max(0, rivals - api.livingFoes(fk));
+      return { cur: Math.min(gone, 1), max: 1, label: `${Math.min(gone, 1)}/1 rival purged` };
     },
   },
   warlord: {

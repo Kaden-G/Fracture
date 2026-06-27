@@ -15,7 +15,7 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // Win-condition / agenda registry (SECRET AGENDAS mode). Versioned import so edits cache-bust.
-import { OBJECTIVES, agendaPool } from './objectives.js?v=2';
+import { OBJECTIVES, agendaPool } from './objectives.js?v=3';
 
 // ============================================================
 // GAME DATA
@@ -334,17 +334,24 @@ function controlsNode(fk, nodeId){ return !!fk && Object.values(G.tiles).some(t=
 // Economy (faction perks + node bonuses fold in here)
 function reinforceCost(fk){
   let c = 2;
-  if (fk==='grid')                           c -= 1;  // ⚙️ GRID industrial
+  if (hasPerkOf(G.factions[fk], 'overclock')) c -= 1;  // ⚙️ INDUSTRIAL (Grid, or inherited)
   if (controlsNode(fk,'node_power'))         c -= 1;  // ⚡ POWER node
   return Math.max(1, c);
 }
 function reinforceAmount(fk){ return 2; }  // all factions reinforce +2; GRID's perk is the cost discount
 function airliftCost(fk){ return controlsNode(fk,'node_transit') ? 0 : 3; }             // 🚇 TRANSIT: free airlifts
 function hasTrait(f, id) { return f.trait === id || (f.inheritedTraits && f.inheritedTraits.includes(id)); }
+// FACTION POWER inheritance: wiping out a faction grants its PASSIVE perk (not its chosen trait,
+// not its active ability button). A faction's perk is keyed by its ability, which uniquely
+// identifies the normal faction: sabotage=Ghost PHANTOM, bribe=Syndicate CARTEL,
+// rally=Commune GRASSROOTS, overclock=Grid INDUSTRIAL. hasPerkOf checks native OR inherited.
+const PERK_ABILITIES = ['sabotage', 'bribe', 'rally', 'overclock'];
+const PERK_NAMES = { sabotage: 'PHANTOM', bribe: 'CARTEL', rally: 'GRASSROOTS', overclock: 'INDUSTRIAL' };
+function hasPerkOf(f, abilityKey) { return !!f && (f.ability === abilityKey || (f.inheritedPerks && f.inheritedPerks.includes(abilityKey))); }
 function moveRange(fk){
   const f = G.factions[fk];
   if (!f) return 1;
-  const phantom = f.ability === 'sabotage';  // ghost faction perk
+  const phantom = hasPerkOf(f, 'sabotage');  // 👁️ PHANTOM perk (Ghost, or inherited)
   const step    = hasTrait(f, 'ghost_step');   // trait (native or inherited)
   // Phase 5b: phantom+ghost_step stacks to 3; either alone = 2; otherwise 1
   if (phantom && step) return 3;
@@ -711,13 +718,25 @@ function awardEliminationBounty(killerFk, victimFk) {
   if (!af || !victim || killerFk === victimFk || !victim.eliminated) return;
   const lootRes = Math.floor((victim.resources || 0) / 2);
   af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
-  const victimTrait = victim.trait;
-  if (victimTrait && victimTrait !== af.trait) {
-    if (!af.inheritedTraits) af.inheritedTraits = [];
-    if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+  // Seize the victim's FACTION POWER (its passive perk: Phantom / Cartel / Grassroots / Industrial),
+  // not their chosen trait. You can't take it twice (native or already-seized). Report which case
+  // happened so the outcome is never ambiguous. The Tyrant's power isn't inheritable.
+  const victimPower = victim.ability;
+  let inherited = false, alreadyHad = false;
+  if (victimPower && PERK_ABILITIES.includes(victimPower)) {
+    if (hasPerkOf(af, victimPower)) {
+      alreadyHad = true;
+    } else {
+      if (!af.inheritedPerks) af.inheritedPerks = [];
+      af.inheritedPerks.push(victimPower);
+      inherited = true;
+    }
   }
-  const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
-  addLog(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+  const powerName = victimPower ? (PERK_NAMES[victimPower] || victimPower) : null;
+  const powerMsg = inherited  ? `, seized their 🎖️ ${powerName} power`
+                 : alreadyHad ? ` (you already wield ${powerName})`
+                 : '';
+  addLog(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${powerMsg}.`);
 }
 
 // Reckoning intercept — called when a faction would win.
@@ -1456,7 +1475,8 @@ function renderSidebar() {
     <div class="res-chip">🔋 ${f.resources} RES</div>
     <div class="res-chip">🏠 ${tilesOf(G.playerFaction).length} TILES</div>
     ${winChip}
-    <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}${f.inheritedTraits && f.inheritedTraits.length ? ' + ' + f.inheritedTraits.map(id => TRAITS.find(t=>t.id===id)?.name||id).join(', ') : ''}</div>
+    <div class="res-chip" style="font-size:11px; border-color:#444;">🎭 ${TRAITS.find(t=>t.id===f.trait)?.name||''}</div>
+    ${f.inheritedPerks && f.inheritedPerks.length ? `<div class="res-chip" style="font-size:11px; border-color:#c39bd3; color:#e0bff0;">🎖️ ${f.inheritedPerks.map(a => PERK_NAMES[a] || a).join(', ')}</div>` : ''}
   `;
 
   // Quick-reference: your faction's ability + perk
@@ -1585,6 +1605,9 @@ function startRound() {
   G.currentTurnIdx = 0;
   signalJamActive = false;
   totalWar = false;
+  // Keep it fresh: rotate the cosmic backdrop every 5 rounds (rounds 6, 11, 16, …). pickMapBackdrop
+  // re-picks with no immediate repeat and records G.mapBg so online joiners shift in sync.
+  if (G.round > 1 && G.round % 5 === 1) { pickMapBackdrop(); addLog('🌌 The cosmos shifts — a new sky over Nexus.'); }
   const tributeQueue = [];   // local human seats owing tribute — prompted via themed modal below
   // Entrenchment: tiles dig in once they've been held for a FULL round under the same owner.
   // claimedRound is stamped on every ownership change (combat capture, bribe, move into unclaimed,
@@ -1766,12 +1789,12 @@ function applyIncome(fk) {
   const nodes = countNodes(fk);
   let income = 2 + nodes * (hasTrait(f, 'hoard') ? 2 : 1);
   if (controlsNode(fk,'node_water')) income += 1;   // 💧 WATER node
-  if (f.ability==='bribe')           income += 1;   // 💰 SYNDICATE cartel perk
+  if (hasPerkOf(f, 'bribe'))         income += 1;   // 💰 CARTEL perk (Syndicate, or inherited)
   f.resources = Math.min(f.resources + income, RES_CAP);
   addLog(`${f.icon} ${f.name} earned +${income} res (${nodes} nodes)`);
 
   // 🌿 COMMUNE grassroots perk — Phase 5b: grows every OTHER round (odd only). Cut off when encircled.
-  if (f.ability==='rally' && G.round % 2 === 1 && !isEncircled(fk)) {
+  if (hasPerkOf(f, 'rally') && G.round % 2 === 1 && !isEncircled(fk)) {   // 🌿 GRASSROOTS perk (Commune, or inherited)
     const mine = tilesOf(fk);
     if (mine.length) {
       const front = mine.filter(t => Object.values(G.tiles).some(e=>e.owner&&e.owner!==fk&&adjacent(t,e)));
@@ -2907,7 +2930,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   // 3. Entrenchment — GHOST's Phantom assault ignores it entirely, AND a 3-node leader's tile
   //    cracks once 2+ factions are besieging it (Phase 5 lever #3).
   let entrench = Math.min(tgt.heldRounds || 0, tgt.isNode ? 2 : 3);  // node tiles cap at +2
-  if (af.ability==='sabotage') entrench = 0;          // 👁️ GHOST phantom perk
+  if (hasPerkOf(af, 'sabotage')) entrench = 0;         // 👁️ PHANTOM perk (Ghost, or inherited) ignores dig-in
   if (leaderEntrenchCracked(tgtId, tgt.owner)) entrench = 0;
   if (encircledDef) entrench = 0;                     // cut off — no time/space to dig in
   // 4. Trait modifiers
@@ -3223,7 +3246,7 @@ function aiNodePush(fk) {
   if (!targets.length) return false;
   const f = G.factions[fk];
 
-  const phantom = f.ability === 'sabotage';
+  const phantom = hasPerkOf(f, 'sabotage');
 
   // 1. Step onto an adjacent (or 2-tile for phantom/ghost_step) UNCLAIMED node.
   for (const src of movable) {

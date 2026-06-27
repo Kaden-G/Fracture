@@ -10,7 +10,7 @@ import {
   RES_CAP, TROOP_CAP, FACTIONS, TYRANT_KEY, TRAITS,
   factionDef, adjacent, mkFaction,
   tilesOf, countNodes, reinforceCost,
-  hasPact, pairKey, moveReachable,
+  hasPact, pairKey, moveReachable, hasPerkOf,
 } from '../src/state.js';
 import { makeRng, roll2d6, nextInt } from '../src/rng.js';
 import { chooseAction } from '../src/ai.js';
@@ -335,7 +335,7 @@ describe('Reducer', () => {
     }
   });
 
-  it('BRIBE elimination grants the full bounty (half stash + inherited trait)', () => {
+  it('BRIBE elimination grants the full bounty (half stash + seized faction power)', () => {
     const state = makeTestState();
     Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; t.isNode = false; });
     state.currentTurnIdx = state.turnOrder.indexOf('syndicate');
@@ -350,11 +350,11 @@ describe('Reducer', () => {
     assert.equal(next.factions.commune.eliminated, true, 'commune is wiped out');
     // 5 start − 1 bribe cost + 3 base + floor(8/2)=4 stash = 11
     assert.equal(next.factions.syndicate.resources, 11, 'gets +3 bounty plus half the victim stash');
-    assert.ok((next.factions.syndicate.inheritedTraits || []).includes('fortify'), 'inherits the victim trait');
-    assert.ok(log.some(l => l.includes('eliminated') && l.includes('inherited')), 'logs the bounty');
+    assert.ok((next.factions.syndicate.inheritedPerks || []).includes('rally'), 'seizes commune GRASSROOTS power');
+    assert.ok(log.some(l => l.includes('eliminated') && l.includes('seized')), 'logs the bounty');
   });
 
-  it('SABOTAGE elimination grants the full bounty (half stash + inherited trait)', () => {
+  it('SABOTAGE elimination grants the full bounty (half stash + seized faction power)', () => {
     const state = makeTestState();
     Object.values(state.tiles).forEach(t => { t.owner = null; t.troops = 0; t.isNode = false; });
     state.currentTurnIdx = state.turnOrder.indexOf('ghost');
@@ -369,8 +369,20 @@ describe('Reducer', () => {
     assert.equal(next.factions.commune.eliminated, true, 'commune is wiped out');
     // 5 start − 1 sabotage cost + 3 base + floor(6/2)=3 stash = 10
     assert.equal(next.factions.ghost.resources, 10, 'gets +3 bounty plus half the victim stash');
-    assert.ok((next.factions.ghost.inheritedTraits || []).includes('hoard'), 'inherits the victim trait');
-    assert.ok(log.some(l => l.includes('eliminated') && l.includes('inherited')), 'logs the bounty');
+    assert.ok((next.factions.ghost.inheritedPerks || []).includes('rally'), 'seizes commune GRASSROOTS power');
+    assert.ok(log.some(l => l.includes('eliminated') && l.includes('seized')), 'logs the bounty');
+  });
+
+  it('a SEIZED faction power actually grants its perk effect', () => {
+    const state = makeTestState();
+    // Syndicate (native: bribe/CARTEL) seizes Grid's INDUSTRIAL (overclock) — reinforce cost drops.
+    assert.equal(reinforceCost(state, 'syndicate'), 2, 'baseline reinforce cost');
+    state.factions.syndicate.inheritedPerks = ['overclock'];
+    assert.equal(hasPerkOf(state.factions.syndicate, 'overclock'), true);
+    assert.equal(reinforceCost(state, 'syndicate'), 1, 'INDUSTRIAL discount applies to the inheritor');
+    // PHANTOM (sabotage) seized → moveReachable leapfrogs 2 tiles like the Ghost.
+    state.factions.syndicate.inheritedPerks.push('sabotage');
+    assert.equal(hasPerkOf(state.factions.syndicate, 'sabotage'), true);
   });
 
   it('END_ROUND detects node dominance win', () => {

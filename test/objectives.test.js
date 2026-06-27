@@ -53,12 +53,14 @@ describe('Objectives registry', () => {
     assert.equal(OBJECTIVES.last_standing.check(mkApi({ livingRivals: { grid: 0 } }), 'grid'), true);
   });
 
-  it('purge: met when one non-Tyrant rival remains', () => {
-    assert.equal(OBJECTIVES.purge.check(mkApi({ livingFoes: { grid: 2 } }), 'grid'), false);
-    assert.equal(OBJECTIVES.purge.check(mkApi({ livingFoes: { grid: 1 } }), 'grid'), true);
-    const p = OBJECTIVES.purge.progress(mkApi({ foesAtStart: 4, livingFoes: { grid: 2 } }), 'grid');
-    assert.equal(p.cur, 1, '4 foes at start, 2 alive => 1 purged');
-    assert.equal(p.max, 3);
+  it('purge: met after a single rival is eliminated (foesAtStart=4 => livingFoes<=2)', () => {
+    assert.equal(OBJECTIVES.purge.check(mkApi({ foesAtStart: 4, livingFoes: { grid: 3 } }), 'grid'), false);
+    assert.equal(OBJECTIVES.purge.check(mkApi({ foesAtStart: 4, livingFoes: { grid: 2 } }), 'grid'), true);
+    const p0 = OBJECTIVES.purge.progress(mkApi({ foesAtStart: 4, livingFoes: { grid: 3 } }), 'grid');
+    assert.equal(p0.cur, 0, '3 rivals alive => 0 purged');
+    const p1 = OBJECTIVES.purge.progress(mkApi({ foesAtStart: 4, livingFoes: { grid: 2 } }), 'grid');
+    assert.equal(p1.cur, 1, '2 rivals alive => 1 purged');
+    assert.equal(p1.max, 1);
   });
 
   it('warlord: met at 14 tiles', () => {
