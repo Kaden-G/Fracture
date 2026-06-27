@@ -43,8 +43,11 @@ export const OBJECTIVES = {
   },
 
   // ---- Agenda cards (SECRET AGENDAS mode, humans only) ----
+  // `instant: true` wins the moment the condition is met; otherwise the holder must keep it for
+  // 3 rounds (like node dominance), since tiles/nodes/regions can be lost. Purge is permanent
+  // (a dead faction stays dead), so it's instant.
   purge: {
-    id: 'purge', title: 'PURGE', kind: 'agenda',
+    id: 'purge', title: 'PURGE', kind: 'agenda', instant: true,
     desc: 'Draw first blood — outlast a rival, so one of your starting rivals has fallen.',
     check: (api, fk) => api.livingFoes(fk) <= api.foesAtStart - 2,   // one fewer non-Tyrant rival than at start
     progress: (api, fk) => {
