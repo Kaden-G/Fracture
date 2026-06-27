@@ -1276,6 +1276,17 @@
   .agenda-banner-title { font-family: 'Bangers', cursive; font-size: 18px; letter-spacing: 1px; color: #e0bff0; }
   .agenda-banner-desc { font-size: 11px; color: #bbb; line-height: 1.4; margin: 2px 0; }
   .agenda-banner-prog { font-size: 12px; font-weight: 700; color: #2ecc71; letter-spacing: 0.3px; }
+  /* Hold-countdown line for non-instant agendas (must be kept 3 rounds, like node dominance). */
+  .agenda-banner-hold {
+    margin-top: 4px; padding: 3px 6px; border-radius: 5px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+    color: #ffd86b; background: rgba(255,216,107,0.10); border: 1px solid rgba(255,216,107,0.45);
+  }
+  .agenda-banner-hold.win {
+    color: #0b1d12; background: #2ecc71; border-color: #2ecc71;
+    animation: agendaHoldPulse 1s ease-in-out infinite;
+  }
+  @keyframes agendaHoldPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
   /* ===== SEAT CONFIG (setup) ===== */
   .seat-toggle { display:flex; gap:8px; margin-bottom:10px; }

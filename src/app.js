@@ -15,7 +15,7 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // Win-condition / agenda registry (SECRET AGENDAS mode). Versioned import so edits cache-bust.
-import { OBJECTIVES, agendaPool } from './objectives.js?v=3';
+import { OBJECTIVES, agendaPool } from './objectives.js?v=4';
 
 // ============================================================
 // GAME DATA
@@ -1073,6 +1073,7 @@ function startGame() {
     tyrantStruck: {},       // Step 3: fk -> last round it drew blood on the Tyrant (coalition surge)
     tyrantConquest: false,  // Part 2: Tyrant switched from diplomacy to conquest
     nodesHeldSince: {},     // fk -> round they first held 3+ nodes (for 2-round win check)
+    agendaMetSince: {},     // SECRET AGENDAS: fk -> round their (non-instant) agenda first completed
     tiles: {},
     log: [],
     pacts: {},     // pairKey -> round formed
@@ -1460,12 +1461,24 @@ function renderSidebar() {
   // SECRET AGENDAS: the viewing human sees their own card + progress in place of the node-win chip.
   const myObj = (G.secretAgendas && f && !f.isAI && f.objective) ? OBJECTIVES[f.objective] : null;
   const agendaApi = myObj ? objectiveApi() : null;
+  // Non-instant agendas must be HELD for 3 rounds — show the hold countdown once met.
+  let holdLine = '';
+  if (myObj && !myObj.instant) {
+    const since = G.agendaMetSince && G.agendaMetSince[G.playerFaction];
+    if (since !== undefined) {
+      const held = Math.min((G.round - since) + 1, 3);
+      holdLine = held >= 3
+        ? `<div class="agenda-banner-hold win">✅ COMPLETE — securing victory!</div>`
+        : `<div class="agenda-banner-hold">✅ COMPLETE — hold it: ${held}/3 rounds</div>`;
+    }
+  }
   const agendaBanner = myObj ? `
     <div class="agenda-banner" title="${myObj.desc}">
-      <div class="agenda-banner-label">🎴 YOUR SECRET AGENDA</div>
+      <div class="agenda-banner-label">🎴 YOUR SECRET AGENDA${myObj.instant ? '' : ' · HOLD 3 RDS'}</div>
       <div class="agenda-banner-title">${myObj.title}</div>
       <div class="agenda-banner-desc">${myObj.desc}</div>
       <div class="agenda-banner-prog">▸ ${myObj.progress(agendaApi, G.playerFaction).label}</div>
+      ${holdLine}
     </div>` : '';
   const winChip = myObj
     ? ''   // the agenda banner replaces the node-win chip for humans in this mode
@@ -2327,6 +2340,18 @@ function endRound() {
         if (r === 'thralldom') return; // Tyrant won — showWin already called
         if (r === 'freedom') { showWin(k, 'RECKONING (FREEDOM)', `${f.name} fought off the Tyrant and claimed Nexus!`); return; }
         showWin(k, 'NODE DOMINANCE', `${f.name} held 3+ Core Nodes for 3 rounds and commands Nexus.`);
+        return;
+      }
+    }
+  }
+  // SECRET AGENDAS: a held (non-instant) agenda wins once kept for 3 round-ends, re-verified here.
+  if (G.secretAgendas && G.agendaMetSince) {
+    for (const k of (G.humans || [])) {
+      const f = G.factions[k];
+      const since = G.agendaMetSince[k];
+      if (f && !f.eliminated && since !== undefined && agendaComplete(k) && G.round - since >= 2) {
+        const o = OBJECTIVES[f.objective];
+        showWin(k, 'SECRET AGENDA', `${f.name} held their secret agenda — ${o.title} — and claimed Nexus!`);
         return;
       }
     }
@@ -4007,14 +4032,24 @@ function dismissEvent() {
 // WIN CHECK
 // ============================================================
 function checkWin() {
-  // SECRET AGENDAS: a human wins the instant their drawn card is complete (can be triggered even
-  // on an AI's turn — e.g. a third party wipes out the rival your "purge" card needed).
+  // SECRET AGENDAS: an INSTANT card (Purge) wins the moment it completes — even on an AI's turn
+  // (a third party finishing your purge). All other cards must be HELD for 3 rounds (the win
+  // itself fires in endRound, like node dominance); here we just keep their hold timer.
   if (G.secretAgendas) {
+    if (!G.agendaMetSince) G.agendaMetSince = {};
     for (const k of (G.humans || [])) {
-      if (agendaComplete(k)) {
-        const o = OBJECTIVES[G.factions[k].objective];
-        showWin(k, 'SECRET AGENDA', `${G.factions[k].name} completed their secret agenda — ${o.title}!`);
-        return true;
+      const f = G.factions[k];
+      if (!f || f.eliminated || !f.objective) { delete G.agendaMetSince[k]; continue; }
+      const o = OBJECTIVES[f.objective];
+      const met = agendaComplete(k);
+      if (o.instant) {
+        if (met) { showWin(k, 'SECRET AGENDA', `${f.name} completed their secret agenda — ${o.title}!`); return true; }
+      } else if (met && G.agendaMetSince[k] === undefined) {
+        G.agendaMetSince[k] = G.round;
+        addLog(`🎴 ${f.name}'s secret agenda is COMPLETE — hold it for 3 rounds to win!`);
+      } else if (!met && G.agendaMetSince[k] !== undefined) {
+        delete G.agendaMetSince[k];
+        addLog(`📢 ${f.name}'s secret agenda slipped — hold timer reset.`);
       }
     }
   }
