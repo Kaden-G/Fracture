@@ -15,7 +15,7 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // Win-condition / agenda registry (SECRET AGENDAS mode). Versioned import so edits cache-bust.
-import { OBJECTIVES, agendaPool } from './objectives.js?v=2';
+import { OBJECTIVES, agendaPool } from './objectives.js?v=3';
 
 // ============================================================
 // GAME DATA
@@ -711,13 +711,24 @@ function awardEliminationBounty(killerFk, victimFk) {
   if (!af || !victim || killerFk === victimFk || !victim.eliminated) return;
   const lootRes = Math.floor((victim.resources || 0) / 2);
   af.resources = Math.min((af.resources || 0) + 3 + lootRes, RES_CAP);
+  // Inherit the victim's chosen passive — unless you already have it (native OR previously inherited),
+  // since traits don't stack. Report which case happened so "nothing changed" is never ambiguous.
   const victimTrait = victim.trait;
-  if (victimTrait && victimTrait !== af.trait) {
-    if (!af.inheritedTraits) af.inheritedTraits = [];
-    if (!af.inheritedTraits.includes(victimTrait)) af.inheritedTraits.push(victimTrait);
+  let inherited = false, alreadyHad = false;
+  if (victimTrait) {
+    if (hasTrait(af, victimTrait)) {
+      alreadyHad = true;
+    } else {
+      if (!af.inheritedTraits) af.inheritedTraits = [];
+      af.inheritedTraits.push(victimTrait);
+      inherited = true;
+    }
   }
-  const traitName = victimTrait ? TRAITS.find(t => t.id === victimTrait)?.name : null;
-  addLog(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${traitName ? `, inherited ${traitName}` : ''}.`);
+  const traitName = victimTrait ? (TRAITS.find(t => t.id === victimTrait)?.name || victimTrait) : null;
+  const traitMsg = inherited   ? `, inherited 🎭 ${traitName}`
+                 : alreadyHad  ? ` (you already share their ${traitName})`
+                 : ' (no passive to inherit)';
+  addLog(`🏆 ${af.icon} eliminated ${victim.name || victimFk}! +${3 + lootRes} resources${traitMsg}.`);
 }
 
 // Reckoning intercept — called when a faction would win.
