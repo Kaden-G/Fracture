@@ -107,7 +107,7 @@ function findBestAttack(state, fk, turnAttacks) {
         // EV scoring (Phase 3): weight prize by real odds, charge for likely loss, dock fragile
         // captures an enemy could immediately recapture, and pile a focus-fire bonus on the leader.
         const df = state.factions[def.owner];
-        const fortify  = (df && hasTrait(df, 'fortify')) ? ((def.heldRounds||0) > 0 ? 2 : 1) : 0;
+        const fortify  = (df && hasTrait(df, 'fortify')) ? (def.damaged ? 1 : 2) : 0;
         const lastStand = (df && hasTrait(df, 'last_stand') && def.troops <= 2) ? 3 : 0;
         // PHASE 5: factor in the anti-leader surge and entrenchment-crack we'd benefit from.
         // Without this, the AI would underestimate odds against a 3-node leader (~33%) and never

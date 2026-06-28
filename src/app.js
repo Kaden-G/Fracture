@@ -111,7 +111,7 @@ const TRAITS = [
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
   { id:'ghost_step', name:'GHOST STEP',   desc:'Move OR attack 2 tiles (3 on Ghost) — leapfrog through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 3d6 attack, keep best 2'        },
-  { id:'fortify',    name:'FORTIFY',      desc:'Fresh tiles: +2 def margin. After casualty: +1'},
+  { id:'fortify',    name:'FORTIFY',      desc:'Undamaged tiles: +2 def margin. After a combat casualty: +1'},
 ];
 
 // Phase 5b: faction → traits they CANNOT pick
@@ -1093,8 +1093,9 @@ function startGame() {
     pacts: {},     // pairKey -> round formed
     grudges: {},   // "victim>betrayer" -> round it expires after
     playerFaction: order[0],  // local "acting/viewing" faction; repointed each human turn
-    secretAgendas: !!G.setup.secretAgendas,   // SECRET AGENDAS mode (humans win only via their card)
+    // SECRET AGENDAS and CONQUER are mutually exclusive — if both flags somehow got set, CONQUER wins.
     conquerMode: !!G.setup.conquerMode,       // CONQUER mode (everyone wins only by last-standing)
+    secretAgendas: !G.setup.conquerMode && !!G.setup.secretAgendas,   // SECRET AGENDAS (humans win only via their card)
   };
   gameOver = false;
   G.tiles = buildMap();
@@ -2795,7 +2796,7 @@ function handleTileClick(id) {
       recordTyrantStrike(G.playerFaction, sabPrev);   // Step 3: sabotaging the blob earns surge next turn
       const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
       const sabDrop = (tile.heldRounds || 0) >= 2 ? 1 : 2;
-      if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; }
+      if (tile.troops > sabDrop) tile.troops -= sabDrop; else { tile.owner=null; tile.troops=0; tile.damaged=false; }
       if (tile.owner===null && Object.values(G.tiles).filter(t=>t.owner===sabPrev).length===0) {
         killFaction(sabPrev);
         awardEliminationBounty(G.playerFaction, sabPrev);
@@ -2981,7 +2982,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
   if (encircledDef) entrench = 0;                     // cut off — no time/space to dig in
   // 4. Trait modifiers
   const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops<=2) ? 3 : 0;  // triggers at 1-2 troops
-  const fortify  = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;  // +2 fresh, decays to +1 after casualty
+  const fortify  = (df && hasTrait(df, 'fortify')) ? (tgt.damaged ? 1 : 2) : 0;  // +2 fresh/undamaged, decays to +1 once the tile has lost a troop in combat
   // 5. Node bonuses — 📡 COMMS (+1 atk), 🖧 DATA (+1 def)
   const comms = controlsNode(attackerFk,'node_comms') ? 1 : 0;
   const data  = controlsNode(tgt.owner,'node_data')   ? 1 : 0;
@@ -3037,6 +3038,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       tgt.owner    = attackerFk;
       tgt.troops   = 1;
       tgt.heldRounds = 0;   // freshly taken — not dug in yet
+      tgt.damaged = false;  // fresh for its new owner (FORTIFY: +2 again)
       tgt.claimedRound = G.round;
       src.troops   = Math.max(1, src.troops-1);
       // SCAVENGER trait: loot +1 resource on capture (denied by LAST STAND defenders)
@@ -3065,6 +3067,7 @@ function resolveAttack(attackerFk, srcId, tgtId, isPlayer) {
       }
     } else {
       tgt.heldRounds = 0;   // taking casualties breaks entrenchment
+      tgt.damaged = true;   // lost a troop in combat (FORTIFY decays +2 → +1)
       addLog(`⚔️ ${af.icon} hit ${tgt.name} [${attTotal} vs ${defTotal}] — ${tgt.troops} left`);
     }
   } else {
@@ -3507,7 +3510,7 @@ function runAITurn(fk) {
           // EXPECTED-VALUE scoring: weight the prize by the real odds, charge for a likely loss,
           // and dock a fragile capture an enemy could immediately recapture (1-ply lookahead).
           const df = G.factions[def.owner];
-          const fortify  = (df && hasTrait(df, 'fortify')) ? ((def.heldRounds||0) > 0 ? 2 : 1) : 0;
+          const fortify  = (df && hasTrait(df, 'fortify')) ? (def.damaged ? 1 : 2) : 0;
           const lastStand = (df && hasTrait(df, 'last_stand') && def.troops <= 2) ? 3 : 0;
           p = winProb(atkPower, defPower + lastStand, fortify, af && hasTrait(af, 'tactician'));
           const winsTheGame = !G.conquerMode && def.isNode && (myNodeCount + 1) >= 3;
@@ -3808,7 +3811,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
       recordTyrantStrike(fk, prev);   // Step 3: AI sabotaging the blob joins the coalition
       const aiPreTroops = target.troops;  // before the hit
       const aiSabDrop = (target.heldRounds || 0) >= 2 ? 1 : 2;
-      if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; }
+      if (target.troops > aiSabDrop) target.troops -= aiSabDrop; else { target.troops=0; target.owner=null; target.damaged=false; }
       if (target.owner===null && Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
         killFaction(prev);
         awardEliminationBounty(fk, prev);
@@ -3831,7 +3834,7 @@ function aiUseAbility(f, fk, myTiles, enemyTiles) {
         const prev = tgt.owner;
         f.resources-=1; tgt.troops--; mt.troops++;   // −1 them, +1 you (2-point swing)
         if (tgt.troops<=0) {
-          tgt.owner=fk; tgt.troops=1; tgt.heldRounds=0; tgt.claimedRound=G.round;   // freshly taken — drop prior owner's dig-in
+          tgt.owner=fk; tgt.troops=1; tgt.heldRounds=0; tgt.damaged=false; tgt.claimedRound=G.round;   // freshly taken — drop prior owner's dig-in
           if (Object.values(G.tiles).filter(t=>t.owner===prev).length===0) {
             killFaction(prev);
             awardEliminationBounty(fk, prev);
@@ -4914,7 +4917,7 @@ function buildOnlineGame(seats, tyrant, diff, agendas, conquer) {
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
     tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false, nodesHeldSince: {},
-    agendaMetSince: {}, secretAgendas: !!agendas, conquerMode: !!conquer,
+    agendaMetSince: {}, conquerMode: !!conquer, secretAgendas: !conquer && !!agendas,   // mutually exclusive — CONQUER wins if both set
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;

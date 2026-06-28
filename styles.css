@@ -1354,7 +1354,7 @@
 
   /* ===== ONLINE LOBBY WIZARD (name → faction → passive → ready) ===== */
   .wizard-card { max-width:460px; width:100%; margin:0 auto; }
-  .wizard-foot { display:flex; gap:10px; margin-top:18px; }
+  .wizard-foot { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
   .wizard-foot .btn { padding:12px 18px; }
   .wiz-faction-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .wiz-faction {
