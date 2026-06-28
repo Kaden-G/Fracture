@@ -3510,12 +3510,17 @@ function runAITurn(fk) {
           const fortify  = (df && hasTrait(df, 'fortify')) ? ((def.heldRounds||0) > 0 ? 2 : 1) : 0;
           const lastStand = (df && hasTrait(df, 'last_stand') && def.troops <= 2) ? 3 : 0;
           p = winProb(atkPower, defPower + lastStand, fortify, af && hasTrait(af, 'tactician'));
-          const winsTheGame = def.isNode && (myNodeCount + 1) >= 3;
+          const winsTheGame = !G.conquerMode && def.isNode && (myNodeCount + 1) >= 3;
           // Focus-fire: taking the frontrunner's tile — above all their NODE (which resets their
           // 3-round win timer) — is worth far more than expanding elsewhere. This is what makes the
           // coalition actually converge on whoever's about to win, instead of nibbling the map.
           const stopBonus = (def.owner === stop) ? (def.isNode ? 180 : 45) : 0;
-          const captureValue = (def.isNode ? 120 : 16 + def.troops) + (winsTheGame ? 220 : 0) + stopBonus;
+          // CONQUER: nodes aren't the win — value enemy territory and, above all, a capture that
+          // wipes the defender off the board (their last tile). This pushes AIs to finish kills.
+          const killShot = (G.conquerMode && def.owner !== TYRANT_KEY && tilesOf(def.owner).length === 1) ? 300 : 0;
+          const captureValue = G.conquerMode
+            ? (30 + def.troops + killShot + stopBonus)
+            : ((def.isNode ? 120 : 16 + def.troops) + (winsTheGame ? 220 : 0) + stopBonus);
           const lossCost = 6 + def.troops;
           // 1-ply counter: the strongest adjacent enemy recapturing our freshly-taken (1-troop) tile.
           let counterP = 0;
@@ -3528,7 +3533,9 @@ function runAITurn(fk) {
           score = p*captureValue - (1-p)*lossCost - counterP*captureValue*0.7 - (pact?40:0);
         } else {
           // Greedy heuristic (Sandbox / JV): nodes, then weaker targets, then a troop edge.
-          score = (def.isNode?100:0) + edge*10 - def.troops - (pact?15:0);
+          // CONQUER: drop the node premium and reward a kill-shot (the defender's last tile).
+          const killShot = (G.conquerMode && def.owner !== TYRANT_KEY && tilesOf(def.owner).length === 1) ? 120 : 0;
+          score = (G.conquerMode ? 0 : (def.isNode?100:0)) + edge*10 - def.troops - (pact?15:0) + killShot;
         }
         if (!best || score > best.score) best = {atk, def, score, edge, p, betray:pact};
       }
@@ -3543,8 +3550,19 @@ function runAITurn(fk) {
   const step = () => {
     if (gameOver) return;
     if (actsLeft <= 0) { finishAITurn(fk); return; }
-    const result = aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack);  // false | 'won' | 'repelled' | true
-    renderSidebar();
+    // A thrown exception inside an AI action used to break the setTimeout chain silently — the
+    // turn would just hang with no win and no modal. Catch it, log it, and end the turn cleanly
+    // so the game never freezes on one bad action.
+    let result;
+    try {
+      result = aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack);  // false | 'won' | 'repelled' | true
+      renderSidebar();
+    } catch (err) {
+      console.error(`AI action crashed for ${fk}:`, err);
+      addLog(`⚠️ ${f.name}'s turn hit a snag — ending it early.`);
+      finishAITurn(fk);
+      return;
+    }
     if (checkWin()) return;
     if (!result) { finishAITurn(fk); return; }
     const combat = (result === 'won' || result === 'repelled');
@@ -3559,18 +3577,25 @@ function runAITurn(fk) {
 
 function finishAITurn(fk) {
   if (gameOver) return;
-  renderSidebar();
-  syncPush();                 // broadcast the AI's completed turn (no-op offline)
-  if (checkWin()) return;
-  // Show the batched end-of-turn summary (if this AI hit the player), then advance on OK.
-  // Without a summary, advance after the usual short beat.
   const advance = () => { G.currentTurnIdx++; setTimeout(doNextTurn, online ? 250 : 300); };
-  if (showAiTurnSummary(fk)) {
-    // Wait for the player's OK on the summary modal. The summary is its own overlay (not in
-    // combatQueue), so we push directly to the waiter list that acknowledgeAiSummary drains.
-    combatAckWaiters.push(advance);
-  } else {
-    advance();
+  // Guard the whole tail: if rendering / checkWin / the summary throws, still advance the turn
+  // rather than leaving the game stuck on this seat.
+  try {
+    renderSidebar();
+    syncPush();                 // broadcast the AI's completed turn (no-op offline)
+    if (checkWin()) return;
+    // Show the batched end-of-turn summary (if this AI hit the player), then advance on OK.
+    // Without a summary, advance after the usual short beat.
+    if (showAiTurnSummary(fk)) {
+      // Wait for the player's OK on the summary modal. The summary is its own overlay (not in
+      // combatQueue), so we push directly to the waiter list that acknowledgeAiSummary drains.
+      combatAckWaiters.push(advance);
+    } else {
+      advance();
+    }
+  } catch (err) {
+    console.error(`finishAITurn crashed for ${fk}:`, err);
+    if (!gameOver) advance();
   }
 }
 
@@ -3672,7 +3697,8 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
 
   // 0. DEFEND LEAD: when holding 2+ nodes, prioritize reinforcing/entrenching them over expansion.
   //    Low tiers (defendLead off) never bother — they leak their own nodes.
-  if (prof.defendLead && myNodes.length >= 2) {
+  //    CONQUER: nodes don't win, so don't burn actions turtling on them — press the attack instead.
+  if (!G.conquerMode && prof.defendLead && myNodes.length >= 2) {
     // Entrench an under-defended node first
     const weakNode = myNodes
       .filter(t => (t.heldRounds||0) < (t.isNode?2:3) && t.troops >= 2 && enemyTiles().some(e=>adjacent(t,e)))
@@ -3729,7 +3755,11 @@ function aiOneAction(fk, f, myTiles, enemyTiles, findBestAttack) {
   // 3. Take any other favorable attack. Lookahead tiers need solid odds AND a positive expected
   //    value (so they won't trade into a tile an enemy immediately recaptures); greedy tiers want
   //    a real troop edge, not just a tie.
-  if (attackable && (useEV ? (best.p >= 0.6 && best.score > 0) : edge >= Math.max(1, prof.minEdge))) {
+  // CONQUER cranks aggression: lookahead tiers commit at coin-flip odds (vs 0.6) and greedy tiers
+  // attack with one less troop of cushion, so the field actually grinds down to a last faction.
+  const favEV     = G.conquerMode ? 0.5 : 0.6;
+  const favGreedy = G.conquerMode ? Math.max(0, prof.minEdge - 1) : Math.max(1, prof.minEdge);
+  if (attackable && (useEV ? (best.p >= favEV && best.score > 0) : edge >= favGreedy)) {
     if (best.betray) breakPactBetrayal(fk, best.def.owner);
     return aiAttackWithAdvance(fk, best.atk, best.def);
   }
