@@ -896,11 +896,13 @@ function defaultSetup() {
       ? { type:'human', name:'', trait:'', diff }   // first faction starts as the lone human
       : { type:'ai',    name:'', trait:'', diff };
   });
-  return { seats, tyrant: false, secretAgendas: false };
+  return { seats, tyrant: false, secretAgendas: false, conquerMode: false };
 }
 
 function toggleTyrant() { G.setup.tyrant = !G.setup.tyrant; renderSetup(); }
-function toggleSecretAgendas() { G.setup.secretAgendas = !G.setup.secretAgendas; renderSetup(); }
+// SECRET AGENDAS and CONQUER are mutually exclusive win-rule modes — turning one on clears the other.
+function toggleSecretAgendas() { G.setup.secretAgendas = !G.setup.secretAgendas; if (G.setup.secretAgendas) G.setup.conquerMode = false; renderSetup(); }
+function toggleConquerMode() { G.setup.conquerMode = !G.setup.conquerMode; if (G.setup.conquerMode) G.setup.secretAgendas = false; renderSetup(); }
 
 function renderSetup() {
   if (!G.setup) G.setup = defaultSetup();
@@ -969,6 +971,17 @@ function renderSetup() {
             Each <strong>human</strong> secretly draws a win condition (you pick 1 of 3 at start) — wipe out rivals,
             sprawl, broker power, span the map. That card is your <em>only</em> path to victory; the AIs still race for the Nodes,
             so you must chase your agenda <em>and</em> stop them. The Tyrant is unaffected.
+          </div>
+        </div>
+      </div>` + `
+      <div class="setup-card" style="grid-column:1/-1; border-color:#e67e22; cursor:pointer;" onclick="toggleConquerMode()">
+        <h3 style="color:#e67e22; border-color:#e67e22">⚔️ CONQUER</h3>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="seat-opt ${G.setup.conquerMode?'selected':''}" style="flex:0 0 130px;">${G.setup.conquerMode?'⚔️ ON':'+ ENABLE'}</div>
+          <div style="font-size:12px; color:#bbb; line-height:1.5;">
+            Total war — the Nodes don't matter. The <strong>only</strong> way to win, for every faction, is to be the
+            <strong>last one standing</strong>: eliminate everyone else. Node dominance and the Tyrant's pact-victory are
+            disabled. (Overrides Secret Agendas.)
           </div>
         </div>
       </div>`;
@@ -1081,6 +1094,7 @@ function startGame() {
     grudges: {},   // "victim>betrayer" -> round it expires after
     playerFaction: order[0],  // local "acting/viewing" faction; repointed each human turn
     secretAgendas: !!G.setup.secretAgendas,   // SECRET AGENDAS mode (humans win only via their card)
+    conquerMode: !!G.setup.conquerMode,       // CONQUER mode (everyone wins only by last-standing)
   };
   gameOver = false;
   G.tiles = buildMap();
@@ -1483,9 +1497,12 @@ function renderSidebar() {
       <div class="agenda-banner-prog">▸ ${myObj.progress(agendaApi, G.playerFaction).label}</div>
       ${holdLine}
     </div>` : '';
+  const rivalsLeft = Object.entries(G.factions).filter(([k, ff]) => k !== G.playerFaction && !ff.eliminated).length;
   const winChip = myObj
     ? ''   // the agenda banner replaces the node-win chip for humans in this mode
-    : `<div class="res-chip">⭐ ${countNodes(G.playerFaction)}/3 TO WIN</div>`;
+    : G.conquerMode
+      ? `<div class="res-chip" style="border-color:#e67e22; color:#f0b27a;">⚔️ ${rivalsLeft} RIVAL${rivalsLeft === 1 ? '' : 'S'} LEFT</div>`
+      : `<div class="res-chip">⭐ ${countNodes(G.playerFaction)}/3 TO WIN</div>`;
   document.getElementById('resources-display').innerHTML = `
     ${agendaBanner}
     <div class="res-chip">🔋 ${f.resources} RES</div>
@@ -2332,8 +2349,8 @@ function endTurn() {
 
 const ROUND_CAP = 30;
 function endRound() {
-  // Node dominance win: held 3+ nodes for 3 consecutive round-ends
-  if (G.nodesHeldSince) {
+  // Node dominance win: held 3+ nodes for 3 consecutive round-ends (disabled in CONQUER mode).
+  if (G.nodesHeldSince && !G.conquerMode) {
     const api = objectiveApi();
     for (const [k, since] of Object.entries(G.nodesHeldSince)) {
       const f = G.factions[k];
@@ -2371,19 +2388,20 @@ function endRound() {
     // Tiebreak: most nodes (Tyrant excluded from timeout). In SECRET AGENDAS mode a human can't
     // win by node-count — so while any AI is still alive, humans are excluded from the tiebreak
     // (they failed their card). If only humans remain, the most-nodes human takes it (must end).
+    // CONQUER mode has no node objective — break the timeout by total territory instead.
     const aiAlive = livingKeys().some(k => k !== TYRANT_KEY && G.factions[k].isAI);
     let best=null, bestN=-1;
     for (const [k,f] of Object.entries(G.factions)) {
       if (f.eliminated || k === TYRANT_KEY) continue;
       if (G.secretAgendas && !f.isAI && aiAlive) continue;
-      const n = Object.values(G.tiles).filter(t=>t.owner===k&&t.isNode).length;
+      const n = Object.values(G.tiles).filter(t=>t.owner===k && (G.conquerMode || t.isNode)).length;
       if (n>bestN) { bestN=n; best=k; }
     }
     if (best) {
       const r = maybeReckoningApp(best);
       if (r === 'thralldom') return;
       if (r === 'freedom') { showWin(best, 'RECKONING (FREEDOM)', `${G.factions[best].name} fought off the Tyrant and claimed Nexus!`); return; }
-      showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most Nodes.`);
+      showWin(best,'TIMED OUT',`After ${ROUND_CAP} rounds, ${G.factions[best].name} held the most ${G.conquerMode ? 'territory' : 'Nodes'}.`);
     }
     return;
   }
@@ -4058,26 +4076,30 @@ function checkWin() {
   }
   // Node dominance tracking: announce when someone reaches 3+ nodes, clear when they drop below.
   // The actual node-hold WIN is checked in endRound (must hold for 3 consecutive round-ends).
-  if (!G.nodesHeldSince) G.nodesHeldSince = {};
-  const api = objectiveApi();
-  for (const [k,f] of Object.entries(G.factions)) {
-    if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
-    // In agenda mode, humans can't win by nodes — don't track or warn about their node count.
-    if (G.secretAgendas && !f.isAI) { delete G.nodesHeldSince[k]; continue; }
-    const n = countNodes(k);
-    if (OBJECTIVES.node_dominance.check(api, k) && !G.nodesHeldSince[k]) {
-      G.nodesHeldSince[k] = G.round;
-      addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 3 rounds to win.`);
-    } else if (n < 3 && G.nodesHeldSince[k]) {
-      delete G.nodesHeldSince[k];
-      addLog(`📢 ${f.name} lost node dominance — hold timer reset.`);
+  // CONQUER mode disables node victory entirely — the only path is last-standing.
+  if (!G.conquerMode) {
+    if (!G.nodesHeldSince) G.nodesHeldSince = {};
+    const api = objectiveApi();
+    for (const [k,f] of Object.entries(G.factions)) {
+      if (f.eliminated) { delete G.nodesHeldSince[k]; continue; }
+      // In agenda mode, humans can't win by nodes — don't track or warn about their node count.
+      if (G.secretAgendas && !f.isAI) { delete G.nodesHeldSince[k]; continue; }
+      const n = countNodes(k);
+      if (OBJECTIVES.node_dominance.check(api, k) && !G.nodesHeldSince[k]) {
+        G.nodesHeldSince[k] = G.round;
+        addLog(`⚠️ ${f.name} controls ${n} Nodes! Must hold for 3 rounds to win.`);
+      } else if (n < 3 && G.nodesHeldSince[k]) {
+        delete G.nodesHeldSince[k];
+        addLog(`📢 ${f.name} lost node dominance — hold timer reset.`);
+      }
     }
   }
   // The Tyrant wins by diplomacy: a (secret) pact with EVERY surviving rival = no enemies left.
   // NEVER in a single-human game — the lone human must always keep a path to the Reckoning,
   // so the Tyrant can't win by ally-default even after eliminations shrink the field.
+  // CONQUER mode disables this too: even the Tyrant must eliminate everyone.
   const soloHuman = (G.humans ? G.humans.length : 0) === 1;
-  if (tyrantAlive() && !soloHuman) {
+  if (tyrantAlive() && !soloHuman && !G.conquerMode) {
     const others = livingKeys().filter(k => k !== TYRANT_KEY);
     if (others.length > 0 && others.every(k => hasPact(TYRANT_KEY, k))) {
       showWin(TYRANT_KEY, 'NO ENEMIES LEFT', 'The Tyrant bought peace with every rival — and rules Nexus by default.');
@@ -4519,9 +4541,17 @@ function hostSetDiff() {
   roomRef.update({ diff: next });
 }
 // Host-only: toggle SECRET AGENDAS for the room. Players draft their card before readying.
+// Mutually exclusive with CONQUER (enabling one clears the other).
 function hostSetAgendas() {
   if (!lobbyIsHost) return;
-  roomRef.update({ secretAgendas: !(lastRoomData && lastRoomData.secretAgendas) });
+  const on = !(lastRoomData && lastRoomData.secretAgendas);
+  roomRef.update({ secretAgendas: on, conquerMode: on ? false : (lastRoomData && lastRoomData.conquerMode) || false });
+}
+// Host-only: toggle CONQUER (last-faction-standing only). Mutually exclusive with SECRET AGENDAS.
+function hostSetConquer() {
+  if (!lobbyIsHost) return;
+  const on = !(lastRoomData && lastRoomData.conquerMode);
+  roomRef.update({ conquerMode: on, secretAgendas: on ? false : (lastRoomData && lastRoomData.secretAgendas) || false });
 }
 
 // Online SECRET AGENDAS draft: pick 1 of 3, store the card id on my seat (per-seat write — no
@@ -4724,6 +4754,15 @@ function renderStepReview(data) {
       </div>
       <span style="font-size:13px;font-weight:700;color:${data.secretAgendas ? '#c39bd3' : '#888'};">${data.secretAgendas ? 'ON' : 'OFF'}</span>
     </div>` : '';
+  const conquerToggle = lobbyIsHost ? `
+    <div style="margin-top:10px;padding:10px 12px;border:1px solid #e67e22;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="hostSetConquer()">
+      <span style="font-size:20px;">⚔️</span>
+      <div style="flex:1;">
+        <div style="color:#e67e22;font-family:'Bangers';font-size:16px;letter-spacing:1px;">CONQUER</div>
+        <div style="font-size:11px;color:#888;">Tap to toggle — only the last faction standing wins.</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${data.conquerMode ? '#e67e22' : '#888'};">${data.conquerMode ? 'ON' : 'OFF'}</span>
+    </div>` : '';
   // When agendas are on, every player drafts their own card here before they can ready.
   const drawnObj = myObjective && OBJECTIVES[myObjective];
   const agendaSection = data.secretAgendas ? (drawnObj ? `
@@ -4743,7 +4782,7 @@ function renderStepReview(data) {
       <div><span>NAME</span><b>${esc(myName) || '—'}</b></div>
       <div><span>FACTION</span><b style="color:${f ? f.color : '#fff'}">${f ? f.icon + ' ' + f.name : '—'}</b></div>
       <div><span>PASSIVE</span><b>${t ? t.name : '—'}</b></div>
-    </div>${tyrantToggle}${diffToggle}${agendaToggle}${agendaSection}
+    </div>${tyrantToggle}${diffToggle}${agendaToggle}${conquerToggle}${agendaSection}
     <p style="font-size:12px;color:#888;margin-top:10px;">Tap READY to lock in. The host starts once everyone is ready.</p>
   `, `
     <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
@@ -4772,6 +4811,7 @@ function renderRoster(data) {
     ? `<button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
        <button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetDiff()" title="${diffProf.blurb}">AI: ${diffProf.icon} ${diffProf.name}</button>
        <button class="btn btn-secondary" style="font-size:13px;${data.secretAgendas ? 'border-color:#c39bd3;color:#c39bd3;' : ''}" onclick="hostSetAgendas()">🎴 AGENDAS: ${data.secretAgendas ? 'ON' : 'OFF'}</button>
+       <button class="btn btn-secondary" style="font-size:13px;${data.conquerMode ? 'border-color:#e67e22;color:#e67e22;' : ''}" onclick="hostSetConquer()">⚔️ CONQUER: ${data.conquerMode ? 'ON' : 'OFF'}</button>
        <button class="btn btn-primary" style="flex:1;font-size:18px;${everyoneReady ? '' : 'opacity:.45;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
     : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${everyoneReady ? 'WAITING FOR HOST…' : 'WAITING FOR PLAYERS…'}</div>`;
   return `
@@ -4781,7 +4821,7 @@ function renderRoster(data) {
         <span style="font-size:11px;color:${iAmReady ? '#27ae60' : '#888'};font-weight:700;">${iAmReady ? '✓ YOU ARE READY' : ''}</span>
       </div>
       <h3 style="margin-bottom:6px;">Lobby</h3>
-      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI (${diffProf.icon} ${diffProf.name}) at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}${data.secretAgendas ? ' 🎴 Secret agendas are in play.' : ''}</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI (${diffProf.icon} ${diffProf.name}) at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}${data.secretAgendas ? ' 🎴 Secret agendas are in play.' : ''}${data.conquerMode ? ' ⚔️ Conquer mode — last faction standing wins.' : ''}</p>
       ${rows}
       <div class="wizard-foot" style="margin-top:14px;">
         <button class="btn btn-secondary" style="font-size:13px;" onclick="lobbyEdit()">EDIT</button>
@@ -4809,7 +4849,7 @@ function hostStart() {
   // A claim from before an exclusion check (or a tampered write) falls back to a legal random trait.
   Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
 
-  buildOnlineGame(seats, !!lastRoomData.tyrant, lastRoomData.diff || DEFAULT_TIER, !!lastRoomData.secretAgendas);
+  buildOnlineGame(seats, !!lastRoomData.tyrant, lastRoomData.diff || DEFAULT_TIER, !!lastRoomData.secretAgendas, !!lastRoomData.conquerMode);
   pickMapBackdrop();   // fresh random backdrop, recorded on G.mapBg so every joiner matches the host
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
@@ -4825,7 +4865,7 @@ function hostStart() {
   roomRef.update({ seats, started: true, state: snap }).then(() => startRound());
 }
 
-function buildOnlineGame(seats, tyrant, diff, agendas) {
+function buildOnlineGame(seats, tyrant, diff, agendas, conquer) {
   const tier = AI_PROFILES[diff] ? diff : DEFAULT_TIER;
   const order = shuffle(Object.keys(FACTIONS));
   const factions = {};
@@ -4844,7 +4884,7 @@ function buildOnlineGame(seats, tyrant, diff, agendas) {
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
     tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false, nodesHeldSince: {},
-    agendaMetSince: {}, secretAgendas: !!agendas,
+    agendaMetSince: {}, secretAgendas: !!agendas, conquerMode: !!conquer,
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
@@ -4856,9 +4896,9 @@ function buildOnlineGame(seats, tyrant, diff, agendas) {
 // (ES modules scope all declarations; inline handlers need globals)
 // ============================================================
 Object.assign(window, {
-  showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant, toggleSecretAgendas,
+  showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant, toggleSecretAgendas, toggleConquerMode,
   setSeatType, setSeatName, setSeatTrait, setSeatDiff, setAllDiff,
-  hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostSetAgendas, hostStart,
+  hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostSetAgendas, hostSetConquer, hostStart,
   setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyDrawAgenda, lobbyReady, leaveLobby,
   acceptTyrantPact, refuseTyrantPact, pickRoundBoon,
   tyrantModalConfirm, tyrantModalCancel,
