@@ -264,6 +264,7 @@ let lobbyIsHost    = false;
 let myClientId     = null;
 let myName         = '';
 let myTrait        = '';
+let myObjective    = '';      // online SECRET AGENDAS: the card id I drafted this lobby (stored on my seat)
 let lobbyStep      = 1;       // online lobby wizard: 1 name · 2 faction · 3 passive · 4 review · 5 ready/roster
 let tutorialMode   = false;   // coach-mark tour running
 let tutorialStep   = 0;
@@ -1120,14 +1121,16 @@ function beginAgendaDraft(done) {
 }
 
 function showAgendaDraft(fk, choices, onPick) {
-  const f = G.factions[fk];
+  // Works both in-game (G.factions populated) and in the online lobby (only FACTIONS def exists yet).
+  const f = (G.factions && G.factions[fk]) || FACTIONS[fk];
+  const multi = online || (G.humans && G.humans.length > 1);
   document.querySelectorAll('.agenda-overlay').forEach(e => e.remove());
   const ov = document.createElement('div');
   ov.className = 'agenda-overlay';
   ov.innerHTML = `
     <div class="agenda-draft">
       <div class="agenda-draft-head" style="color:${f.color}">${f.icon} ${f.name}</div>
-      <div class="agenda-draft-sub">Choose your <b>SECRET AGENDA</b> — your only path to victory. ${G.humans.length > 1 ? 'Keep it hidden from the others.' : ''}</div>
+      <div class="agenda-draft-sub">Choose your <b>SECRET AGENDA</b> — your only path to victory. ${multi ? 'Keep it hidden from the others.' : ''}</div>
       <div class="agenda-choices">
         ${choices.map(o => `
           <div class="agenda-card" data-id="${o.id}">
@@ -4348,6 +4351,7 @@ function loadRemoteState(s) {
   clean.tyrantStruck    = clean.tyrantStruck    || {};
   clean.pactRenewals    = clean.pactRenewals    || {};
   clean.nodesHeldSince  = clean.nodesHeldSince  || {};
+  clean.agendaMetSince  = clean.agendaMetSince  || {};
   if (clean.pendingChoiceEvent) clean.pendingChoiceEvent.choicesMade = clean.pendingChoiceEvent.choicesMade || {};
   G = clean;
   signalJamActive = sj; totalWar = tw; gameOver = go;
@@ -4514,6 +4518,24 @@ function hostSetDiff() {
   try { localStorage.setItem('fracture_aiDiff', next); } catch (e) {}
   roomRef.update({ diff: next });
 }
+// Host-only: toggle SECRET AGENDAS for the room. Players draft their card before readying.
+function hostSetAgendas() {
+  if (!lobbyIsHost) return;
+  roomRef.update({ secretAgendas: !(lastRoomData && lastRoomData.secretAgendas) });
+}
+
+// Online SECRET AGENDAS draft: pick 1 of 3, store the card id on my seat (per-seat write — no
+// full-state clobber). Each player drafts on their own device; the card never shows on the roster.
+function lobbyDrawAgenda() {
+  const fk = mySeatKey(lastRoomData);
+  if (!fk) { lobbyStep = 2; renderLobby(lastRoomData); return; }
+  const choices = shuffle(agendaPool().slice()).slice(0, 3);
+  showAgendaDraft(fk, choices, (chosenId) => {
+    myObjective = chosenId;
+    writeSeat(fk, { ...lastRoomData.seats[fk], objective: chosenId, ready: false });
+    renderLobby(lastRoomData);
+  });
+}
 
 // ============================================================
 // ONLINE LOBBY — guided wizard: name → faction → passive → ready
@@ -4553,7 +4575,7 @@ function lobbyPickFaction(fk) {
   clearMyOtherSeats(fk);
   // Keep my trait only if it's still legal for the new faction.
   if (myTrait && (TRAIT_EXCLUSIONS[fk] || []).includes(myTrait)) myTrait = '';
-  writeSeat(fk, { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait || '', ready: false });
+  writeSeat(fk, { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait || '', objective: myObjective || '', ready: false });
   renderLobby(lastRoomData);
 }
 function lobbyPickTrait(id) {
@@ -4568,7 +4590,9 @@ function lobbyReady() {
   const fk = mySeatKey(lastRoomData);
   if (!fk) { lobbyStep = 2; renderLobby(lastRoomData); return; }
   if (!myTrait) { lobbyStep = 3; renderLobby(lastRoomData); return; }
-  writeSeat(fk, { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait, ready: true });
+  // SECRET AGENDAS: must draw a card before locking in.
+  if (lastRoomData && lastRoomData.secretAgendas && !myObjective) { lobbyStep = 4; renderLobby(lastRoomData); return; }
+  writeSeat(fk, { type: 'human', by: myClientId, name: myName.trim(), trait: myTrait, objective: myObjective || '', ready: true });
   lobbyStep = 5;
   renderLobby(lastRoomData);
 }
@@ -4594,7 +4618,16 @@ function renderLobby(data) {
   if (!data) return;
   const mine = mySeatKey(data);
   // Sync local fields from the authoritative seat (covers reconnect / Firebase echo).
-  if (mine) { if (!myName) myName = data.seats[mine].name || ''; if (!myTrait) myTrait = data.seats[mine].trait || ''; }
+  if (mine) {
+    if (!myName) myName = data.seats[mine].name || '';
+    if (!myTrait) myTrait = data.seats[mine].trait || '';
+    if (!myObjective) myObjective = data.seats[mine].objective || '';
+  }
+  // SECRET AGENDAS turned on after I readied without a card — un-ready me and send me to draft.
+  if (mine && data.secretAgendas && data.seats[mine].ready && !data.seats[mine].objective) {
+    writeSeat(mine, { ...data.seats[mine], ready: false });
+    lobbyStep = 4;
+  }
   // If I've already readied (and the game hasn't started), park on the roster view.
   if (mine && data.seats[mine].ready && lobbyStep < 5) lobbyStep = 5;
   if (lobbyStep >= 5 && (!mine || !data.seats[mine].ready)) lobbyStep = 4;  // un-readied elsewhere
@@ -4682,16 +4715,39 @@ function renderStepReview(data) {
       </div>
       <span style="font-size:13px;font-weight:700;color:#bbb;">${dp.name.toUpperCase()}</span>
     </div>` : '';
+  const agendaToggle = lobbyIsHost ? `
+    <div style="margin-top:10px;padding:10px 12px;border:1px solid #c39bd3;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="hostSetAgendas()">
+      <span style="font-size:20px;">🎴</span>
+      <div style="flex:1;">
+        <div style="color:#c39bd3;font-family:'Bangers';font-size:16px;letter-spacing:1px;">SECRET AGENDAS</div>
+        <div style="font-size:11px;color:#888;">Tap to toggle — each player draws a hidden win condition.</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${data.secretAgendas ? '#c39bd3' : '#888'};">${data.secretAgendas ? 'ON' : 'OFF'}</span>
+    </div>` : '';
+  // When agendas are on, every player drafts their own card here before they can ready.
+  const drawnObj = myObjective && OBJECTIVES[myObjective];
+  const agendaSection = data.secretAgendas ? (drawnObj ? `
+    <div class="agenda-banner" style="margin-top:12px;">
+      <div class="agenda-banner-label">🎴 YOUR SECRET AGENDA</div>
+      <div class="agenda-banner-title">${drawnObj.title}</div>
+      <div class="agenda-banner-desc">${drawnObj.desc}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;cursor:pointer;text-decoration:underline;" onclick="lobbyDrawAgenda()">↻ redraw</div>
+    </div>` : `
+    <div style="margin-top:12px;padding:12px;border:1px dashed #c39bd3;border-radius:8px;text-align:center;cursor:pointer;" onclick="lobbyDrawAgenda()">
+      <div style="font-family:'Bangers';font-size:18px;color:#c39bd3;letter-spacing:1px;">🎴 DRAW YOUR SECRET AGENDA</div>
+      <div style="font-size:11px;color:#888;margin-top:2px;">Pick 1 of 3 — your only path to victory. Required before you can ready up.</div>
+    </div>`) : '';
+  const needsDraw = data.secretAgendas && !myObjective;
   return wizShell('Ready to deploy?', 4, `
     <div class="wiz-review">
       <div><span>NAME</span><b>${esc(myName) || '—'}</b></div>
       <div><span>FACTION</span><b style="color:${f ? f.color : '#fff'}">${f ? f.icon + ' ' + f.name : '—'}</b></div>
       <div><span>PASSIVE</span><b>${t ? t.name : '—'}</b></div>
-    </div>${tyrantToggle}${diffToggle}
+    </div>${tyrantToggle}${diffToggle}${agendaToggle}${agendaSection}
     <p style="font-size:12px;color:#888;margin-top:10px;">Tap READY to lock in. The host starts once everyone is ready.</p>
   `, `
     <button class="btn btn-secondary" style="font-size:15px;" onclick="lobbyBack()">← BACK</button>
-    <button class="btn btn-primary" style="flex:1;font-size:18px;background:#27ae60;border-color:#27ae60;color:#fff;" onclick="lobbyReady()">✓ READY</button>
+    <button class="btn btn-primary" style="flex:1;font-size:18px;background:#27ae60;border-color:#27ae60;color:#fff;${needsDraw ? 'opacity:.45;pointer-events:none;' : ''}" onclick="lobbyReady()">✓ READY</button>
   `);
 }
 
@@ -4715,6 +4771,7 @@ function renderRoster(data) {
   const hostFoot = lobbyIsHost
     ? `<button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetTyrant()">${data.tyrant ? '☠ TYRANT: ON' : 'TYRANT: OFF'}</button>
        <button class="btn btn-secondary" style="font-size:13px;" onclick="hostSetDiff()" title="${diffProf.blurb}">AI: ${diffProf.icon} ${diffProf.name}</button>
+       <button class="btn btn-secondary" style="font-size:13px;${data.secretAgendas ? 'border-color:#c39bd3;color:#c39bd3;' : ''}" onclick="hostSetAgendas()">🎴 AGENDAS: ${data.secretAgendas ? 'ON' : 'OFF'}</button>
        <button class="btn btn-primary" style="flex:1;font-size:18px;${everyoneReady ? '' : 'opacity:.45;pointer-events:none;'}" onclick="hostStart()">START GAME →</button>`
     : `<div style="flex:1;text-align:center;align-self:center;color:#888;font-family:'Bangers';letter-spacing:1px;">${everyoneReady ? 'WAITING FOR HOST…' : 'WAITING FOR PLAYERS…'}</div>`;
   return `
@@ -4724,7 +4781,7 @@ function renderRoster(data) {
         <span style="font-size:11px;color:${iAmReady ? '#27ae60' : '#888'};font-weight:700;">${iAmReady ? '✓ YOU ARE READY' : ''}</span>
       </div>
       <h3 style="margin-bottom:6px;">Lobby</h3>
-      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI (${diffProf.icon} ${diffProf.name}) at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}</p>
+      <p style="font-size:12px;color:#888;margin-bottom:10px;">Share code <b style="color:var(--node-glow);letter-spacing:2px;">${roomCode}</b>. Open seats become AI (${diffProf.icon} ${diffProf.name}) at start.${data.tyrant ? ' ☠ The Tyrant is in play.' : ''}${data.secretAgendas ? ' 🎴 Secret agendas are in play.' : ''}</p>
       ${rows}
       <div class="wizard-foot" style="margin-top:14px;">
         <button class="btn btn-secondary" style="font-size:13px;" onclick="lobbyEdit()">EDIT</button>
@@ -4746,12 +4803,13 @@ function hostStart() {
   const claimed = Object.values(seats).filter(s => s.by);
   if (!claimed.length) { alert('Claim a faction before starting.'); return; }
   if (!claimed.every(s => s.ready)) { alert('Waiting on all players to ready up.'); return; }
+  if (lastRoomData.secretAgendas && !claimed.every(s => s.objective)) { alert('Waiting on all players to draw their secret agenda.'); return; }
   // Unclaimed human seats fall back to AI.
   Object.keys(seats).forEach(k => { if (seats[k].type === 'human' && !seats[k].by) seats[k] = { type: 'ai', by: null, name: '', trait: '' }; });
   // A claim from before an exclusion check (or a tampered write) falls back to a legal random trait.
   Object.keys(seats).forEach(k => { if ((TRAIT_EXCLUSIONS[k] || []).includes(seats[k].trait)) seats[k].trait = ''; });
 
-  buildOnlineGame(seats, !!lastRoomData.tyrant, lastRoomData.diff || DEFAULT_TIER);
+  buildOnlineGame(seats, !!lastRoomData.tyrant, lastRoomData.diff || DEFAULT_TIER, !!lastRoomData.secretAgendas);
   pickMapBackdrop();   // fresh random backdrop, recorded on G.mapBg so every joiner matches the host
   isDriver = true;
   mySeats = Object.keys(seats).filter(k => seats[k].type === 'human' && seats[k].by === myClientId);
@@ -4767,7 +4825,7 @@ function hostStart() {
   roomRef.update({ seats, started: true, state: snap }).then(() => startRound());
 }
 
-function buildOnlineGame(seats, tyrant, diff) {
+function buildOnlineGame(seats, tyrant, diff, agendas) {
   const tier = AI_PROFILES[diff] ? diff : DEFAULT_TIER;
   const order = shuffle(Object.keys(FACTIONS));
   const factions = {};
@@ -4776,6 +4834,8 @@ function buildOnlineGame(seats, tyrant, diff) {
     factions[k] = (s.type === 'human')
       ? mkFaction(s.name || FACTIONS[k].name, k, false, s.trait || randTrait(k))
       : mkFaction('NEXUS-' + k.slice(0, 3).toUpperCase(), k, true, randTrait(k), tier);
+    // SECRET AGENDAS: carry each human's drafted card (chosen in the lobby) onto their faction.
+    if (agendas && s.type === 'human' && s.objective) factions[k].objective = s.objective;
   });
   const turnOrder = order.slice();
   if (tyrant) { factions[TYRANT_KEY] = mkFaction(TYRANT_DEF.name, TYRANT_KEY, true, null); turnOrder.push(TYRANT_KEY); }
@@ -4784,6 +4844,7 @@ function buildOnlineGame(seats, tyrant, diff) {
     factions, turnOrder, humans: order.filter(k => seats[k].type === 'human'),
     live: false,
     tyrantOn: !!tyrant, tyrantHarbor: 0, tyrantLastOffer: {}, tyrantStruck: {}, tyrantConquest: false, nodesHeldSince: {},
+    agendaMetSince: {}, secretAgendas: !!agendas,
     tiles: {}, log: [], pacts: {}, grudges: {}, playerFaction: order[0], seq: 0
   };
   gameOver = false;
@@ -4797,8 +4858,8 @@ function buildOnlineGame(seats, tyrant, diff) {
 Object.assign(window, {
   showSetup, showTitle, goOnline, startGame, openRules, closeRules,  setAction, endTurn, dismissEvent, toggleTyrant, toggleSecretAgendas,
   setSeatType, setSeatName, setSeatTrait, setSeatDiff, setAllDiff,
-  hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostStart,
-  setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyReady, leaveLobby,
+  hostRoom, joinRoomPrompt, hostSetTyrant, hostSetDiff, hostSetAgendas, hostStart,
+  setMyName, lobbyNext, lobbyBack, lobbyEdit, lobbyPickFaction, lobbyPickTrait, lobbyDrawAgenda, lobbyReady, leaveLobby,
   acceptTyrantPact, refuseTyrantPact, pickRoundBoon,
   tyrantModalConfirm, tyrantModalCancel,
   acknowledgeCombat, acknowledgeAiSummary,
