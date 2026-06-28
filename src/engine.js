@@ -460,7 +460,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
   if (leaderEntrenchCracked(state, tgtId, tgt.owner)) entrench = 0;
   if (encircledDef) entrench = 0;   // cut off — no time/space to dig in
   const lastStand = (df && hasTrait(df, 'last_stand') && tgt.troops <= 2) ? 3 : 0;
-  const fortifyVal = (df && hasTrait(df, 'fortify')) ? (tgt.heldRounds > 0 ? 2 : 1) : 0;
+  const fortifyVal = (df && hasTrait(df, 'fortify')) ? (tgt.damaged ? 1 : 2) : 0;  // +2 undamaged, +1 after a combat casualty
   const comms = controlsNode(state, attackerFk, 'node_comms') ? 1 : 0;
   const data  = controlsNode(state, tgt.owner, 'node_data') ? 1 : 0;
   const coalition = coalitionAtkBonus(state, tgt.owner, attackerFk);
@@ -503,6 +503,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
       tgt.owner = attackerFk;
       tgt.troops = 1;
       tgt.heldRounds = 0;
+      tgt.damaged = false;   // fresh for its new owner (FORTIFY: +2 again)
       tgt.claimedRound = state.round;
       src.troops = Math.max(1, src.troops - 1);
       // Scavenger loot (denied by last stand)
@@ -529,6 +530,7 @@ function resolveCombat(state, attackerFk, srcId, tgtId, priorStrikes) {
       }
     } else {
       tgt.heldRounds = 0;
+      tgt.damaged = true;   // lost a troop in combat (FORTIFY decays +2 → +1)
       log.push(`⚔️ ${af.icon} hit ${tgt.name} [${attTotal} vs ${defTotal}] — ${tgt.troops} left`);
     }
   } else {
@@ -900,7 +902,7 @@ export function reduce(inputState, action) {
           const sabPreTroops = tile.troops;  // before the hit (siphon only from a surviving tile)
           const drop = (tile.heldRounds || 0) >= 2 ? 1 : 2;
           if (tile.troops > drop) { tile.troops -= drop; }
-          else { tile.owner = null; tile.troops = 0; }
+          else { tile.owner = null; tile.troops = 0; tile.damaged = false; }
           if (tile.owner === null && tilesOf(state, sabPrev).length === 0) {
             killFaction(state, sabPrev, log);
             awardEliminationBounty(state, fk, sabPrev, log);
@@ -944,7 +946,7 @@ export function reduce(inputState, action) {
           tile.troops--;
           if (defectTo) defectTo.troops++;
           if (tile.troops <= 0) {
-            tile.owner = fk; tile.troops = 1; tile.heldRounds = 0; tile.claimedRound = state.round;   // freshly taken — drop prior owner's dig-in
+            tile.owner = fk; tile.troops = 1; tile.heldRounds = 0; tile.damaged = false; tile.claimedRound = state.round;   // freshly taken — drop prior owner's dig-in
             if (tilesOf(state, bribedPrev).length === 0) {
               killFaction(state, bribedPrev, log);
               awardEliminationBounty(state, fk, bribedPrev, log);

@@ -46,7 +46,7 @@ export const TRAITS = [
   { id:'hoard',      name:'HOARDER',      desc:'Earn +1 resource per Node'           },
   { id:'ghost_step', name:'GHOST STEP',   desc:'Move OR attack 2 tiles — leapfrog through anything'},
   { id:'tactician',  name:'TACTICIAN',    desc:'Roll 3d6 attack, keep best 2'        },
-  { id:'fortify',    name:'FORTIFY',      desc:'Fresh tiles: +2 def margin. After casualty: +1'},
+  { id:'fortify',    name:'FORTIFY',      desc:'Undamaged tiles: +2 def margin. After a combat casualty: +1'},
 ];
 
 // Phase 5b: faction → traits they CANNOT pick
