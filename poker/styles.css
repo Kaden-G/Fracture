@@ -1,0 +1,824 @@
+@import url('https://fonts.googleapis.com/css2?family=Rye&family=Playfair+Display:wght@400;700;900&family=IM+Fell+English+SC&display=swap');
+
+:root {
+  --saloon-dark: #1a0e07;
+  --saloon-wood: #2d1810;
+  --saloon-wood-light: #4a2a18;
+  --saloon-felt: #1a4d2e;
+  --saloon-felt-light: #236b3e;
+  --saloon-gold: #c9a84c;
+  --saloon-gold-bright: #e6c65a;
+  --saloon-brass: #b8860b;
+  --saloon-leather: #5c3317;
+  --saloon-cream: #f5e6c8;
+  --saloon-red: #8b1a1a;
+  --saloon-red-bright: #c0392b;
+  --card-red: #9b1b1b;
+  --card-black: #1a1a1a;
+  --text-light: #ede0cc;
+  --text-gold: #d4a843;
+  --text-dim: #8a7a64;
+  --shadow-dark: rgba(0,0,0,0.6);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'IM Fell English SC', 'Georgia', serif;
+  background: var(--saloon-dark);
+  color: var(--text-light);
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 48px,
+      rgba(80,40,20,0.15) 48px,
+      rgba(80,40,20,0.15) 50px
+    ),
+    linear-gradient(180deg, #1a0e07 0%, #0d0704 100%);
+}
+
+/* ── SCREENS ── */
+.screen { display: none; flex-direction: column; align-items: center; padding: 20px; min-height: 100vh; }
+.screen.active { display: flex; }
+
+/* ── TITLE SCREEN ── */
+#title-screen {
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(201,168,76,0.08) 0%, transparent 60%),
+    var(--saloon-dark);
+}
+
+.saloon-sign {
+  position: relative;
+  padding: 30px 60px;
+  margin-bottom: 10px;
+}
+
+.saloon-sign h1 {
+  font-family: 'Rye', cursive;
+  font-size: clamp(48px, 10vw, 96px);
+  color: var(--saloon-gold);
+  text-shadow:
+    0 0 20px rgba(201,168,76,0.4),
+    0 4px 8px rgba(0,0,0,0.8),
+    2px 2px 0 var(--saloon-wood);
+  letter-spacing: 8px;
+  text-align: center;
+}
+
+.saloon-sign .sign-subtitle {
+  font-family: 'Rye', cursive;
+  font-size: clamp(14px, 3vw, 22px);
+  color: var(--saloon-cream);
+  text-align: center;
+  letter-spacing: 4px;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+.sign-border {
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--saloon-gold);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.sign-border::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--saloon-brass);
+  border-radius: 2px;
+}
+
+.title-flavor {
+  font-family: 'IM Fell English SC', serif;
+  font-size: clamp(12px, 2.5vw, 16px);
+  color: var(--text-dim);
+  text-align: center;
+  max-width: 500px;
+  margin: 16px 0 30px;
+  font-style: italic;
+  line-height: 1.6;
+}
+
+.title-info {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.ornament {
+  color: var(--saloon-gold);
+  font-size: 24px;
+  letter-spacing: 12px;
+  margin: 8px 0;
+  opacity: 0.5;
+}
+
+/* ── BUTTONS ── */
+.btn {
+  font-family: 'Rye', cursive;
+  font-size: 16px;
+  padding: 12px 32px;
+  border: 2px solid var(--saloon-gold);
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  position: relative;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--saloon-gold) 0%, var(--saloon-brass) 100%);
+  color: var(--saloon-dark);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, var(--saloon-gold-bright) 0%, var(--saloon-gold) 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+
+.btn-secondary {
+  background: var(--saloon-wood);
+  color: var(--saloon-gold);
+  border-color: var(--saloon-wood-light);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.btn-secondary:hover {
+  background: var(--saloon-wood-light);
+  border-color: var(--saloon-gold);
+}
+
+.btn-danger {
+  background: var(--saloon-red);
+  color: var(--saloon-cream);
+  border-color: var(--saloon-red-bright);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.btn-danger:hover {
+  background: var(--saloon-red-bright);
+}
+
+.btn-allin {
+  background: linear-gradient(180deg, var(--saloon-red) 0%, #5a0f0f 100%);
+  color: var(--saloon-gold-bright);
+  border-color: var(--saloon-gold);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 15px rgba(201,168,76,0.15);
+  font-size: 14px;
+}
+.btn-allin:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 25px rgba(201,168,76,0.3);
+}
+
+.btn-back {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--saloon-wood-light);
+  font-family: 'IM Fell English SC', serif;
+  font-size: 14px;
+}
+
+/* ── SETUP SCREEN ── */
+#setup-screen {
+  justify-content: center;
+}
+
+.panel-header {
+  font-family: 'Rye', cursive;
+  font-size: clamp(22px, 5vw, 36px);
+  color: var(--saloon-gold);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+  margin-bottom: 24px;
+  letter-spacing: 4px;
+}
+
+.setup-grid {
+  background: var(--saloon-wood);
+  border: 2px solid var(--saloon-wood-light);
+  border-radius: 4px;
+  padding: 24px;
+  width: min(90vw, 420px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.setup-row {
+  margin-bottom: 20px;
+}
+
+.setup-label {
+  display: block;
+  font-family: 'Rye', cursive;
+  font-size: 13px;
+  color: var(--saloon-gold);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.setup-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--saloon-dark);
+  border: 2px solid var(--saloon-wood-light);
+  border-radius: 3px;
+  color: var(--saloon-cream);
+  font-family: 'IM Fell English SC', serif;
+  font-size: 16px;
+  outline: none;
+}
+.setup-input:focus {
+  border-color: var(--saloon-gold);
+}
+
+.setup-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.setup-slider {
+  flex: 1;
+  accent-color: var(--saloon-gold);
+  height: 6px;
+}
+
+.setup-slider-val {
+  font-family: 'Rye', cursive;
+  font-size: 24px;
+  color: var(--saloon-gold);
+  min-width: 30px;
+  text-align: center;
+}
+
+/* ── LOBBY ── */
+.lobby-menu, .lobby-room {
+  width: min(90vw, 440px);
+  background: var(--saloon-wood);
+  border: 2px solid var(--saloon-wood-light);
+  border-radius: 4px;
+  padding: 28px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.lobby-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.room-code-display {
+  font-family: 'Rye', cursive;
+  font-size: 16px;
+  color: var(--text-light);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.room-code {
+  font-size: 32px;
+  color: var(--saloon-gold-bright);
+  letter-spacing: 8px;
+  display: block;
+  margin-top: 4px;
+  text-shadow: 0 0 10px rgba(201,168,76,0.3);
+}
+
+.code-input {
+  text-transform: uppercase;
+  letter-spacing: 8px;
+  font-size: 24px !important;
+  text-align: center;
+  font-family: 'Rye', cursive !important;
+}
+
+.lobby-label {
+  font-family: 'Rye', cursive;
+  font-size: 12px;
+  color: var(--saloon-gold);
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+}
+
+.lobby-player {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--saloon-dark);
+  border: 1px solid var(--saloon-wood-light);
+  border-radius: 3px;
+  margin-bottom: 6px;
+}
+.lobby-player.ready {
+  border-color: var(--saloon-felt-light);
+}
+
+.lobby-player-name {
+  color: var(--saloon-cream);
+  font-size: 15px;
+}
+
+.lobby-player-status {
+  font-family: 'Rye', cursive;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.lobby-player.ready .lobby-player-status {
+  color: var(--saloon-felt-light);
+}
+
+.lobby-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ready-badge {
+  font-family: 'Rye', cursive;
+  text-align: center;
+  color: var(--saloon-felt-light);
+  font-size: 14px;
+  letter-spacing: 2px;
+  padding: 10px;
+}
+
+.lobby-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 16px;
+  font-style: italic;
+}
+
+/* ── GAME SCREEN ── */
+#game-screen {
+  padding: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(26,77,46,0.3) 0%, transparent 70%),
+    var(--saloon-dark);
+}
+
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--saloon-wood);
+  border-bottom: 3px solid var(--saloon-gold);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.game-title {
+  font-family: 'Rye', cursive;
+  font-size: 20px;
+  color: var(--saloon-gold);
+  letter-spacing: 3px;
+}
+
+#phase-display {
+  font-family: 'Rye', cursive;
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+
+#pot-display {
+  font-family: 'Rye', cursive;
+  font-size: 18px;
+  color: var(--saloon-gold-bright);
+  text-shadow: 0 0 8px rgba(201,168,76,0.3);
+}
+
+/* ── TABLE ── */
+.table-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  position: relative;
+}
+
+.felt-table {
+  background:
+    radial-gradient(ellipse at 50% 50%, var(--saloon-felt-light) 0%, var(--saloon-felt) 60%, #0f3520 100%);
+  border: 8px solid var(--saloon-wood-light);
+  border-radius: 140px;
+  padding: 30px 40px;
+  box-shadow:
+    inset 0 0 40px rgba(0,0,0,0.4),
+    0 8px 32px rgba(0,0,0,0.6),
+    0 0 0 4px var(--saloon-brass);
+  width: min(95vw, 700px);
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+}
+
+.felt-table::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(201,168,76,0.15);
+  border-radius: 134px;
+  pointer-events: none;
+}
+
+.pot-label {
+  font-family: 'Rye', cursive;
+  font-size: clamp(16px, 3vw, 22px);
+  color: var(--saloon-gold-bright);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+  letter-spacing: 2px;
+}
+
+/* ── CARDS ── */
+#community-cards {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.card {
+  width: 60px;
+  height: 86px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  transition: transform 0.2s;
+}
+
+.card.black {
+  background: linear-gradient(135deg, #fff 0%, #f0ece4 100%);
+  border: 2px solid #333;
+  color: var(--card-black);
+}
+
+.card.red {
+  background: linear-gradient(135deg, #fff 0%, #f0ece4 100%);
+  border: 2px solid #333;
+  color: var(--card-red);
+}
+
+.card-placeholder {
+  background: var(--saloon-felt);
+  border: 2px dashed rgba(201,168,76,0.3);
+  color: rgba(201,168,76,0.15);
+}
+
+.card-back {
+  font-size: 32px;
+  opacity: 0.4;
+}
+
+.card-facedown {
+  background: linear-gradient(135deg, var(--saloon-red) 0%, #4a0e0e 100%);
+  border: 2px solid var(--saloon-gold);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.card-facedown::after {
+  content: '✦';
+  color: var(--saloon-gold);
+  font-size: 18px;
+  opacity: 0.5;
+}
+
+.card-rank {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.card-suit {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.card-small {
+  width: 44px;
+  height: 62px;
+}
+.card-small .card-rank {
+  font-size: 15px;
+}
+.card-small .card-suit {
+  font-size: 16px;
+}
+
+/* ── PLAYERS ── */
+#players-area {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  width: 100%;
+  max-width: 800px;
+}
+
+.player-seat {
+  background: var(--saloon-wood);
+  border: 2px solid var(--saloon-wood-light);
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-width: 130px;
+  max-width: 180px;
+  flex: 1;
+  text-align: center;
+  transition: all 0.3s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.player-seat.active-player {
+  border-color: var(--saloon-gold);
+  box-shadow: 0 0 16px rgba(201,168,76,0.3), 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.player-seat.folded {
+  opacity: 0.45;
+}
+
+.player-seat.busted {
+  opacity: 0.25;
+}
+
+.player-info {
+  margin-bottom: 6px;
+}
+
+.player-name {
+  font-family: 'Rye', cursive;
+  font-size: 12px;
+  color: var(--saloon-cream);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-chips {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--saloon-gold);
+}
+
+.player-bet {
+  font-size: 11px;
+  color: var(--saloon-gold-bright);
+  margin-top: 2px;
+}
+
+.player-cards {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.dealer-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: var(--saloon-gold);
+  color: var(--saloon-dark);
+  border-radius: 50%;
+  font-family: 'Rye', cursive;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 4px;
+  vertical-align: middle;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.hand-label {
+  font-family: 'Rye', cursive;
+  font-size: 10px;
+  color: var(--saloon-gold-bright);
+  margin-top: 4px;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+.win-badge {
+  font-family: 'Rye', cursive;
+  font-size: 12px;
+  color: var(--saloon-gold-bright);
+  background: rgba(201,168,76,0.15);
+  border: 1px solid var(--saloon-gold);
+  border-radius: 3px;
+  padding: 3px 8px;
+  margin-top: 6px;
+  text-shadow: 0 0 6px rgba(201,168,76,0.4);
+  animation: winPulse 1.5s infinite;
+}
+
+.fold-label {
+  font-family: 'Rye', cursive;
+  font-size: 10px;
+  color: var(--saloon-red-bright);
+  letter-spacing: 2px;
+  margin-top: 4px;
+}
+
+@keyframes winPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(201,168,76,0.2); }
+  50% { box-shadow: 0 0 16px rgba(201,168,76,0.5); }
+}
+
+/* ── ACTION PANEL ── */
+.action-panel {
+  background: var(--saloon-wood);
+  border-top: 3px solid var(--saloon-gold);
+  padding: 14px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+}
+
+#action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.raise-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--saloon-dark);
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--saloon-wood-light);
+}
+
+.raise-slider {
+  width: 100px;
+  accent-color: var(--saloon-gold);
+}
+
+.raise-val {
+  font-family: 'Rye', cursive;
+  font-size: 14px;
+  color: var(--saloon-gold);
+  min-width: 50px;
+  text-align: right;
+}
+
+.wait-msg {
+  font-family: 'IM Fell English SC', serif;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-style: italic;
+  padding: 8px;
+}
+
+/* ── LOG ── */
+.log-panel {
+  background: var(--saloon-dark);
+  border-top: 2px solid var(--saloon-wood-light);
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+
+.log-label {
+  font-family: 'Rye', cursive;
+  font-size: 11px;
+  color: var(--saloon-gold);
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+#game-log {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.log-entry {
+  padding: 1px 0;
+}
+
+.log-blind { color: var(--text-dim); }
+.log-action { color: var(--saloon-cream); }
+.log-phase { color: var(--saloon-gold); font-family: 'Rye', cursive; font-size: 11px; letter-spacing: 2px; }
+.log-win { color: var(--saloon-gold-bright); font-weight: 700; }
+.log-system { color: var(--text-dim); font-style: italic; }
+
+/* ── GAME OVER OVERLAY ── */
+#gameover-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+#gameover-overlay.active {
+  display: flex;
+}
+
+.gameover-card {
+  background: var(--saloon-wood);
+  border: 3px solid var(--saloon-gold);
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(201,168,76,0.2), 0 16px 48px rgba(0,0,0,0.6);
+  max-width: 400px;
+  width: 90vw;
+}
+
+.gameover-title {
+  font-family: 'Rye', cursive;
+  font-size: 36px;
+  color: var(--saloon-gold);
+  text-shadow: 0 0 20px rgba(201,168,76,0.4);
+  margin-bottom: 12px;
+}
+
+#winner-name {
+  font-family: 'Rye', cursive;
+  font-size: 28px;
+  color: var(--saloon-cream);
+  margin-bottom: 6px;
+}
+
+.gameover-subtitle {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+#winner-chips {
+  font-family: 'Playfair Display', serif;
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--saloon-gold-bright);
+  margin-bottom: 24px;
+}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--saloon-dark); }
+::-webkit-scrollbar-thumb { background: var(--saloon-wood-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--saloon-gold); }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 600px) {
+  .card { width: 48px; height: 70px; }
+  .card-rank { font-size: 16px; }
+  .card-suit { font-size: 18px; }
+  .card-small { width: 36px; height: 52px; }
+  .card-small .card-rank { font-size: 12px; }
+  .card-small .card-suit { font-size: 13px; }
+
+  .felt-table {
+    border-radius: 80px;
+    padding: 20px;
+    border-width: 5px;
+  }
+
+  .player-seat {
+    min-width: 100px;
+    padding: 8px 10px;
+  }
+
+  .raise-controls { flex-wrap: wrap; }
+  .raise-slider { width: 80px; }
+
+  .btn { font-size: 13px; padding: 10px 20px; }
+  .btn-allin { font-size: 12px; }
+}

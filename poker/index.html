@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEAD HAND SALOON — Texas Hold'em</title>
+<link rel="stylesheet" href="styles.css?v=1">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<!-- TITLE -->
+<div id="title-screen" class="screen active">
+  <div class="saloon-sign">
+    <div class="sign-border"></div>
+    <h1>DEAD HAND</h1>
+    <div class="sign-subtitle">SALOON</div>
+  </div>
+  <div class="ornament">⬥ ⬥ ⬥</div>
+  <div class="title-flavor">
+    "Every man's got a price. Yours is the next card off the deck."
+  </div>
+  <div class="title-info">Texas Hold'em Poker · 2–6 Players</div>
+  <button class="btn btn-primary" onclick="window.showSetup()">🃏 SIT DOWN</button>
+  <button class="btn btn-secondary" style="margin-top:12px;" onclick="window.goOnline()">🌐 ONLINE TABLE</button>
+</div>
+
+<!-- LOBBY -->
+<div id="lobby-screen" class="screen">
+  <div class="panel-header">ONLINE TABLE</div>
+  <div id="lobby-body"></div>
+</div>
+
+<!-- SETUP -->
+<div id="setup-screen" class="screen">
+  <div class="panel-header">SET YOUR STAKES</div>
+  <div class="setup-grid" id="setup-grid"></div>
+  <div style="margin-top:18px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+    <button class="btn btn-back" onclick="window.showTitle()">← BACK</button>
+    <button class="btn btn-primary" onclick="window.startGame()">DEAL 'EM →</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="game-screen" class="screen">
+  <div class="game-header">
+    <span class="game-title">DEAD HAND</span>
+    <span id="phase-display">PREFLOP</span>
+    <span id="pot-display">POT: $0</span>
+  </div>
+
+  <div class="table-area">
+    <div class="felt-table">
+      <div id="community-cards"></div>
+      <div class="pot-label" id="felt-pot"></div>
+    </div>
+  </div>
+
+  <div id="players-area"></div>
+
+  <div class="action-panel">
+    <div id="action-buttons"></div>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-label">SALOON TALK</div>
+    <div id="game-log"></div>
+  </div>
+</div>
+
+<!-- GAME OVER -->
+<div id="gameover-overlay">
+  <div class="gameover-card">
+    <div class="gameover-title">WINNER</div>
+    <div id="winner-name">STRANGER</div>
+    <div class="gameover-subtitle">walks away with</div>
+    <div id="winner-chips">$1000</div>
+    <button class="btn btn-primary" onclick="window.playAgain()">🃏 PLAY AGAIN</button>
+  </div>
+</div>
+
+<script type="module" src="src/app.js?v=1"></script>
+</body>
+</html>
